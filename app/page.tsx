@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionFilters } from "@/components/TransactionFilters";
@@ -13,7 +13,7 @@ const TransactionsGrid = dynamic(
   { ssr: false, loading: () => <div className="flex min-h-[400px] items-center justify-center text-[var(--muted-foreground)]">Chargement du tableau…</div> }
 );
 
-export default function Home() {
+function HomeContent() {
   const searchParams = useSearchParams();
   const companyIdFromUrl = searchParams.get("company_id") ?? "";
 
@@ -172,5 +172,13 @@ export default function Home() {
         selectedSum={selectedSum}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-[var(--muted-foreground)]">Chargement…</div>}>
+      <HomeContent />
+    </Suspense>
   );
 }

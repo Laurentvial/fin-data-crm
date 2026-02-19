@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: bigboss-system
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    # Add your env vars in the Render dashboard (e.g. DATABASE_URL)

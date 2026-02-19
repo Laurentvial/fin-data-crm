@@ -1,10 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import type { Company } from "@/lib/types";
 
-export default function ReportingPage() {
+function ReportingContent() {
   const searchParams = useSearchParams();
   const companyIdFromUrl = searchParams.get("company_id") ?? "";
   const [company, setCompany] = useState<Company | null>(null);
@@ -38,5 +38,13 @@ export default function ReportingPage() {
         <p className="text-[var(--muted-foreground)]">Cette page est un placeholder. Les rapports et analyses seront disponibles ici.</p>
       </main>
     </div>
+  );
+}
+
+export default function ReportingPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Chargement...</div>}>
+      <ReportingContent />
+    </Suspense>
   );
 }
