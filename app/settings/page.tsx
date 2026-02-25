@@ -1,8 +1,7 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
-import { createUserAction } from "./actions";
 
 type User = { id: string; email: string; name: string; role?: string };
 
@@ -128,12 +127,13 @@ function EditUserModal({
 }
 
 export default function SettingsPage() {
-  const [state, formAction, isPending] = useActionState(createUserAction, null);
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [createPending, setCreatePending] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
@@ -155,7 +155,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadUsers();
-  }, [loadUsers, state]);
+  }, [loadUsers]);
 
   const handleDelete = async (user: User) => {
     if (!confirm(`Supprimer l'utilisateur "${user.name}" (${user.email}) ? Cette action est irréversible.`)) return;
@@ -208,6 +208,42 @@ export default function SettingsPage() {
     setEditingUser(null);
   };
 
+  const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setCreateError(null);
+    const form = e.currentTarget;
+    const name = (form.elements.namedItem("name") as HTMLInputElement)?.value?.trim();
+    const email = (form.elements.namedItem("email") as HTMLInputElement)?.value?.trim();
+    const password = (form.elements.namedItem("password") as HTMLInputElement)?.value?.trim();
+
+    if (!name || !email || !password) {
+      setCreateError("Tous les champs sont requis.");
+      return;
+    }
+    if (password.length < 8) {
+      setCreateError("Le mot de passe doit contenir au moins 8 caractères.");
+      return;
+    }
+
+    setCreatePending(true);
+    const { data, error } = await authClient.admin.createUser({
+      email,
+      password,
+      name,
+      role: "user",
+    });
+    setCreatePending(false);
+
+    if (error) {
+      setCreateError(error.message ?? "Échec de la création du compte.");
+      return;
+    }
+    if (data?.user) {
+      setUsers((prev) => [{ ...data.user, role: "user" }, ...prev]);
+      form.reset();
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
@@ -227,7 +263,7 @@ export default function SettingsPage() {
             </p>
 
             <form
-              action={formAction}
+              onSubmit={handleCreateUser}
               className="mb-8 flex flex-wrap gap-4 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4"
             >
               <div className="flex-1 min-w-[200px]">
@@ -282,17 +318,17 @@ export default function SettingsPage() {
               <div className="flex items-end">
                 <button
                   type="submit"
-                  disabled={isPending}
+                  disabled={createPending}
                   className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
                 >
-                  {isPending ? "Création..." : "Créer le compte"}
+                  {createPending ? "Création..." : "Créer le compte"}
                 </button>
               </div>
             </form>
 
-            {(state?.error || actionError) && (
+            {(createError || actionError) && (
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-                {state?.error ?? actionError}
+                {createError ?? actionError}
               </div>
             )}
 

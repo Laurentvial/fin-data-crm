@@ -9,8 +9,8 @@ import type { ColDef, CellValueChangedEvent, CellSelectionChangedEvent, ICellRen
 function DeleteButtonCell(params: ICellRendererParams<Transaction> & { onDelete?: (id: string) => Promise<void> }) {
   const id = params.data?.id;
   const onDelete = params.onDelete;
-  if (!id || !onDelete) return null;
   const [deleting, setDeleting] = React.useState(false);
+  if (!id || !onDelete) return null;
   const handleClick = async () => {
     if (!confirm("Supprimer cette transaction ?")) return;
     setDeleting(true);
