@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth/client";
 
 const navMain = [
   { href: "/", label: "Toutes les transactions", icon: GridIcon },
-  { href: "/companies", label: "Sociétés", icon: BuildingIcon },
+  { href: "/societes", label: "Sociétés", icon: BriefcaseIcon },
+  { href: "/companies", label: "Comptes", icon: BuildingIcon },
   { href: "/reporting", label: "Rapports", icon: ChartIcon },
 ];
 
@@ -20,6 +22,15 @@ function GridIcon({ className }: { className?: string }) {
       <rect x="14" y="3" width="7" height="7" />
       <rect x="14" y="14" width="7" height="7" />
       <rect x="3" y="14" width="7" height="7" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
     </svg>
   );
 }
@@ -52,8 +63,35 @@ function SettingsIcon({ className }: { className?: string }) {
   );
 }
 
+function LogOutIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session, isPending } = authClient.useSession();
+
+  const initials = session?.user?.name
+    ? session.user.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "?";
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    router.push("/auth/sign-in");
+    router.refresh();
+  };
 
   return (
     <aside className="flex w-60 flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)]">
@@ -103,13 +141,25 @@ export function AppSidebar() {
       <div className="border-t border-[var(--border)] p-3">
         <div className="flex items-center gap-3 rounded-lg px-3 py-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]">
-            <span className="text-xs font-medium">AR</span>
+            <span className="text-xs font-medium">{initials}</span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-[var(--foreground)]">Alex Rivers</p>
-            <p className="truncate text-xs text-[var(--muted-foreground)]">Responsable financier</p>
+            <p className="truncate text-sm font-medium text-[var(--foreground)]">
+              {isPending ? "..." : session?.user?.name ?? "Utilisateur"}
+            </p>
+            <p className="truncate text-xs text-[var(--muted-foreground)]">
+              {session?.user?.role === "admin" ? "Administrateur" : "Utilisateur"}
+            </p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+        >
+          <LogOutIcon />
+          Déconnexion
+        </button>
       </div>
     </aside>
   );

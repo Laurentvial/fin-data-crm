@@ -1,6 +1,12 @@
 "use client";
 
+import { useSidebar } from "@/lib/SidebarContext";
+
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 150;
+const ZOOM_STEP = 10;
 
 interface SheetFooterProps {
   totalCount: number;
@@ -8,6 +14,12 @@ interface SheetFooterProps {
   saveMessage?: string;
   /** Somme des cellules numériques sélectionnées (null si aucune sélection) */
   selectedSum?: number | null;
+  /** Solde total (somme des montants, débits négatifs) */
+  totalBalance?: number | null;
+  /** Niveau de zoom en % (50-150) */
+  zoom?: number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
 }
 
 function MenuIcon({ className }: { className?: string }) {
@@ -28,7 +40,8 @@ function CloudIcon({ className }: { className?: string }) {
   );
 }
 
-export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, selectedSum }: SheetFooterProps) {
+export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, selectedSum, totalBalance, zoom = 100, onZoomIn, onZoomOut }: SheetFooterProps) {
+  const sidebar = useSidebar();
   const statusText =
     saveStatus === "saving"
       ? "Enregistrement…"
@@ -41,7 +54,12 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
   return (
     <footer className="flex h-9 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--background)] px-4 text-xs text-[var(--muted-foreground)]">
       <div className="flex items-center gap-3">
-        <button type="button" className="rounded p-1 hover:bg-[var(--muted)]" aria-label="Menu">
+        <button
+          type="button"
+          onClick={sidebar?.toggleSidebar}
+          className="rounded p-1 hover:bg-[var(--muted)]"
+          aria-label={sidebar?.sidebarOpen ? "Fermer le menu" : "Ouvrir le menu"}
+        >
           <MenuIcon className="h-4 w-4" />
         </button>
         <span>Total des transactions : {totalCount.toLocaleString("fr-FR")}</span>
@@ -52,6 +70,16 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             }).format(selectedSum)}{" "}
+            €
+          </span>
+        )}
+        {totalBalance != null && (
+          <span className="font-medium text-[var(--foreground)]">
+            Solde total :{" "}
+            {new Intl.NumberFormat("fr-FR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }).format(totalBalance)}{" "}
             €
           </span>
         )}
@@ -66,11 +94,23 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
           {statusText}
         </span>
         <span className="flex items-center gap-1 rounded border border-[var(--border)] px-2 py-0.5">
-          Zoom : 100 %
-          <button type="button" className="opacity-50 hover:opacity-100" aria-label="Zoom arrière">
+          Zoom : {zoom} %
+          <button
+            type="button"
+            onClick={onZoomOut}
+            disabled={!onZoomOut || zoom <= ZOOM_MIN}
+            className="opacity-50 hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Zoom arrière"
+          >
             −
           </button>
-          <button type="button" className="opacity-50 hover:opacity-100" aria-label="Zoom avant">
+          <button
+            type="button"
+            onClick={onZoomIn}
+            disabled={!onZoomIn || zoom >= ZOOM_MAX}
+            className="opacity-50 hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Zoom avant"
+          >
             +
           </button>
         </span>

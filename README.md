@@ -1,5 +1,27 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Authentification
+
+L'application utilise un système d'authentification fermé :
+- Pas d'inscription publique ; les comptes sont créés uniquement par les administrateurs dans **Paramètres**.
+- Connexion obligatoire pour accéder à l'application.
+
+### Configuration initiale
+
+1. **Activer Neon Auth** dans la [Neon Console](https://console.neon.tech) : Projet → Branche → Auth → Configuration.
+
+2. **Variables d'environnement** (`.env.local`) :
+   ```
+   NEON_AUTH_BASE_URL=https://ep-xxx.neonauth.us-east-1.aws.neon.tech/neondb/auth
+   NEON_AUTH_COOKIE_SECRET=<générer avec: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))">
+   ```
+
+3. **Migration base de données** : exécuter `migrations/001_processed_by_user_id_to_uuid.sql` sur votre base Neon.
+
+4. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+
+5. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
+
 ## Getting Started
 
 First, run the development server:

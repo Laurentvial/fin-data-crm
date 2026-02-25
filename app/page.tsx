@@ -3,10 +3,11 @@
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionFilters } from "@/components/TransactionFilters";
-import type { Company, Transaction } from "@/lib/types";
+import type { BankAccount, Transaction } from "@/lib/types";
 
 const TransactionsGrid = dynamic(
   () => import("@/components/TransactionsGrid").then((m) => ({ default: m.TransactionsGrid })),
@@ -15,31 +16,34 @@ const TransactionsGrid = dynamic(
 
 function HomeContent() {
   const searchParams = useSearchParams();
-  const companyIdFromUrl = searchParams.get("company_id") ?? "";
+  const bankAccountIdFromUrl = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
+  const setupSuccess = searchParams.get("setup") === "1";
 
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(true);
+  const [loadingBankAccounts, setLoadingBankAccounts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(!!companyIdFromUrl);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(!!bankAccountIdFromUrl);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState<string>("");
   const [selectedSum, setSelectedSum] = useState<number | null>(null);
 
-  const [companyId, setCompanyId] = useState(companyIdFromUrl);
+  const [bankAccountId, setBankAccountId] = useState(bankAccountIdFromUrl);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [type, setType] = useState("");
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [zoom, setZoom] = useState(100);
 
-  const fetchCompanies = useCallback(async () => {
-    setLoadingCompanies(true);
+  const fetchBankAccounts = useCallback(async () => {
+    setLoadingBankAccounts(true);
     try {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
+      const res = await fetch("/api/bank-accounts");
+      if (!res.ok) throw new Error("Failed to fetch bank accounts");
       const data = await res.json();
-      setCompanies(data);
+      setBankAccounts(data);
     } finally {
-      setLoadingCompanies(false);
+      setLoadingBankAccounts(false);
     }
   }, []);
 
@@ -47,7 +51,7 @@ function HomeContent() {
     setLoadingTransactions(true);
     try {
       const params = new URLSearchParams();
-      if (companyId) params.set("company_id", companyId);
+      if (bankAccountId) params.set("bank_account_id", bankAccountId);
       if (dateFrom) params.set("date_from", dateFrom);
       if (dateTo) params.set("date_to", dateTo);
       if (type) params.set("type", type);
@@ -58,15 +62,15 @@ function HomeContent() {
     } finally {
       setLoadingTransactions(false);
     }
-  }, [companyId, dateFrom, dateTo, type]);
+  }, [bankAccountId, dateFrom, dateTo, type]);
 
   useEffect(() => {
-    fetchCompanies();
-  }, [fetchCompanies]);
+    fetchBankAccounts();
+  }, [fetchBankAccounts]);
 
   useEffect(() => {
-    const id = searchParams.get("company_id") ?? "";
-    setCompanyId(id);
+    const id = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
+    setBankAccountId(id);
     setFilterPanelOpen(!!id);
   }, [searchParams]);
 
@@ -108,17 +112,60 @@ function HomeContent() {
     []
   );
 
+  const handleAddTransaction = useCallback((newTx: Transaction) => {
+    setTransactions((prev) => [newTx, ...prev]);
+    setAddModalOpen(false);
+  }, []);
+
+  const handleDeleteTransaction = useCallback(async (id: string) => {
+    setSaveStatus("saving");
+    setSaveMessage("");
+    try {
+      const res = await fetch(`/api/transactions/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveMessage(err instanceof Error ? err.message : "Erreur");
+    }
+  }, []);
+
+  const totalBalance = transactions.reduce((sum, t) => {
+    const num = Number(t.amount);
+    const signed = t.type === "DEBIT" ? -Math.abs(num) : num;
+    return sum + (Number.isNaN(num) ? 0 : signed);
+  }, 0);
+
+  const handleZoomIn = useCallback(() => {
+    setZoom((z) => Math.min(150, z + 10));
+  }, []);
+  const handleZoomOut = useCallback(() => {
+    setZoom((z) => Math.max(50, z - 10));
+  }, []);
+
   const handleExport = useCallback(() => {
-    const headers = ["ID", "Date", "Société", "Montant", "Type", "Description", "Créé le"];
-    const rows = transactions.map((t) => [
-      t.id,
-      t.transaction_date,
-      t.company_name ?? "",
-      t.amount,
-      t.type,
-      t.description ?? "",
-      t.created_at ?? "",
-    ]);
+    const headers = ["ID", "Date", "Compte", "Montant", "Type", "Description", "Créé le"];
+    const rows = transactions.map((t) => {
+      const num = Number(t.amount);
+      const signed = t.type === "DEBIT" ? -Math.abs(num) : num;
+      return [
+        t.id,
+        t.transaction_date,
+        t.bank_account_name ?? t.company_name ?? "",
+        signed,
+        t.type,
+        t.description ?? "",
+        t.created_at ?? "",
+      ];
+    });
     const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -131,9 +178,15 @@ function HomeContent() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {setupSuccess && (
+        <div className="mx-4 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          Compte créé. Pour créer d&apos;autres utilisateurs, assignez le rôle admin dans la Neon Console (Auth → Users → Make admin) puis allez dans Paramètres.
+        </div>
+      )}
       <SheetToolbar
         onFilterClick={() => setFilterPanelOpen((o) => !o)}
         onExportClick={handleExport}
+        onAddClick={bankAccounts.length > 0 ? () => setAddModalOpen(true) : undefined}
         filterPanelOpen={filterPanelOpen}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -141,17 +194,17 @@ function HomeContent() {
           {filterPanelOpen && (
             <div className="mb-4 shrink-0">
               <TransactionFilters
-                companies={companies}
-                companyId={companyId}
+                bankAccounts={bankAccounts}
+                bankAccountId={bankAccountId}
                 dateFrom={dateFrom}
                 dateTo={dateTo}
                 type={type}
-                onCompanyIdChange={setCompanyId}
+                onBankAccountIdChange={setBankAccountId}
                 onDateFromChange={setDateFrom}
                 onDateToChange={setDateTo}
                 onTypeChange={setType}
                 onApply={handleApplyFilters}
-                loading={loadingCompanies}
+                loading={loadingBankAccounts}
               />
             </div>
           )}
@@ -159,17 +212,31 @@ function HomeContent() {
             <TransactionsGrid
               transactions={transactions}
               loading={loadingTransactions}
+              zoom={zoom}
               onCellValueChanged={handleCellValueChanged}
               onSelectionSumChange={setSelectedSum}
+              onDelete={handleDeleteTransaction}
             />
           </div>
         </div>
       </div>
+      {addModalOpen && (
+        <AddTransactionModal
+          bankAccounts={bankAccounts}
+          defaultBankAccountId={bankAccountId || undefined}
+          onClose={() => setAddModalOpen(false)}
+          onSuccess={handleAddTransaction}
+        />
+      )}
       <SheetFooter
         totalCount={transactions.length}
         saveStatus={saveStatus}
         saveMessage={saveMessage}
         selectedSum={selectedSum}
+        totalBalance={totalBalance}
+        zoom={zoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
       />
     </div>
   );

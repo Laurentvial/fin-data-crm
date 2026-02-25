@@ -2,37 +2,41 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
-import type { Company } from "@/lib/types";
+import type { BankAccount } from "@/lib/types";
+
+function displayName(ba: BankAccount): string {
+  return ba.company_name !== ba.name ? `${ba.company_name} – ${ba.name}` : ba.name;
+}
 
 function ReportingContent() {
   const searchParams = useSearchParams();
-  const companyIdFromUrl = searchParams.get("company_id") ?? "";
-  const [company, setCompany] = useState<Company | null>(null);
+  const bankAccountIdFromUrl = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
+  const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
 
-  const fetchCompany = useCallback(async () => {
-    if (!companyIdFromUrl) return;
+  const fetchBankAccount = useCallback(async () => {
+    if (!bankAccountIdFromUrl) return;
     try {
-      const res = await fetch("/api/companies");
+      const res = await fetch("/api/bank-accounts");
       if (!res.ok) return;
-      const companies: Company[] = await res.json();
-      const found = companies.find((c) => c.id === companyIdFromUrl);
-      setCompany(found ?? null);
+      const accounts: BankAccount[] = await res.json();
+      const found = accounts.find((ba) => ba.id === bankAccountIdFromUrl);
+      setBankAccount(found ?? null);
     } catch {
-      setCompany(null);
+      setBankAccount(null);
     }
-  }, [companyIdFromUrl]);
+  }, [bankAccountIdFromUrl]);
 
   useEffect(() => {
-    fetchCompany();
-  }, [fetchCompany]);
+    fetchBankAccount();
+  }, [fetchBankAccount]);
 
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
         <h1 className="mb-4 text-2xl font-semibold text-[var(--foreground)]">Rapports</h1>
-        {companyIdFromUrl && (
+        {bankAccountIdFromUrl && (
           <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-            Filtre actif : <span className="font-medium text-[var(--foreground)]">{company?.name ?? "Société sélectionnée"}</span>
+            Filtre actif : <span className="font-medium text-[var(--foreground)]">{bankAccount ? displayName(bankAccount) : "Compte sélectionné"}</span>
           </p>
         )}
         <p className="text-[var(--muted-foreground)]">Cette page est un placeholder. Les rapports et analyses seront disponibles ici.</p>

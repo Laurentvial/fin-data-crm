@@ -1,14 +1,14 @@
 "use client";
 
-import type { Company } from "@/lib/types";
+import type { BankAccount } from "@/lib/types";
 
 interface TransactionFiltersProps {
-  companies: Company[];
-  companyId: string;
+  bankAccounts: BankAccount[];
+  bankAccountId: string;
   dateFrom: string;
   dateTo: string;
   type: string;
-  onCompanyIdChange: (value: string) => void;
+  onBankAccountIdChange: (value: string) => void;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
   onTypeChange: (value: string) => void;
@@ -16,13 +16,17 @@ interface TransactionFiltersProps {
   loading?: boolean;
 }
 
+function displayName(ba: BankAccount): string {
+  return ba.company_name !== ba.name ? `${ba.company_name} – ${ba.name}` : ba.name;
+}
+
 export function TransactionFilters({
-  companies,
-  companyId,
+  bankAccounts,
+  bankAccountId,
   dateFrom,
   dateTo,
   type,
-  onCompanyIdChange,
+  onBankAccountIdChange,
   onDateFromChange,
   onDateToChange,
   onTypeChange,
@@ -32,19 +36,19 @@ export function TransactionFilters({
   return (
     <div className="flex flex-wrap items-end gap-4 rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/80">
       <div className="flex flex-col gap-1">
-        <label htmlFor="filter-company" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          Société
+        <label htmlFor="filter-bank-account" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Compte
         </label>
         <select
-          id="filter-company"
-          value={companyId}
-          onChange={(e) => onCompanyIdChange(e.target.value)}
+          id="filter-bank-account"
+          value={bankAccountId}
+          onChange={(e) => onBankAccountIdChange(e.target.value)}
           className="min-w-[180px] rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
         >
-          <option value="">Toutes</option>
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
+          <option value="">Tous</option>
+          {bankAccounts.map((ba) => (
+            <option key={ba.id} value={ba.id}>
+              {displayName(ba)}
             </option>
           ))}
         </select>

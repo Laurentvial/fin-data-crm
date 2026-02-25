@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 import type { TransactionType } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
+
+async function requireAuth() {
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  return null;
+}
 
 function isValidDate(s: string): boolean {
   const d = new Date(s);
@@ -13,6 +27,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAuth();
+  if (authError) return authError;
   try {
     const { id } = await params;
     const body = await request.json();
@@ -64,7 +80,7 @@ export async function PATCH(
     }
 
     const existingRows = await sql`
-      SELECT company_id, transaction_date, amount, description
+      SELECT bank_account_id, transaction_date, amount, description
       FROM transactions
       WHERE id = ${id}::uuid
     `;
@@ -98,7 +114,7 @@ export async function PATCH(
       UPDATE transactions
       SET ${setClauses.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, company_id, transaction_date, amount, description, type, created_at
+      RETURNING id, bank_account_id, transaction_date, amount, description, type, created_at
     `;
 
     try {
@@ -111,7 +127,7 @@ export async function PATCH(
       return NextResponse.json(row);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("uix_company_transaction") || msg.includes("unique") || msg.includes("duplicate")) {
+      if (msg.includes("uix_bank_account_transaction") || msg.includes("uix_company_transaction") || msg.includes("unique") || msg.includes("duplicate")) {
         return NextResponse.json(
           { error: "Une transaction identique existe déjà (société, date, montant, description)" },
           { status: 409 }
@@ -123,6 +139,38 @@ export async function PATCH(
     console.error("PATCH /api/transactions/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update transaction" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+  try {
+    const { id } = await params;
+    if (!id || typeof id !== "string") {
+      return NextResponse.json({ error: "ID invalide" }, { status: 400 });
+    }
+    const result = await sql.query(
+      "DELETE FROM transactions WHERE id = $1::uuid RETURNING id",
+      [id]
+    );
+    const deleted = Array.isArray(result) ? result[0] : result;
+    if (!deleted) {
+      return NextResponse.json({ error: "Transaction introuvable" }, { status: 404 });
+    }
+    return NextResponse.json(
+      { success: true },
+      { headers: { "Cache-Control": "no-store, no-cache" } }
+    );
+  } catch (error) {
+    console.error("DELETE /api/transactions/[id] error:", error);
+    return NextResponse.json(
+      { error: "Échec de la suppression" },
       { status: 500 }
     );
   }

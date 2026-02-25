@@ -3,10 +3,12 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --card: #ffffff;
   --border: #e2e8f0;
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
   --primary: #2563eb;
+  --primary-foreground: #ffffff;
   --primary-muted: #eff6ff;
   --sidebar-bg: #f8fafc;
   --header-bg: #ffffff;
@@ -23,10 +25,12 @@
   :root {
     --background: #0f172a;
     --foreground: #f1f5f9;
+    --card: #1e293b;
     --border: #334155;
     --muted: #1e293b;
     --muted-foreground: #94a3b8;
     --primary: #3b82f6;
+    --primary-foreground: #ffffff;
     --primary-muted: #1e3a5f;
     --sidebar-bg: #0f172a;
     --header-bg: #0f172a;

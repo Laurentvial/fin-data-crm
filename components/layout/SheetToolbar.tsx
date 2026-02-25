@@ -3,6 +3,7 @@
 interface SheetToolbarProps {
   onFilterClick?: () => void;
   onExportClick?: () => void;
+  onAddClick?: () => void;
   filterPanelOpen?: boolean;
 }
 
@@ -52,9 +53,28 @@ function RedoIcon({ className }: { className?: string }) {
   );
 }
 
-export function SheetToolbar({ onFilterClick, onExportClick, filterPanelOpen }: SheetToolbarProps) {
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterPanelOpen }: SheetToolbarProps) {
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--background)] px-4">
+      {onAddClick && (
+        <button
+          type="button"
+          onClick={onAddClick}
+          className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
+        >
+          <PlusIcon className="h-4 w-4" />
+          Ajouter
+        </button>
+      )}
       <button
         type="button"
         onClick={onFilterClick}
