@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { Company } from "@/lib/types";
 
@@ -146,7 +146,7 @@ function CompanyModal({
   );
 }
 
-export default function SocietesPage() {
+function SocietesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editIdFromUrl = searchParams.get("edit");
@@ -366,5 +366,13 @@ export default function SocietesPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function SocietesPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen flex-col p-6"><p className="text-[var(--muted-foreground)]">Chargement…</p></div>}>
+      <SocietesPageContent />
+    </Suspense>
   );
 }
