@@ -13,6 +13,36 @@ async function requireAuth() {
   return null;
 }
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+  const { id } = await params;
+  try {
+    const rows = await sql`
+      SELECT id, name, address, siret, directeur, created_at, updated_at
+      FROM companies
+      WHERE id = ${id}
+    `;
+    const row = rows[0];
+    if (!row) {
+      return NextResponse.json(
+        { error: "Société introuvable." },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json(row);
+  } catch (error) {
+    console.error("GET /api/companies/[id] error:", error);
+    return NextResponse.json(
+      { error: "Échec du chargement." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -29,11 +59,14 @@ export async function PATCH(
         { status: 400 }
       );
     }
+    const address = typeof body?.address === "string" ? body.address.trim() || null : null;
+    const siret = typeof body?.siret === "string" ? body.siret.trim() || null : null;
+    const directeur = typeof body?.directeur === "string" ? body.directeur.trim() || null : null;
     const rows = await sql`
       UPDATE companies
-      SET name = ${name}, updated_at = NOW()
+      SET name = ${name}, address = ${address}, siret = ${siret}, directeur = ${directeur}, updated_at = NOW()
       WHERE id = ${id}
-      RETURNING id, name, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

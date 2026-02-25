@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import type { Company } from "@/lib/types";
 
 function CompanyRow({
@@ -14,7 +16,14 @@ function CompanyRow({
 }) {
   return (
     <tr className="border-t border-[var(--border)] hover:bg-[var(--muted)]/50">
-      <td className="px-4 py-3 font-medium text-[var(--foreground)]">{company.name}</td>
+      <td className="px-4 py-3 font-medium text-[var(--foreground)]">
+        <Link href={`/societes/${company.id}`} className="text-[var(--primary)] hover:underline">
+          {company.name}
+        </Link>
+      </td>
+      <td className="px-4 py-3 text-sm text-[var(--muted-foreground)]">{company.address ?? "—"}</td>
+      <td className="px-4 py-3 text-sm text-[var(--muted-foreground)]">{company.siret ?? "—"}</td>
+      <td className="px-4 py-3 text-sm text-[var(--muted-foreground)]">{company.directeur ?? "—"}</td>
       <td className="px-4 py-3 text-right">
         <div className="flex justify-end gap-2">
           <button
@@ -40,14 +49,26 @@ function CompanyRow({
 function CompanyModal({
   title,
   name,
+  address,
+  siret,
+  directeur,
   onNameChange,
+  onAddressChange,
+  onSiretChange,
+  onDirecteurChange,
   onSave,
   onClose,
   saving,
 }: {
   title: string;
   name: string;
+  address: string;
+  siret: string;
+  directeur: string;
   onNameChange: (v: string) => void;
+  onAddressChange: (v: string) => void;
+  onSiretChange: (v: string) => void;
+  onDirecteurChange: (v: string) => void;
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
@@ -69,6 +90,37 @@ function CompanyModal({
               placeholder="Nom de la société"
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               autoFocus
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Adresse</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => onAddressChange(e.target.value)}
+              placeholder="Adresse"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Siret</label>
+            <input
+              type="text"
+              value={siret}
+              onChange={(e) => onSiretChange(e.target.value)}
+              placeholder="Siret (14 chiffres)"
+              maxLength={14}
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Directeur</label>
+            <input
+              type="text"
+              value={directeur}
+              onChange={(e) => onDirecteurChange(e.target.value)}
+              placeholder="Nom du directeur"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
         </div>
@@ -95,12 +147,18 @@ function CompanyModal({
 }
 
 export default function SocietesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const editIdFromUrl = searchParams.get("edit");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [isAddModal, setIsAddModal] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editSiret, setEditSiret] = useState("");
+  const [editDirecteur, setEditDirecteur] = useState("");
   const [saving, setSaving] = useState(false);
 
   const fetchCompanies = useCallback(async () => {
@@ -122,10 +180,28 @@ export default function SocietesPage() {
     fetchCompanies();
   }, [fetchCompanies]);
 
+  useEffect(() => {
+    if (editIdFromUrl && companies.length > 0) {
+      const company = companies.find((c) => c.id === editIdFromUrl);
+      if (company) {
+        setEditingCompany(company);
+        setIsAddModal(false);
+        setEditName(company.name);
+        setEditAddress(company.address ?? "");
+        setEditSiret(company.siret ?? "");
+        setEditDirecteur(company.directeur ?? "");
+        setError(null);
+      }
+    }
+  }, [editIdFromUrl, companies]);
+
   const openAdd = () => {
     setEditingCompany(null);
     setIsAddModal(true);
     setEditName("");
+    setEditAddress("");
+    setEditSiret("");
+    setEditDirecteur("");
     setError(null);
   };
 
@@ -133,6 +209,9 @@ export default function SocietesPage() {
     setEditingCompany(company);
     setIsAddModal(false);
     setEditName(company.name);
+    setEditAddress(company.address ?? "");
+    setEditSiret(company.siret ?? "");
+    setEditDirecteur(company.directeur ?? "");
     setError(null);
   };
 
@@ -140,12 +219,22 @@ export default function SocietesPage() {
     setEditingCompany(null);
     setIsAddModal(false);
     setEditName("");
+    setEditAddress("");
+    setEditSiret("");
+    setEditDirecteur("");
     setError(null);
+    if (editIdFromUrl) router.replace("/societes");
   };
 
   const handleSave = async () => {
     const name = editName.trim();
     if (!name) return;
+    const payload = {
+      name,
+      address: editAddress.trim() || null,
+      siret: editSiret.trim() || null,
+      directeur: editDirecteur.trim() || null,
+    };
     setSaving(true);
     setError(null);
     try {
@@ -153,7 +242,7 @@ export default function SocietesPage() {
         const res = await fetch("/api/companies", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Échec de la création");
@@ -162,15 +251,16 @@ export default function SocietesPage() {
         const res = await fetch(`/api/companies/${editingCompany.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error ?? "Échec de la mise à jour");
         }
+        const updated = await res.json();
         setCompanies((prev) =>
           prev
-            .map((c) => (c.id === editingCompany.id ? { ...c, name, updated_at: new Date().toISOString() } : c))
+            .map((c) => (c.id === editingCompany.id ? { ...c, ...updated } : c))
             .sort((a, b) => a.name.localeCompare(b.name))
         );
       }
@@ -235,6 +325,15 @@ export default function SocietesPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                     Nom
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                    Adresse
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                    Siret
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                    Directeur
+                  </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                     Actions
                   </th>
@@ -254,7 +353,13 @@ export default function SocietesPage() {
         <CompanyModal
           title={isAddModal ? "Nouvelle société" : "Modifier la société"}
           name={editName}
+          address={editAddress}
+          siret={editSiret}
+          directeur={editDirecteur}
           onNameChange={setEditName}
+          onAddressChange={setEditAddress}
+          onSiretChange={setEditSiret}
+          onDirecteurChange={setEditDirecteur}
           onSave={handleSave}
           onClose={closeModal}
           saving={saving}

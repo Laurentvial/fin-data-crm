@@ -21,6 +21,9 @@ export async function GET() {
       SELECT
         c.id,
         c.name,
+        c.address,
+        c.siret,
+        c.directeur,
         c.created_at,
         c.updated_at
       FROM companies c
@@ -48,10 +51,13 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    const address = typeof body?.address === "string" ? body.address.trim() || null : null;
+    const siret = typeof body?.siret === "string" ? body.siret.trim() || null : null;
+    const directeur = typeof body?.directeur === "string" ? body.directeur.trim() || null : null;
     const rows = await sql`
-      INSERT INTO companies (name)
-      VALUES (${name})
-      RETURNING id, name, created_at, updated_at
+      INSERT INTO companies (name, address, siret, directeur)
+      VALUES (${name}, ${address}, ${siret}, ${directeur})
+      RETURNING id, name, address, siret, directeur, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

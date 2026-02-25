@@ -3,6 +3,9 @@ export type TransactionType = "DEBIT" | "CREDIT";
 export interface Company {
   id: string;
   name: string;
+  address?: string | null;
+  siret?: string | null;
+  directeur?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,4 +41,22 @@ export interface TransactionUpdateBody {
   amount?: number | string;
   description?: string;
   type?: TransactionType;
+}
+
+export interface CompanyEmail {
+  id: string;
+  company_id: string;
+  email: string;
+  password?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyFile {
+  id: string;
+  company_id: string;
+  file_type: "logo" | "kbis";
+  filename: string | null;
+  content_type: string | null;
+  created_at: string;
 }
