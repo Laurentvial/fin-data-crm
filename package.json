@@ -9,15 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@glideapps/glide-data-grid": "^6.0.3",
     "@neondatabase/auth": "^0.2.0-beta.1",
     "@neondatabase/serverless": "^1.0.2",
     "@telegram-auth/server": "^1.0.4",
-    "ag-grid-community": "^35.1.0",
-    "ag-grid-enterprise": "^35.1.0",
-    "ag-grid-react": "^35.1.0",
+    "lodash": "^4.17.23",
+    "marked": "^17.0.3",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-responsive-carousel": "^3.2.23"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

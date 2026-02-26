@@ -30,6 +30,8 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <LayoutContent>{children}</LayoutContent>
+        {/* Required by Glide Data Grid for overlay editors (cell editing, menus). Empty portal has no dimensions; overlays render on top when needed. See https://docs.grid.glideapps.com/api/dataeditor */}
+        <div id="portal" style={{ position: "fixed", left: 0, top: 0, zIndex: 9999 }} />
       </body>
     </html>
   );
