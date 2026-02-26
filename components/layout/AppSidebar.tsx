@@ -5,15 +5,27 @@ import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 
 const navMain = [
+  { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboardIcon },
   { href: "/", label: "Toutes les transactions", icon: GridIcon },
   { href: "/societes", label: "Sociétés", icon: BriefcaseIcon },
-  { href: "/companies", label: "Comptes", icon: BuildingIcon },
+  { href: "/accounts", label: "Comptes", icon: BuildingIcon },
   { href: "/reporting", label: "Rapports", icon: ChartIcon },
 ];
 
 const navAdmin = [
   { href: "/settings", label: "Paramètres", icon: SettingsIcon },
 ];
+
+function LayoutDashboardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="9" />
+      <rect x="14" y="3" width="7" height="5" />
+      <rect x="14" y="12" width="7" height="9" />
+      <rect x="3" y="16" width="7" height="5" />
+    </svg>
+  );
+}
 
 function GridIcon({ className }: { className?: string }) {
   return (

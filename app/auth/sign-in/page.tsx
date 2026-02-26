@@ -69,15 +69,17 @@ export default function SignInPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-[var(--muted-foreground)]">
-          Les comptes sont créés par les administrateurs dans les paramètres.{" "}
-          <Link
-            href="/auth/setup"
-            className="text-[var(--primary)] hover:underline"
-          >
-            Premier compte ?
-          </Link>
-        </p>
+        {process.env.NEXT_PUBLIC_SHOW_FIRST_ACCOUNT_SETUP === "true" && (
+          <p className="text-center text-xs text-[var(--muted-foreground)]">
+            Les comptes sont créés par les administrateurs dans les paramètres.{" "}
+            <Link
+              href="/auth/setup"
+              className="text-[var(--primary)] hover:underline"
+            >
+              Premier compte ?
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );

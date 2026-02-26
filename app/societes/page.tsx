@@ -5,44 +5,226 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { Company } from "@/lib/types";
 
-function CompanyRow({
+function MoreVerticalIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="6" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="18" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "?";
+}
+
+function CompanyCard({
   company,
+  menuOpen,
+  onMenuToggle,
+  onEdit,
+  onDelete,
+  onCardClick,
+}: {
+  company: Company;
+  menuOpen: boolean;
+  onMenuToggle: () => void;
+  onEdit: (c: Company) => void;
+  onDelete: (c: Company) => void;
+  onCardClick: (companyId: string) => void;
+}) {
+  const [logoError, setLogoError] = useState(false);
+  const phone = "phone" in company ? (company as { phone?: string }).phone : undefined;
+
+  return (
+    <div
+      className="relative flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-shadow hover:shadow-md"
+      onClick={() => onCardClick(company.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onCardClick(company.id);
+        }
+      }}
+    >
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
+        {logoError ? (
+          <span className="text-sm font-semibold text-[var(--muted-foreground)]">
+            {getInitials(company.name)}
+          </span>
+        ) : (
+          <img
+            src={`/api/accounts/${company.id}/files/logo`}
+            alt=""
+            className="h-full w-full object-contain"
+            onError={() => setLogoError(true)}
+          />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-semibold text-[var(--foreground)] truncate">{company.name}</h3>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onMenuToggle();
+            }}
+            className="shrink-0 rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+            aria-label="Menu"
+          >
+            <MoreVerticalIcon />
+          </button>
+        </div>
+        <dl className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
+          <div>
+            <dt className="sr-only">Directeur</dt>
+            <dd>{company.directeur ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="sr-only">Adresse</dt>
+            <dd className="truncate">{company.address ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="sr-only">SIRET</dt>
+            <dd>{company.siret ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="sr-only">Tél</dt>
+            <dd>{phone ?? "—"}</dd>
+          </div>
+        </dl>
+        {(company.bank_ids?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {company.bank_ids!.map((bankId) => (
+              <span
+                key={bankId}
+                className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]"
+                title="Banque"
+              >
+                <img
+                  src={`/api/banks/${bankId}/files/logo`}
+                  alt=""
+                  className="h-full w-full object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {menuOpen && (
+        <CompanyCardMenu
+          company={company}
+          onClose={onMenuToggle}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      )}
+    </div>
+  );
+}
+
+function CompanyCardMenu({
+  company,
+  onClose,
   onEdit,
   onDelete,
 }: {
   company: Company;
+  onClose: () => void;
   onEdit: (c: Company) => void;
   onDelete: (c: Company) => void;
 }) {
   return (
-    <tr className="border-t border-[var(--border)] hover:bg-[var(--muted)]/50">
-      <td className="px-4 py-3 font-medium text-[var(--foreground)]">
-        <Link href={`/societes/${company.id}`} className="text-[var(--primary)] hover:underline">
-          {company.name}
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }}
+        aria-hidden="true"
+      />
+      <div
+        className="absolute right-2 top-12 z-50 min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Link
+          href={`/societes/${company.id}`}
+          onClick={onClose}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+        >
+          <ExternalLinkIcon />
+          Voir informations
         </Link>
-      </td>
-      <td className="px-4 py-3 text-sm text-[var(--muted-foreground)]">{company.address ?? "—"}</td>
-      <td className="px-4 py-3 text-sm text-[var(--muted-foreground)]">{company.siret ?? "—"}</td>
-      <td className="px-4 py-3 text-sm text-[var(--muted-foreground)]">{company.directeur ?? "—"}</td>
-      <td className="px-4 py-3 text-right">
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => onEdit(company)}
-            className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
-          >
-            Modifier
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(company)}
-            className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-          >
-            Supprimer
-          </button>
-        </div>
-      </td>
-    </tr>
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onEdit(company);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+        >
+          <PencilIcon />
+          Modifier
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onDelete(company);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-[var(--muted)] dark:text-red-400"
+        >
+          <TrashIcon />
+          Supprimer
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -154,6 +336,7 @@ function SocietesPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [isAddModal, setIsAddModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
@@ -165,7 +348,7 @@ function SocietesPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/companies");
+      const res = await fetch("/api/accounts");
       if (!res.ok) throw new Error("Échec du chargement");
       const data = await res.json();
       setCompanies(data);
@@ -218,6 +401,7 @@ function SocietesPageContent() {
   const closeModal = () => {
     setEditingCompany(null);
     setIsAddModal(false);
+    setMenuOpenId(null);
     setEditName("");
     setEditAddress("");
     setEditSiret("");
@@ -239,7 +423,7 @@ function SocietesPageContent() {
     setError(null);
     try {
       if (isAddModal) {
-        const res = await fetch("/api/companies", {
+        const res = await fetch("/api/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -248,7 +432,7 @@ function SocietesPageContent() {
         if (!res.ok) throw new Error(data.error ?? "Échec de la création");
         setCompanies((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
       } else if (editingCompany) {
-        const res = await fetch(`/api/companies/${editingCompany.id}`, {
+        const res = await fetch(`/api/accounts/${editingCompany.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -276,7 +460,7 @@ function SocietesPageContent() {
     if (!confirm(`Supprimer la société "${company.name}" ?`)) return;
     setError(null);
     try {
-      const res = await fetch(`/api/companies/${company.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/accounts/${company.id}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error ?? "Échec de la suppression");
@@ -318,33 +502,18 @@ function SocietesPageContent() {
         ) : companies.length === 0 ? (
           <p className="text-[var(--muted-foreground)]">Aucune société. Cliquez sur « Ajouter une société » pour commencer.</p>
         ) : (
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--muted)]">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    Nom
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    Adresse
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    Siret
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    Directeur
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {companies.map((c) => (
-                  <CompanyRow key={c.id} company={c} onEdit={openEdit} onDelete={handleDelete} />
-                ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+            {companies.map((c) => (
+              <CompanyCard
+                key={c.id}
+                company={c}
+                menuOpen={menuOpenId === c.id}
+                onMenuToggle={() => setMenuOpenId((prev) => (prev === c.id ? null : c.id))}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onCardClick={(companyId) => router.push(`/societes/${companyId}/comptes`)}
+              />
+            ))}
           </div>
         )}
       </main>

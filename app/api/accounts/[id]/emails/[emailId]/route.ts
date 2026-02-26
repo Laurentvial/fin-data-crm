@@ -52,7 +52,7 @@ export async function GET(
     }
     return NextResponse.json(out);
   } catch (error) {
-    console.error("GET /api/companies/[id]/emails/[emailId] error:", error);
+    console.error("GET /api/accounts/[id]/emails/[emailId] error:", error);
     return NextResponse.json(
       { error: "Échec du chargement." },
       { status: 500 }
@@ -131,7 +131,7 @@ export async function PATCH(
     }
     return NextResponse.json({ error: "Aucune modification." }, { status: 400 });
   } catch (error) {
-    console.error("PATCH /api/companies/[id]/emails/[emailId] error:", error);
+    console.error("PATCH /api/accounts/[id]/emails/[emailId] error:", error);
     return NextResponse.json(
       { error: "Échec de la mise à jour." },
       { status: 500 }
@@ -160,7 +160,7 @@ export async function DELETE(
     }
     return new NextResponse(null, { status: 204 });
   } catch (error) {
-    console.error("DELETE /api/companies/[id]/emails/[emailId] error:", error);
+    console.error("DELETE /api/accounts/[id]/emails/[emailId] error:", error);
     return NextResponse.json(
       { error: "Échec de la suppression." },
       { status: 500 }

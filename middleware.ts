@@ -7,10 +7,12 @@ export default auth.middleware({
 export const config = {
   matcher: [
     "/",
+    "/dashboard",
+    "/dashboard/:path*",
     "/societes",
     "/societes/:path*",
-    "/companies",
-    "/companies/:path*",
+    "/accounts",
+    "/accounts/:path*",
     "/reporting",
     "/reporting/:path*",
     "/settings",

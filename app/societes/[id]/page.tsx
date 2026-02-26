@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { BankSelect } from "@/components/BankSelect";
+import { AccountVignette } from "@/components/AccountVignette";
 import type {
+  Bank,
   Company,
   CompanyEmail,
   BankAccount,
+  Transaction,
 } from "@/lib/types";
 
 function ChevronLeftIcon({ className }: { className?: string }) {
@@ -34,6 +38,9 @@ export default function SocieteDetailPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [emails, setEmails] = useState<CompanyEmail[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [transactionsByAccount, setTransactionsByAccount] = useState<
+    Record<string, Transaction[]>
+  >({});
   const [hasLogo, setHasLogo] = useState(false);
   const [hasKbis, setHasKbis] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -42,6 +49,13 @@ export default function SocieteDetailPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [addingEmail, setAddingEmail] = useState(false);
+  const [newBankAccountName, setNewBankAccountName] = useState("");
+  const [newBankAccountBankId, setNewBankAccountBankId] = useState("");
+  const [newBankAccountIbans, setNewBankAccountIbans] = useState<string[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [addingBankAccount, setAddingBankAccount] = useState(false);
+  const [bankAccountError, setBankAccountError] = useState<string | null>(null);
+  const [bankAccountInviteWarning, setBankAccountInviteWarning] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingKbis, setUploadingKbis] = useState(false);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
@@ -51,12 +65,13 @@ export default function SocieteDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [resCompany, resEmails, resBank, resLogo, resKbis] = await Promise.all([
-        fetch(`/api/companies/${id}`),
-        fetch(`/api/companies/${id}/emails`),
-        fetch(`/api/companies/${id}/bank-accounts`),
-        fetch(`/api/companies/${id}/files/logo`).then((r) => (r.ok ? r : null)),
-        fetch(`/api/companies/${id}/files/kbis`).then((r) => (r.ok ? r : null)),
+      const [resCompany, resEmails, resBank, resBanks, resLogo, resKbis] = await Promise.all([
+        fetch(`/api/accounts/${id}`),
+        fetch(`/api/accounts/${id}/emails`),
+        fetch(`/api/accounts/${id}/bank-accounts`),
+        fetch("/api/banks"),
+        fetch(`/api/accounts/${id}/files/logo`).then((r) => (r.ok ? r : null)),
+        fetch(`/api/accounts/${id}/files/kbis`).then((r) => (r.ok ? r : null)),
       ]);
 
       if (!resCompany.ok) throw new Error("Société introuvable");
@@ -71,6 +86,27 @@ export default function SocieteDetailPage() {
       if (resBank.ok) {
         const bankData = await resBank.json();
         setBankAccounts(bankData);
+
+        const txMap: Record<string, Transaction[]> = {};
+        await Promise.all(
+          bankData.map(async (ba: BankAccount) => {
+            const resTx = await fetch(
+              `/api/transactions?bank_account_id=${ba.id}&limit=5`
+            );
+            if (resTx.ok) {
+              const txData = await resTx.json();
+              txMap[ba.id] = txData;
+            } else {
+              txMap[ba.id] = [];
+            }
+          })
+        );
+        setTransactionsByAccount(txMap);
+      }
+
+      if (resBanks.ok) {
+        const banksData = await resBanks.json();
+        setBanks(Array.isArray(banksData) ? banksData : []);
       }
 
       setHasLogo(resLogo?.ok ?? false);
@@ -93,7 +129,7 @@ export default function SocieteDetailPage() {
     setAddingEmail(true);
     setError(null);
     try {
-      const res = await fetch(`/api/companies/${id}/emails`, {
+      const res = await fetch(`/api/accounts/${id}/emails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -117,7 +153,7 @@ export default function SocieteDetailPage() {
     if (!confirm("Supprimer cet email ?")) return;
     setError(null);
     try {
-      const res = await fetch(`/api/companies/${id}/emails/${emailId}`, { method: "DELETE" });
+      const res = await fetch(`/api/accounts/${id}/emails/${emailId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Échec de la suppression");
       setEmails((prev) => prev.filter((e) => e.id !== emailId));
       setRevealedPasswords((p) => {
@@ -140,7 +176,7 @@ export default function SocieteDetailPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/companies/${id}/emails/${emailId}?password=1`);
+      const res = await fetch(`/api/accounts/${id}/emails/${emailId}?password=1`);
       if (!res.ok) throw new Error("Échec");
       const data = await res.json();
       setRevealedPasswords((p) => ({ ...p, [emailId]: data.password ?? "" }));
@@ -158,7 +194,7 @@ export default function SocieteDetailPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("type", "logo");
-      const res = await fetch(`/api/companies/${id}/files`, {
+      const res = await fetch(`/api/accounts/${id}/files`, {
         method: "POST",
         body: formData,
       });
@@ -184,7 +220,7 @@ export default function SocieteDetailPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("type", "kbis");
-      const res = await fetch(`/api/companies/${id}/files`, {
+      const res = await fetch(`/api/accounts/${id}/files`, {
         method: "POST",
         body: formData,
       });
@@ -198,6 +234,61 @@ export default function SocieteDetailPage() {
     } finally {
       setUploadingKbis(false);
       e.target.value = "";
+    }
+  };
+
+  const handleAddBankAccount = async () => {
+    const name = newBankAccountName.trim();
+    if (!name) return;
+    setAddingBankAccount(true);
+    setBankAccountError(null);
+    try {
+      const ibansToSend = newBankAccountIbans
+        .map((v) => v.trim().replace(/\s/g, "").toUpperCase())
+        .filter((v) => v.length > 0);
+      const body: { name: string; company_id: string; bank_id?: string; ibans: string[] } = {
+        name,
+        company_id: id,
+        ibans: ibansToSend,
+      };
+      if (newBankAccountBankId) body.bank_id = newBankAccountBankId;
+      const res = await fetch("/api/bank-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de l'ajout");
+      }
+      const added = await res.json();
+      setBankAccounts((prev) => [...prev, added].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewBankAccountName("");
+      setNewBankAccountBankId("");
+      setNewBankAccountIbans([]);
+      setBankAccountError(null);
+      const warnings = added.telegram_invite_warnings as { telegram_id: number; name?: string; telegram_username?: string; reason: string }[] | undefined;
+      if (Array.isArray(warnings) && warnings.length > 0) {
+        const names = warnings.map((w) => w.name || (w.telegram_username ? `@${w.telegram_username}` : `ID ${w.telegram_id}`));
+        const reasonMsg =
+          warnings.some((w) => w.reason === "UserNotMutualContactError")
+            ? "Ils doivent être dans les contacts du compte Telegram admin."
+            : warnings.some((w) => w.reason === "UserPrivacyRestrictedError")
+              ? "Paramètres de confidentialité Telegram : la personne doit aller dans Paramètres → Confidentialité → Groupes et canaux → « Qui peut vous ajouter aux groupes » et choisir « Tout le monde » ou « Mes contacts »."
+              : warnings.length > 0
+                ? `Raison technique : ${warnings.map((w) => w.reason).filter(Boolean).join(", ")}`
+                : null;
+        setBankAccountInviteWarning(
+          `${warnings.length} utilisateur(s) n'ont pas pu être ajoutés : ${names.join(", ")}. ${reasonMsg ?? ""}`
+        );
+      } else {
+        setBankAccountInviteWarning(null);
+      }
+    } catch (e) {
+      setBankAccountError(e instanceof Error ? e.message : "Erreur inconnue");
+      setBankAccountInviteWarning(null);
+    } finally {
+      setAddingBankAccount(false);
     }
   };
 
@@ -286,7 +377,7 @@ export default function SocieteDetailPage() {
               {hasLogo && (
                 <div className="h-24 w-24 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
                   <img
-                    src={`/api/companies/${id}/files/logo?t=${Date.now()}`}
+                    src={`/api/accounts/${id}/files/logo?t=${Date.now()}`}
                     alt="Logo"
                     className="h-full w-full object-contain"
                   />
@@ -313,7 +404,7 @@ export default function SocieteDetailPage() {
             <div className="flex flex-wrap items-center gap-4">
               {hasKbis && (
                 <a
-                  href={`/api/companies/${id}/files/kbis`}
+                  href={`/api/accounts/${id}/files/kbis`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-[var(--primary)] hover:underline"
@@ -412,26 +503,106 @@ export default function SocieteDetailPage() {
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
             <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Comptes bancaires</h2>
+            {bankAccountError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                {bankAccountError}
+              </div>
+            )}
+            {bankAccountInviteWarning && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                {bankAccountInviteWarning}
+              </div>
+            )}
+            <div className="mb-4 space-y-3">
+              <div className="flex flex-wrap gap-2 items-end">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Nom du compte</label>
+                  <input
+                    type="text"
+                    value={newBankAccountName}
+                    onChange={(e) => {
+                      setNewBankAccountName(e.target.value);
+                      if (bankAccountError) setBankAccountError(null);
+                      if (bankAccountInviteWarning) setBankAccountInviteWarning(null);
+                    }}
+                    placeholder="Ex. Compte courant"
+                    className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Banque</label>
+                  <BankSelect
+                    value={newBankAccountBankId}
+                    onChange={setNewBankAccountBankId}
+                    banks={banks}
+                    placeholder="Aucune banque"
+                    className="min-w-[160px]"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddBankAccount}
+                  disabled={addingBankAccount || !newBankAccountName.trim()}
+                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                >
+                  {addingBankAccount ? "Création…" : "Ajouter un compte bancaire"}
+                </button>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-xs font-medium text-[var(--muted-foreground)]">IBAN (optionnel)</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewBankAccountIbans((p) => [...p, ""])}
+                    className="text-xs text-[var(--primary)] hover:underline"
+                  >
+                    + Ajouter un IBAN
+                  </button>
+                </div>
+                {newBankAccountIbans.length > 0 && (
+                  <div className="mt-1 space-y-2">
+                    {newBankAccountIbans.map((iban, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={iban}
+                          onChange={(e) => {
+                            const next = [...newBankAccountIbans];
+                            next[i] = e.target.value;
+                            setNewBankAccountIbans(next);
+                          }}
+                          placeholder="FR76 1234 5678 9012 3456 7890 123"
+                          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewBankAccountIbans((p) => p.filter((_, idx) => idx !== i))}
+                          className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="mb-4 text-xs text-[var(--muted-foreground)]">
+              Un groupe Telegram sera créé automatiquement et lié au compte.
+            </p>
             {bankAccounts.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">Aucun compte bancaire lié.</p>
             ) : (
-              <ul className="space-y-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {bankAccounts.map((ba) => (
-                  <li key={ba.id}>
-                    <Link
-                      href={`/?bank_account_id=${ba.id}`}
-                      className="text-sm text-[var(--primary)] hover:underline"
-                    >
-                      {ba.name}
-                      {ba.balance != null && (
-                        <span className="ml-2 text-[var(--muted-foreground)]">
-                          (solde: {Number(ba.balance).toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €)
-                        </span>
-                      )}
-                    </Link>
-                  </li>
+                  <AccountVignette
+                    key={ba.id}
+                    bankAccount={ba}
+                    transactions={transactionsByAccount[ba.id] ?? []}
+                    hideCompanyName
+                  />
                 ))}
-              </ul>
+              </div>
             )}
           </section>
         </div>

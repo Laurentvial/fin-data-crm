@@ -59,7 +59,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("GET /api/companies/[id]/files/[type] error:", error);
+    console.error("GET /api/accounts/[id]/files/[type] error:", error);
     return NextResponse.json(
       { error: "Échec du chargement." },
       { status: 500 }

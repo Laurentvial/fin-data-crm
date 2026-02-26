@@ -13,6 +13,55 @@ async function requireAuth() {
   return null;
 }
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+  const { id } = await params;
+  try {
+    const [row] = await sql`
+      SELECT
+        ba.id,
+        ba.company_id,
+        ba.name,
+        ba.telegram_chat_id,
+        ba.bank_id,
+        b.name AS bank_name,
+        ba.created_at,
+        ba.updated_at,
+        c.name AS company_name,
+        COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
+        COALESCE(
+          (SELECT array_agg(bai.iban ORDER BY bai.created_at)
+           FROM bank_account_ibans bai
+           WHERE bai.bank_account_id = ba.id),
+          ARRAY[]::text[]
+        ) AS ibans
+      FROM bank_accounts ba
+      JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN banks b ON b.id = ba.bank_id
+      LEFT JOIN transactions t ON t.bank_account_id = ba.id
+      WHERE ba.id = ${id}
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, b.name, ba.created_at, ba.updated_at, c.name
+    `;
+    if (!row) {
+      return NextResponse.json(
+        { error: "Compte bancaire introuvable." },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json(row);
+  } catch (error) {
+    console.error("GET /api/bank-accounts/[id] error:", error);
+    return NextResponse.json(
+      { error: "Échec du chargement." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -24,6 +73,9 @@ export async function PATCH(
     const body = await request.json();
     const name = typeof body?.name === "string" ? body.name.trim() : undefined;
     const company_id = typeof body?.company_id === "string" ? body.company_id.trim() : undefined;
+    const bank_id = body?.bank_id !== undefined
+      ? (typeof body.bank_id === "string" ? (body.bank_id.trim() || null) : null)
+      : undefined;
     const telegram_chat_id =
       body?.telegram_chat_id !== undefined
         ? (typeof body.telegram_chat_id === "number"
@@ -32,16 +84,39 @@ export async function PATCH(
               ? parseInt(body.telegram_chat_id, 10)
               : undefined)
         : undefined;
+    const ibansRaw = body?.ibans;
+    const ibans: string[] | undefined = Array.isArray(ibansRaw)
+      ? ibansRaw
+          .map((v: unknown) => (typeof v === "string" ? v.trim().replace(/\s/g, "").toUpperCase() : ""))
+          .filter((v: string) => v.length > 0)
+      : undefined;
 
-    if (!name && company_id === undefined && telegram_chat_id === undefined) {
+    if (!name && company_id === undefined && bank_id === undefined && telegram_chat_id === undefined && ibans === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
       );
     }
 
+    if (name !== undefined && !name) {
+      return NextResponse.json(
+        { error: "Le nom du compte ne peut pas être vide." },
+        { status: 400 }
+      );
+    }
+
+    if (bank_id !== undefined && bank_id !== null) {
+      const [bank] = await sql`SELECT id FROM banks WHERE id = ${bank_id}::uuid LIMIT 1`;
+      if (!bank) {
+        return NextResponse.json(
+          { error: "Banque introuvable." },
+          { status: 404 }
+        );
+      }
+    }
+
     const [existing] = await sql`
-      SELECT id, name, company_id, telegram_chat_id FROM bank_accounts WHERE id = ${id}
+      SELECT id, name, company_id, telegram_chat_id, bank_id FROM bank_accounts WHERE id = ${id}
     `;
     if (!existing) {
       return NextResponse.json(
@@ -52,6 +127,7 @@ export async function PATCH(
 
     const newName = name ?? existing.name;
     const newCompanyId = company_id ?? existing.company_id;
+    const newBankId = bank_id !== undefined ? bank_id : existing.bank_id;
     const newTelegramChatId =
       telegram_chat_id !== undefined ? telegram_chat_id : existing.telegram_chat_id;
 
@@ -60,10 +136,11 @@ export async function PATCH(
       SET
         name = ${newName},
         company_id = ${newCompanyId},
+        bank_id = ${newBankId},
         telegram_chat_id = ${newTelegramChatId},
         updated_at = NOW()
       WHERE id = ${id}
-      RETURNING id, company_id, name, telegram_chat_id, created_at, updated_at
+      RETURNING id, company_id, name, telegram_chat_id, bank_id, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
@@ -72,11 +149,78 @@ export async function PATCH(
         { status: 404 }
       );
     }
-    return NextResponse.json(row);
+    if (ibans !== undefined) {
+      await sql`DELETE FROM bank_account_ibans WHERE bank_account_id = ${id}`;
+      for (const iban of ibans) {
+        await sql`
+          INSERT INTO bank_account_ibans (bank_account_id, iban)
+          VALUES (${id}, ${iban})
+        `;
+      }
+    }
+    const [full] = await sql`
+      SELECT
+        ba.id,
+        ba.company_id,
+        ba.name,
+        ba.telegram_chat_id,
+        ba.bank_id,
+        b.name AS bank_name,
+        ba.created_at,
+        ba.updated_at,
+        c.name AS company_name,
+        COALESCE(
+          (SELECT array_agg(bai.iban ORDER BY bai.created_at)
+           FROM bank_account_ibans bai
+           WHERE bai.bank_account_id = ba.id),
+          ARRAY[]::text[]
+        ) AS ibans
+      FROM bank_accounts ba
+      JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN banks b ON b.id = ba.bank_id
+      WHERE ba.id = ${id}
+    `;
+    return NextResponse.json(full ?? row);
   } catch (error) {
     console.error("PATCH /api/bank-accounts/[id] error:", error);
     return NextResponse.json(
       { error: "Échec de la mise à jour." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+  const { id } = await params;
+  try {
+    const [hasTransactions] = await sql`
+      SELECT 1 FROM transactions WHERE bank_account_id = ${id} LIMIT 1
+    `;
+    if (hasTransactions) {
+      return NextResponse.json(
+        { error: "Impossible de supprimer : ce compte a des transactions associées." },
+        { status: 400 }
+      );
+    }
+    const rows = await sql`
+      DELETE FROM bank_accounts WHERE id = ${id} RETURNING id
+    `;
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { error: "Compte bancaire introuvable." },
+        { status: 404 }
+      );
+    }
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    console.error("DELETE /api/bank-accounts/[id] error:", error);
+    return NextResponse.json(
+      { error: "Échec de la suppression." },
       { status: 500 }
     );
   }

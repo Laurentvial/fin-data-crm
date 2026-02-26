@@ -39,7 +39,7 @@ export async function GET(
     `;
     return NextResponse.json(rows);
   } catch (error) {
-    console.error("GET /api/companies/[id]/emails error:", error);
+    console.error("GET /api/accounts/[id]/emails error:", error);
     return NextResponse.json(
       { error: "Échec du chargement des emails." },
       { status: 500 }
@@ -88,7 +88,7 @@ export async function POST(
     }
     return NextResponse.json(row);
   } catch (error) {
-    console.error("POST /api/companies/[id]/emails error:", error);
+    console.error("POST /api/accounts/[id]/emails error:", error);
     return NextResponse.json(
       { error: "Échec de l'ajout de l'email." },
       { status: 500 }

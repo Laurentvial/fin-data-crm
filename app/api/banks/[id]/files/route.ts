@@ -13,7 +13,7 @@ async function requireAuth() {
   return null;
 }
 
-const ALLOWED_TYPES = ["logo", "kbis"] as const;
+const ALLOWED_TYPES = ["logo"] as const;
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export async function POST(
@@ -24,12 +24,12 @@ export async function POST(
   if (authError) return authError;
   const { id } = await params;
   try {
-    const companyCheck = await sql`
-      SELECT 1 FROM companies WHERE id = ${id} LIMIT 1
+    const bankCheck = await sql`
+      SELECT 1 FROM banks WHERE id = ${id}::uuid LIMIT 1
     `;
-    if (companyCheck.length === 0) {
+    if (bankCheck.length === 0) {
       return NextResponse.json(
-        { error: "Société introuvable." },
+        { error: "Banque introuvable." },
         { status: 404 }
       );
     }
@@ -40,14 +40,14 @@ export async function POST(
 
     if (!file || !type) {
       return NextResponse.json(
-        { error: "Fichier et type (logo ou kbis) requis." },
+        { error: "Fichier et type (logo) requis." },
         { status: 400 }
       );
     }
 
     if (!ALLOWED_TYPES.includes(type as (typeof ALLOWED_TYPES)[number])) {
       return NextResponse.json(
-        { error: "Type invalide. Utilisez 'logo' ou 'kbis'." },
+        { error: "Type invalide. Utilisez 'logo'." },
         { status: 400 }
       );
     }
@@ -65,21 +65,21 @@ export async function POST(
     const contentType = file.type || null;
 
     await sql`
-      INSERT INTO company_files (company_id, file_type, filename, content_type, data_base64)
-      VALUES (${id}, ${type}, ${filename}, ${contentType}, ${dataBase64})
-      ON CONFLICT (company_id, file_type)
+      INSERT INTO bank_files (bank_id, file_type, filename, content_type, data_base64)
+      VALUES (${id}::uuid, ${type}, ${filename}, ${contentType}, ${dataBase64})
+      ON CONFLICT (bank_id, file_type)
       DO UPDATE SET filename = EXCLUDED.filename, content_type = EXCLUDED.content_type, data_base64 = EXCLUDED.data_base64
     `;
 
     const rows = await sql`
-      SELECT id, company_id, file_type, filename, content_type, created_at
-      FROM company_files
-      WHERE company_id = ${id} AND file_type = ${type}
+      SELECT id, bank_id, file_type, filename, content_type, created_at
+      FROM bank_files
+      WHERE bank_id = ${id}::uuid AND file_type = ${type}
     `;
     const row = rows[0];
     return NextResponse.json(row);
   } catch (error) {
-    console.error("POST /api/companies/[id]/files error:", error);
+    console.error("POST /api/banks/[id]/files error:", error);
     return NextResponse.json(
       { error: "Échec de l'upload." },
       { status: 500 }

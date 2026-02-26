@@ -36,20 +36,29 @@ export async function GET(
         ba.company_id,
         ba.name,
         ba.telegram_chat_id,
+        ba.bank_id,
+        b.name AS bank_name,
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
-        COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance
+        COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
+        COALESCE(
+          (SELECT array_agg(bai.iban ORDER BY bai.created_at)
+           FROM bank_account_ibans bai
+           WHERE bai.bank_account_id = ba.id),
+          ARRAY[]::text[]
+        ) AS ibans
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.company_id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, b.name, ba.created_at, ba.updated_at, c.name
       ORDER BY ba.name
     `;
     return NextResponse.json(rows);
   } catch (error) {
-    console.error("GET /api/companies/[id]/bank-accounts error:", error);
+    console.error("GET /api/accounts/[id]/bank-accounts error:", error);
     return NextResponse.json(
       { error: "Échec du chargement des comptes." },
       { status: 500 }

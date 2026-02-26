@@ -6,6 +6,14 @@ export interface Company {
   address?: string | null;
   siret?: string | null;
   directeur?: string | null;
+  bank_ids?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Bank {
+  id: string;
+  name: string;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +24,9 @@ export interface BankAccount {
   company_name: string;
   name: string;
   telegram_chat_id: number;
+  bank_id?: string | null;
+  bank_name?: string | null;
+  ibans?: string[];
   balance?: number;
   created_at: string;
   updated_at: string;
