@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { BankSelect } from "@/components/BankSelect";
-import type { Bank, BankAccount, Company } from "@/lib/types";
+import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
+import type { Bank, BankAccount, Company, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -92,10 +93,10 @@ function getInitials(name: string): string {
     .toUpperCase() || "?";
 }
 
-function getIbanCountryCodes(ibans: string[] | undefined): string[] {
+function getIbanCountryCodes(ibans: IbanItem[] | undefined): string[] {
   if (!ibans?.length) return [];
   const codes = ibans
-    .map((iban) => iban.replace(/\s/g, "").slice(0, 2).toUpperCase())
+    .map((item) => item.iban.replace(/\s/g, "").slice(0, 2).toUpperCase())
     .filter((c) => c.length === 2);
   return [...new Set(codes)];
 }
@@ -117,7 +118,6 @@ function AccountCard({
   onCardClick: (ba: BankAccount) => void;
   deleting: boolean;
 }) {
-  const [logoError, setLogoError] = useState(false);
   const balance = bankAccount.balance ?? 0;
   const ibanCountryCodes = getIbanCountryCodes(bankAccount.ibans);
 
@@ -135,12 +135,11 @@ function AccountCard({
       }}
     >
       <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
-        {bankAccount.bank_id && !logoError ? (
+        {bankAccount.bank_id && bankAccount.has_logo ? (
           <img
             src={`/api/banks/${bankAccount.bank_id}/files/logo`}
             alt=""
             className="h-full w-full object-contain"
-            onError={() => setLogoError(true)}
           />
         ) : (
           <span className="text-sm font-semibold text-[var(--muted-foreground)]">
@@ -271,173 +270,6 @@ function AccountCardMenu({
   );
 }
 
-function CreateBankAccountModal({
-  companies,
-  banks,
-  name,
-  companyId,
-  bankId,
-  ibans,
-  onNameChange,
-  onCompanyIdChange,
-  onBankIdChange,
-  onIbansChange,
-  onSubmit,
-  onClose,
-  saving,
-  error,
-  inviteWarning,
-}: {
-  companies: Company[];
-  banks: Bank[];
-  name: string;
-  companyId: string;
-  bankId: string;
-  ibans: string[];
-  onNameChange: (v: string) => void;
-  onCompanyIdChange: (v: string) => void;
-  onBankIdChange: (v: string) => void;
-  onIbansChange: (v: string[]) => void;
-  onSubmit: () => void;
-  onClose: () => void;
-  saving: boolean;
-  error?: string | null;
-  inviteWarning?: string | null;
-}) {
-  const addIban = () => onIbansChange([...ibans, ""]);
-  const removeIban = (i: number) => onIbansChange(ibans.filter((_, idx) => idx !== i));
-  const setIban = (i: number, v: string) => {
-    const next = [...ibans];
-    next[i] = v;
-    onIbansChange(next);
-  };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Créer un compte bancaire</h3>
-        <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-          Un groupe Telegram sera créé automatiquement et lié à ce compte.
-        </p>
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-            {error}
-          </div>
-        )}
-        {inviteWarning && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            {inviteWarning}
-          </div>
-        )}
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => onNameChange(e.target.value)}
-              placeholder="Ex. Compte courant"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Société</label>
-            <select
-              value={companyId}
-              onChange={(e) => onCompanyIdChange(e.target.value)}
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-            >
-              <option value="">Sélectionner une société</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Banque</label>
-            <BankSelect
-              value={bankId}
-              onChange={onBankIdChange}
-              banks={banks}
-              placeholder="Aucune banque"
-            />
-          </div>
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <label className="block text-sm font-medium text-[var(--foreground)]">IBAN</label>
-              <button
-                type="button"
-                onClick={addIban}
-                className="text-xs text-[var(--primary)] hover:underline"
-              >
-                + Ajouter un IBAN
-              </button>
-            </div>
-            {ibans.length === 0 ? (
-              <p className="text-xs text-[var(--muted-foreground)]">Aucun IBAN. Cliquez sur &quot;+ Ajouter un IBAN&quot; si besoin.</p>
-            ) : (
-              <div className="space-y-2">
-                {ibans.map((iban, i) => (
-                  <div key={i} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={iban}
-                      onChange={(e) => setIban(i, e.target.value)}
-                      placeholder="FR76 1234 5678 9012 3456 7890 123"
-                      className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeIban(i)}
-                      className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="mt-6 flex justify-end gap-2">
-          {inviteWarning ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-            >
-              Fermer
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={onSubmit}
-                disabled={saving || !name.trim() || !companyId}
-                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
-              >
-                {saving ? "Création…" : "Créer"}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function EditBankAccountModal({
   bankAccount,
   companies,
@@ -464,22 +296,27 @@ function EditBankAccountModal({
   companyId: string;
   bankId: string;
   telegramChatId: string;
-  ibans: string[];
+  ibans: IbanItem[];
   onNameChange: (v: string) => void;
   onCompanyIdChange: (v: string) => void;
   onBankIdChange: (v: string) => void;
   onTelegramChatIdChange: (v: string) => void;
-  onIbansChange: (v: string[]) => void;
+  onIbansChange: (v: IbanItem[]) => void;
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
   error?: string | null;
 }) {
-  const addIban = () => onIbansChange([...ibans, ""]);
+  const addIban = () => onIbansChange([...ibans, { iban: "", bic: undefined }]);
   const removeIban = (i: number) => onIbansChange(ibans.filter((_, idx) => idx !== i));
-  const setIban = (i: number, v: string) => {
+  const setIban = (i: number, iban: string) => {
     const next = [...ibans];
-    next[i] = v;
+    next[i] = { ...next[i], iban };
+    onIbansChange(next);
+  };
+  const setBic = (i: number, bic: string) => {
+    const next = [...ibans];
+    next[i] = { ...next[i], bic: bic || undefined };
     onIbansChange(next);
   };
   return (
@@ -556,22 +393,31 @@ function EditBankAccountModal({
               <p className="text-xs text-[var(--muted-foreground)]">Aucun IBAN.</p>
             ) : (
               <div className="space-y-2">
-                {ibans.map((iban, i) => (
-                  <div key={i} className="flex gap-2">
+                {ibans.map((item, i) => (
+                  <div key={i} className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={item.iban}
+                        onChange={(e) => setIban(i, e.target.value)}
+                        placeholder="IBAN (ex. FR76 1234 5678 9012 3456 7890 123)"
+                        className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeIban(i)}
+                        className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                      >
+                        ×
+                      </button>
+                    </div>
                     <input
                       type="text"
-                      value={iban}
-                      onChange={(e) => setIban(i, e.target.value)}
-                      placeholder="FR76 1234 5678 9012 3456 7890 123"
-                      className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                      value={item.bic ?? ""}
+                      onChange={(e) => setBic(i, e.target.value)}
+                      placeholder="BIC (optionnel)"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
                     />
-                    <button
-                      type="button"
-                      onClick={() => removeIban(i)}
-                      className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                    >
-                      ×
-                    </button>
                   </div>
                 ))}
               </div>
@@ -615,13 +461,13 @@ function AccountsPageContent() {
   const [editCompanyId, setEditCompanyId] = useState("");
   const [editBankId, setEditBankId] = useState("");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
-  const [editIbans, setEditIbans] = useState<string[]>([]);
+  const [editIbans, setEditIbans] = useState<IbanItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createCompanyId, setCreateCompanyId] = useState("");
   const [createBankId, setCreateBankId] = useState("");
-  const [createIbans, setCreateIbans] = useState<string[]>([]);
+  const [createIbans, setCreateIbans] = useState<IbanItem[]>([]);
   const [creating, setCreating] = useState(false);
   const [createInviteWarning, setCreateInviteWarning] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -729,9 +575,12 @@ function AccountsPageContent() {
     setError(null);
     try {
       const ibansToSend = createIbans
-        .map((v) => v.trim().replace(/\s/g, "").toUpperCase())
-        .filter((v) => v.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; ibans: string[] } = {
+        .map((v) => ({
+          iban: v.iban.trim().replace(/\s/g, "").toUpperCase(),
+          bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
+        }))
+        .filter((v) => v.iban.length > 0);
+      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[] } = {
         name,
         company_id: createCompanyId,
         ibans: ibansToSend,
@@ -779,7 +628,7 @@ function AccountsPageContent() {
     setSaving(true);
     setError(null);
     try {
-      const body: { name: string; company_id: string; bank_id?: string | null; telegram_chat_id?: number; ibans?: string[] } = {
+      const body: { name: string; company_id: string; bank_id?: string | null; telegram_chat_id?: number; ibans?: IbanItem[] } = {
         name,
         company_id: editCompanyId,
       };
@@ -790,8 +639,11 @@ function AccountsPageContent() {
         if (!Number.isNaN(num)) body.telegram_chat_id = num;
       }
       const ibansToSend = editIbans
-        .map((v) => v.trim().replace(/\s/g, "").toUpperCase())
-        .filter((v) => v.length > 0);
+        .map((v) => ({
+          iban: v.iban.trim().replace(/\s/g, "").toUpperCase(),
+          bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
+        }))
+        .filter((v) => v.iban.length > 0);
       body.ibans = ibansToSend;
       const res = await fetch(`/api/bank-accounts/${editingAccount.id}`, {
         method: "PATCH",

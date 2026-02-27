@@ -129,15 +129,12 @@ export default function AccountDetailPage() {
         </div>
 
         <div className="mb-6 flex items-center gap-4">
-          {bankAccount?.bank_id && (
+          {bankAccount?.bank_id && bankAccount.has_logo && (
             <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
               <img
                 src={`/api/banks/${bankAccount.bank_id}/files/logo`}
                 alt=""
                 className="h-full w-full object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
               />
             </div>
           )}
@@ -198,11 +195,16 @@ export default function AccountDetailPage() {
                 <div className="sm:col-span-2">
                   <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">IBAN</dt>
                   <dd className="mt-1 space-y-1">
-                    {ibans.map((iban) => (
-                      <p key={iban} className="font-mono text-sm">
-                        {iban}
-                      </p>
-                    ))}
+                    {ibans.map((item, i) => {
+                      const iban = typeof item === "string" ? item : item.iban;
+                      const bic = typeof item === "string" ? undefined : item.bic;
+                      return (
+                        <p key={`${iban}-${i}`} className="font-mono text-sm">
+                          {iban}
+                          {bic && <span className="ml-2 text-[var(--muted-foreground)]">BIC: {bic}</span>}
+                        </p>
+                      );
+                    })}
                   </dd>
                 </div>
               )}

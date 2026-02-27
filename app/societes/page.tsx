@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import type { Company } from "@/lib/types";
+import type { Bank, Company } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -57,6 +57,7 @@ function getInitials(name: string): string {
 
 function CompanyCard({
   company,
+  banks,
   menuOpen,
   onMenuToggle,
   onEdit,
@@ -64,15 +65,13 @@ function CompanyCard({
   onCardClick,
 }: {
   company: Company;
+  banks: Bank[];
   menuOpen: boolean;
   onMenuToggle: () => void;
   onEdit: (c: Company) => void;
   onDelete: (c: Company) => void;
   onCardClick: (companyId: string) => void;
 }) {
-  const [logoError, setLogoError] = useState(false);
-  const phone = "phone" in company ? (company as { phone?: string }).phone : undefined;
-
   return (
     <div
       className="relative flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-shadow hover:shadow-md"
@@ -87,17 +86,16 @@ function CompanyCard({
       }}
     >
       <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
-        {logoError ? (
-          <span className="text-sm font-semibold text-[var(--muted-foreground)]">
-            {getInitials(company.name)}
-          </span>
-        ) : (
+        {company.has_logo ? (
           <img
             src={`/api/accounts/${company.id}/files/logo`}
             alt=""
             className="h-full w-full object-contain"
-            onError={() => setLogoError(true)}
           />
+        ) : (
+          <span className="text-sm font-semibold text-[var(--muted-foreground)]">
+            {getInitials(company.name)}
+          </span>
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -129,29 +127,38 @@ function CompanyCard({
             <dt className="sr-only">SIRET</dt>
             <dd>{company.siret ?? "—"}</dd>
           </div>
-          <div>
-            <dt className="sr-only">Tél</dt>
-            <dd>{phone ?? "—"}</dd>
-          </div>
+          {(company.emails?.length ?? 0) > 0 && (
+            <div>
+              <dt className="sr-only">Emails</dt>
+              <dd className="truncate">{company.emails!.slice(0, 2).join(", ")}</dd>
+            </div>
+          )}
+          {(company.phones?.length ?? 0) > 0 && (
+            <div>
+              <dt className="sr-only">Tél</dt>
+              <dd className="truncate">{company.phones!.slice(0, 2).join(", ")}</dd>
+            </div>
+          )}
         </dl>
         {(company.bank_ids?.length ?? 0) > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {company.bank_ids!.map((bankId) => (
-              <span
-                key={bankId}
-                className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]"
-                title="Banque"
-              >
-                <img
-                  src={`/api/banks/${bankId}/files/logo`}
-                  alt=""
-                  className="h-full w-full object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </span>
-            ))}
+            {company.bank_ids!.map((bankId) => {
+              const bank = banks.find((b) => b.id === bankId);
+              if (!bank?.has_logo) return null;
+              return (
+                <span
+                  key={bankId}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]"
+                  title="Banque"
+                >
+                  <img
+                    src={`/api/banks/${bankId}/files/logo`}
+                    alt=""
+                    className="h-full w-full object-contain"
+                  />
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
@@ -333,6 +340,7 @@ function SocietesPageContent() {
   const searchParams = useSearchParams();
   const editIdFromUrl = searchParams.get("edit");
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
@@ -348,10 +356,17 @@ function SocietesPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/accounts");
-      if (!res.ok) throw new Error("Échec du chargement");
-      const data = await res.json();
+      const [resAccounts, resBanks] = await Promise.all([
+        fetch("/api/accounts"),
+        fetch("/api/banks"),
+      ]);
+      if (!resAccounts.ok) throw new Error("Échec du chargement");
+      const data = await resAccounts.json();
       setCompanies(data);
+      if (resBanks.ok) {
+        const banksData = await resBanks.json();
+        setBanks(Array.isArray(banksData) ? banksData : []);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -507,6 +522,7 @@ function SocietesPageContent() {
               <CompanyCard
                 key={c.id}
                 company={c}
+                banks={banks}
                 menuOpen={menuOpenId === c.id}
                 onMenuToggle={() => setMenuOpenId((prev) => (prev === c.id ? null : c.id))}
                 onEdit={openEdit}

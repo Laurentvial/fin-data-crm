@@ -5,6 +5,9 @@ Creates Telegram supergroups via Telethon (Client API).
 Requires a user account session (not a bot).
 """
 
+import base64
+import io
+import logging
 import os
 import time
 from dotenv import load_dotenv
@@ -16,13 +19,17 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from telethon import TelegramClient
 from telethon.errors import (
+    FileReferenceInvalidError,
+    PhotoInvalidError,
     SessionPasswordNeededError,
     UserNotMutualContactError,
     UserPrivacyRestrictedError,
 )
-from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
-from telethon.tl.types import Channel, InputUser, User
+from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest, InviteToChannelRequest
+from telethon.tl.types import Channel, DocumentAttributeFilename, InputChatUploadedPhoto, InputUser, User
 from telethon.utils import get_peer_id
+
+logger = logging.getLogger(__name__)
 
 API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
 TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
@@ -304,6 +311,46 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                 failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__})
             except Exception as e:
                 failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
+
+        logo_base64 = body.get("logo_base64")
+        logo_content_type = body.get("logo_content_type")
+        if logo_base64 and logo_content_type and isinstance(logo_base64, str) and isinstance(logo_content_type, str):
+            try:
+                decoded = base64.b64decode(logo_base64)
+                if decoded:
+                    input_channel = await tg.get_input_entity(channel)
+                    uploaded_file = await tg.upload_file(io.BytesIO(decoded))
+                    photo = InputChatUploadedPhoto(file=uploaded_file)
+                    await tg(EditPhotoRequest(channel=input_channel, photo=photo))
+            except (PhotoInvalidError, FileReferenceInvalidError) as e:
+                logger.warning("Could not set group photo: %s", e)
+            except Exception as e:
+                logger.warning("Could not set group photo: %s", e)
+
+        welcome_message = body.get("welcome_message")
+        if welcome_message and isinstance(welcome_message, str) and welcome_message.strip():
+            try:
+                await tg.send_message(channel, welcome_message.strip())
+            except Exception as e:
+                logger.warning("Could not send welcome message: %s", e)
+
+        kbis_base64 = body.get("kbis_base64")
+        if kbis_base64 and isinstance(kbis_base64, str):
+            try:
+                decoded = base64.b64decode(kbis_base64)
+                if decoded:
+                    attrs = []
+                    kbis_filename = body.get("kbis_filename")
+                    if kbis_filename and isinstance(kbis_filename, str) and kbis_filename.strip():
+                        attrs.append(DocumentAttributeFilename(kbis_filename.strip()))
+                    await tg.send_file(
+                        channel,
+                        io.BytesIO(decoded),
+                        caption="KBIS",
+                        attributes=attrs if attrs else None,
+                    )
+            except Exception as e:
+                logger.warning("Could not send KBIS file: %s", e)
 
         return {"chat_id": chat_id, "invited": invited, "failed": failed}
     except HTTPException:

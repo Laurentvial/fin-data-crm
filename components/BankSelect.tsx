@@ -49,14 +49,13 @@ export function BankSelect({
         {selectedBank ? (
           <>
             <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-              <img
-                src={`/api/banks/${selectedBank.id}/files/logo`}
-                alt=""
-                className="h-full w-full object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
+              {selectedBank.has_logo ? (
+                <img
+                  src={`/api/banks/${selectedBank.id}/files/logo`}
+                  alt=""
+                  className="h-full w-full object-contain"
+                />
+              ) : null}
             </div>
             <span className="flex-1 truncate">{selectedBank.name}</span>
           </>
@@ -89,14 +88,13 @@ export function BankSelect({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
             >
               <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-                <img
-                  src={`/api/banks/${b.id}/files/logo`}
-                  alt=""
-                  className="h-full w-full object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
+                {b.has_logo ? (
+                  <img
+                    src={`/api/banks/${b.id}/files/logo`}
+                    alt=""
+                    className="h-full w-full object-contain"
+                  />
+                ) : null}
               </div>
               <span className="flex-1 truncate">{b.name}</span>
             </button>

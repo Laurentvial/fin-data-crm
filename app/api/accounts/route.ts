@@ -26,13 +26,22 @@ export async function GET() {
         c.directeur,
         c.created_at,
         c.updated_at,
+        EXISTS(SELECT 1 FROM company_files WHERE company_id = c.id AND file_type = 'logo') AS has_logo,
         COALESCE(
           (SELECT array_agg(bank_id) FROM (
             SELECT DISTINCT bank_id FROM bank_accounts
             WHERE company_id = c.id AND bank_id IS NOT NULL
           ) sub),
           ARRAY[]::uuid[]
-        ) AS bank_ids
+        ) AS bank_ids,
+        COALESCE(
+          (SELECT array_agg(email ORDER BY email) FROM company_emails WHERE company_id = c.id),
+          ARRAY[]::text[]
+        ) AS emails,
+        COALESCE(
+          (SELECT array_agg(phone ORDER BY phone) FROM company_phones WHERE company_id = c.id),
+          ARRAY[]::text[]
+        ) AS phones
       FROM companies c
       ORDER BY c.name
     `;

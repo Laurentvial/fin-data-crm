@@ -18,9 +18,10 @@ export async function GET() {
   if (authError) return authError;
   try {
     const rows = await sql`
-      SELECT id, name, created_at, updated_at
-      FROM banks
-      ORDER BY name
+      SELECT b.id, b.name, b.created_at, b.updated_at,
+        EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = b.id AND bf.file_type = 'logo') AS has_logo
+      FROM banks b
+      ORDER BY b.name
     `;
     return NextResponse.json(rows);
   } catch (error) {

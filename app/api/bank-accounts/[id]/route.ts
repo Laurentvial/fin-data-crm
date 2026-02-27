@@ -33,11 +33,12 @@ export async function GET(
         ba.updated_at,
         c.name AS company_name,
         COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
+        EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = ba.bank_id AND bf.file_type = 'logo') AS has_logo,
         COALESCE(
-          (SELECT array_agg(bai.iban ORDER BY bai.created_at)
+          (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)
            FROM bank_account_ibans bai
            WHERE bai.bank_account_id = ba.id),
-          ARRAY[]::text[]
+          '[]'::json
         ) AS ibans
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
@@ -85,13 +86,27 @@ export async function PATCH(
               : undefined)
         : undefined;
     const ibansRaw = body?.ibans;
-    const ibans: string[] | undefined = Array.isArray(ibansRaw)
+    const ibanItems: { iban: string; bic?: string | null }[] | undefined = Array.isArray(ibansRaw)
       ? ibansRaw
-          .map((v: unknown) => (typeof v === "string" ? v.trim().replace(/\s/g, "").toUpperCase() : ""))
-          .filter((v: string) => v.length > 0)
+          .map((v: unknown) => {
+            if (typeof v === "string") {
+              const iban = v.trim().replace(/\s/g, "").toUpperCase();
+              return iban.length > 0 ? { iban, bic: null } : null;
+            }
+            if (v && typeof v === "object" && "iban" in v && typeof (v as { iban: unknown }).iban === "string") {
+              const obj = v as { iban: string; bic?: string };
+              const iban = obj.iban.trim().replace(/\s/g, "").toUpperCase();
+              if (iban.length === 0) return null;
+              const bic =
+                typeof obj.bic === "string" ? (obj.bic.trim().replace(/\s/g, "").toUpperCase().slice(0, 11) || null) : null;
+              return { iban, bic };
+            }
+            return null;
+          })
+          .filter((x): x is { iban: string; bic?: string | null } => x !== null)
       : undefined;
 
-    if (!name && company_id === undefined && bank_id === undefined && telegram_chat_id === undefined && ibans === undefined) {
+    if (!name && company_id === undefined && bank_id === undefined && telegram_chat_id === undefined && ibanItems === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -149,12 +164,12 @@ export async function PATCH(
         { status: 404 }
       );
     }
-    if (ibans !== undefined) {
+    if (ibanItems !== undefined) {
       await sql`DELETE FROM bank_account_ibans WHERE bank_account_id = ${id}`;
-      for (const iban of ibans) {
+      for (const item of ibanItems) {
         await sql`
-          INSERT INTO bank_account_ibans (bank_account_id, iban)
-          VALUES (${id}, ${iban})
+          INSERT INTO bank_account_ibans (bank_account_id, iban, bic)
+          VALUES (${id}, ${item.iban}, ${item.bic ?? null})
         `;
       }
     }
@@ -170,10 +185,10 @@ export async function PATCH(
         ba.updated_at,
         c.name AS company_name,
         COALESCE(
-          (SELECT array_agg(bai.iban ORDER BY bai.created_at)
+          (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)
            FROM bank_account_ibans bai
            WHERE bai.bank_account_id = ba.id),
-          ARRAY[]::text[]
+          '[]'::json
         ) AS ibans
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id

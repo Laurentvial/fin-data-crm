@@ -46,10 +46,10 @@ export async function GET() {
         c.name AS company_name,
         COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
         COALESCE(
-          (SELECT array_agg(bai.iban ORDER BY bai.created_at)
+          (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)
            FROM bank_account_ibans bai
            WHERE bai.bank_account_id = ba.id),
-          ARRAY[]::text[]
+          '[]'::json
         ) AS ibans
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id

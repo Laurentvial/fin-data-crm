@@ -6,7 +6,10 @@ export interface Company {
   address?: string | null;
   siret?: string | null;
   directeur?: string | null;
+  has_logo?: boolean;
   bank_ids?: string[];
+  emails?: string[];
+  phones?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -14,8 +17,14 @@ export interface Company {
 export interface Bank {
   id: string;
   name: string;
+  has_logo?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface IbanItem {
+  iban: string;
+  bic?: string | null;
 }
 
 export interface BankAccount {
@@ -26,7 +35,8 @@ export interface BankAccount {
   telegram_chat_id: number;
   bank_id?: string | null;
   bank_name?: string | null;
-  ibans?: string[];
+  has_logo?: boolean;
+  ibans?: IbanItem[];
   balance?: number;
   created_at: string;
   updated_at: string;
@@ -59,6 +69,14 @@ export interface CompanyEmail {
   company_id: string;
   email: string;
   password?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyPhone {
+  id: string;
+  company_id: string;
+  phone: string;
   created_at: string;
   updated_at: string;
 }

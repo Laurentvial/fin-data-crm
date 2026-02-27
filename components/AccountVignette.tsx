@@ -52,14 +52,13 @@ export function AccountVignette({
       <h3 className="flex items-center gap-2 font-semibold text-[var(--foreground)]">
         {bankAccount.bank_id && (
           <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-            <img
-              src={`/api/banks/${bankAccount.bank_id}/files/logo`}
-              alt=""
-              className="h-full w-full object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
+            {bankAccount.has_logo ? (
+              <img
+                src={`/api/banks/${bankAccount.bank_id}/files/logo`}
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            ) : null}
           </span>
         )}
         {bankAccount.name}

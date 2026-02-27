@@ -722,14 +722,13 @@ function BanksSection() {
                   <tr key={b.id} className="border-t border-[var(--border)]">
                     <td className="px-4 py-2">
                       <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-                        <img
-                          src={`/api/banks/${b.id}/files/logo`}
-                          alt=""
-                          className="h-full w-full object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
+                        {b.has_logo ? (
+                          <img
+                            src={`/api/banks/${b.id}/files/logo`}
+                            alt=""
+                            className="h-full w-full object-contain"
+                          />
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-4 py-2 text-[var(--foreground)]">{b.name}</td>
@@ -841,14 +840,13 @@ function BanksSection() {
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Logo</label>
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="h-16 w-16 overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-                    <img
-                      src={`/api/banks/${editingBank.id}/files/logo?t=${Date.now()}`}
-                      alt=""
-                      className="h-full w-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
+                    {editingBank.has_logo ? (
+                      <img
+                        src={`/api/banks/${editingBank.id}/files/logo?t=${Date.now()}`}
+                        alt=""
+                        className="h-full w-full object-contain"
+                      />
+                    ) : null}
                   </div>
                   <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-[var(--border)] px-4 py-2 hover:border-[var(--primary)]">
                     <UploadIcon className="h-5 w-5 text-[var(--muted-foreground)]" />
