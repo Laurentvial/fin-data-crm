@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
@@ -34,6 +34,59 @@ function HomeContent() {
   const [type, setType] = useState("");
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [sortState, setSortState] = useState<{ column: string; direction: "asc" | "desc" } | null>(null);
+
+  const handleSortChange = useCallback((field: string) => {
+    setSortState((prev) => {
+      if (prev?.column === field) {
+        if (prev.direction === "asc") return { column: field, direction: "desc" as const };
+        return null; // 3rd click: reset to default
+      }
+      return { column: field, direction: "asc" as const };
+    });
+  }, []);
+
+  const sortedTransactions = useMemo(() => {
+    if (!sortState) return transactions;
+    const dir = sortState.direction === "asc" ? 1 : -1;
+    return [...transactions].sort((a, b) => {
+      let cmp = 0;
+      switch (sortState.column) {
+        case "id":
+          cmp = (a.id ?? "").localeCompare(b.id ?? "");
+          break;
+        case "transaction_date":
+          cmp = new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime();
+          break;
+        case "bank_account_name": {
+          const na = a.bank_account_name ?? a.company_name ?? "";
+          const nb = b.bank_account_name ?? b.company_name ?? "";
+          cmp = na.localeCompare(nb);
+          break;
+        }
+        case "amount": {
+          const na = Number(a.amount);
+          const nb = Number(b.amount);
+          const sa = a.type === "DEBIT" ? -Math.abs(na) : na;
+          const sb = b.type === "DEBIT" ? -Math.abs(nb) : nb;
+          cmp = sa - sb;
+          break;
+        }
+        case "type":
+          cmp = (a.type === "DEBIT" ? 0 : 1) - (b.type === "DEBIT" ? 0 : 1);
+          break;
+        case "description":
+          cmp = (a.description ?? "").localeCompare(b.description ?? "");
+          break;
+        case "created_at":
+          cmp = new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
+          break;
+        default:
+          return 0;
+      }
+      return cmp * dir;
+    });
+  }, [transactions, sortState]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoadingBankAccounts(true);
@@ -153,7 +206,7 @@ function HomeContent() {
 
   const handleExport = useCallback(() => {
     const headers = ["ID", "Date", "Compte", "Montant", "Type", "Description", "Créé le"];
-    const rows = transactions.map((t) => {
+    const rows = sortedTransactions.map((t) => {
       const num = Number(t.amount);
       const signed = t.type === "DEBIT" ? -Math.abs(num) : num;
       return [
@@ -174,7 +227,7 @@ function HomeContent() {
     a.download = "transactions.csv";
     a.click();
     URL.revokeObjectURL(url);
-  }, [transactions]);
+  }, [sortedTransactions]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -210,12 +263,14 @@ function HomeContent() {
           )}
           <div className="flex min-h-0 flex-1 flex-col">
             <TransactionsGrid
-              transactions={transactions}
+              transactions={sortedTransactions}
               loading={loadingTransactions}
               zoom={zoom}
               onCellValueChanged={handleCellValueChanged}
               onSelectionSumChange={setSelectedSum}
               onDelete={handleDeleteTransaction}
+              onSortChange={handleSortChange}
+              sortState={sortState ?? undefined}
             />
           </div>
         </div>

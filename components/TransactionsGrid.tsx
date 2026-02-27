@@ -70,6 +70,16 @@ function useResolvedTheme(): Partial<Theme> {
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
 const AMOUNT_COL = 4; // Column index for amount (used for selection sum)
 
+const SORTABLE_FIELDS = new Set<string>([
+  "id",
+  "transaction_date",
+  "bank_account_name",
+  "amount",
+  "type",
+  "description",
+  "created_at",
+]);
+
 interface TransactionsGridProps {
   transactions: Transaction[];
   loading?: boolean;
@@ -78,6 +88,10 @@ interface TransactionsGridProps {
   onCellValueChanged?: (id: string, field: string, value: unknown) => Promise<void>;
   onSelectionSumChange?: (sum: number | null) => void;
   onDelete?: (id: string) => Promise<void>;
+  /** Called when user clicks a sortable column header. */
+  onSortChange?: (field: string) => void;
+  /** Current sort state for visual indicator. */
+  sortState?: { column: string; direction: "asc" | "desc" };
 }
 
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete")[] = [
@@ -113,6 +127,8 @@ export function TransactionsGrid({
   onCellValueChanged,
   onSelectionSumChange,
   onDelete,
+  onSortChange,
+  sortState,
 }: TransactionsGridProps) {
   const scale = zoom / 100;
   const [selection, setSelection] = useState<GridSelection>({
@@ -121,21 +137,34 @@ export function TransactionsGrid({
   });
 
   const columns = useMemo<GridColumn[]>(() => {
+    const sortIndicator = (id: string) => {
+      if (!sortState || sortState.column !== id) return "";
+      return sortState.direction === "asc" ? " ▲" : " ▼";
+    };
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(56 * scale), id: "rowNum" },
-      { title: "ID Transaction", width: Math.round(140 * scale), id: "id" },
-      { title: "Date", width: Math.round(120 * scale), id: "transaction_date" },
-      { title: "Compte", width: Math.round(180 * scale), id: "bank_account_name" },
-      { title: "Montant", width: Math.round(120 * scale), id: "amount" },
-      { title: "Type", width: Math.round(120 * scale), id: "type" },
-      { title: "Description", width: 200, grow: 1, id: "description" },
-      { title: "Créé le", width: Math.round(160 * scale), id: "created_at" },
+      { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(140 * scale), id: "id" },
+      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(120 * scale), id: "transaction_date" },
+      { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(180 * scale), id: "bank_account_name" },
+      { title: `Montant${sortIndicator("amount")}`, width: Math.round(120 * scale), id: "amount" },
+      { title: `Type${sortIndicator("type")}`, width: Math.round(120 * scale), id: "type" },
+      { title: `Description${sortIndicator("description")}`, width: 200, grow: 1, id: "description" },
+      { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(160 * scale), id: "created_at" },
     ];
     if (onDelete) {
       cols.push({ title: "", width: Math.round(100 * scale), id: "delete" });
     }
     return cols;
-  }, [scale, onDelete]);
+  }, [scale, onDelete, sortState]);
+
+  const onHeaderClicked = useCallback(
+    (colIndex: number) => {
+      const field = COL_FIELDS[colIndex];
+      if (!field || !SORTABLE_FIELDS.has(field) || !onSortChange) return;
+      onSortChange(field);
+    },
+    [onSortChange]
+  );
 
   const getCellContent = useCallback(
     ([col, row]: Item): GridCell => {
@@ -367,6 +396,7 @@ export function TransactionsGrid({
             getCellContent={getCellContent}
             onCellEdited={onCellValueChanged ? onCellEdited : undefined}
             onCellClicked={onDelete ? onCellClicked : undefined}
+            onHeaderClicked={onSortChange ? onHeaderClicked : undefined}
             gridSelection={onSelectionSumChange ? selection : undefined}
             onGridSelectionChange={onSelectionSumChange ? onGridSelectionChange : undefined}
             rangeSelect={onSelectionSumChange ? "multi-rect" : "none"}
