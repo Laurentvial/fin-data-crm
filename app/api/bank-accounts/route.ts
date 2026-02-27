@@ -188,6 +188,9 @@ BANQUE : ${bankName ?? "—"}`;
     if (logoBase64 && logoContentType) {
       createGroupBody.logo_base64 = logoBase64;
       createGroupBody.logo_content_type = logoContentType;
+      console.log("Sending bank logo to Telegram service:", logoContentType, logoBase64.length, "chars base64");
+    } else {
+      console.log("No bank logo to send (bank_id=%s, hasLogo=%s)", bank_id ?? "null", !!logoBase64);
     }
     if (kbisRow && typeof kbisRow.data_base64 === "string") {
       createGroupBody.kbis_base64 = kbisRow.data_base64 as string;
@@ -205,12 +208,17 @@ BANQUE : ${bankName ?? "—"}`;
       body: JSON.stringify(createGroupBody),
     });
     if (!createRes.ok) {
-      const errData = await createRes.json().catch(() => ({}));
-      const msg = errData.detail ?? "Impossible de créer le groupe Telegram";
-      return NextResponse.json(
-        { error: typeof msg === "string" ? msg : "Impossible de créer le groupe Telegram" },
-        { status: createRes.status >= 500 ? 502 : createRes.status }
-      );
+      const errText = await createRes.text();
+      let msg = "Impossible de créer le groupe Telegram";
+      try {
+        const errData = JSON.parse(errText) as { detail?: string | string[] };
+        const d = errData?.detail;
+        msg = typeof d === "string" ? d : Array.isArray(d) && d[0] ? String(d[0].msg ?? d[0]) : msg;
+      } catch {
+        if (errText.trim()) msg = errText.slice(0, 200);
+      }
+      console.error("Telegram create-group error:", createRes.status, msg);
+      return NextResponse.json({ error: msg }, { status: createRes.status >= 500 ? 502 : createRes.status });
     }
     const createData = (await createRes.json()) as {
       chat_id: number;

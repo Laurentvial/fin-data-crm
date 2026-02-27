@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from telethon import TelegramClient
 from telethon.errors import (
     FileReferenceInvalidError,
+    FloodWaitError,
     PhotoInvalidError,
     SessionPasswordNeededError,
     UserNotMutualContactError,
@@ -285,10 +286,10 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         logo_base64 = body.get("logo_base64")
         logo_content_type = body.get("logo_content_type")
         if logo_base64 and logo_content_type and isinstance(logo_base64, str) and isinstance(logo_content_type, str):
+            logger.info("Received logo: %d bytes base64, type=%s", len(logo_base64), logo_content_type)
             try:
                 decoded = base64.b64decode(logo_base64)
                 if decoded:
-                    # Convert to JPEG for Telegram profile photo compatibility (avoids PhotoInvalidError with WebP/SVG)
                     file_name = "logo.jpg"
                     try:
                         from PIL import Image
@@ -298,28 +299,41 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                             img = img.convert("RGB")
                         elif img.mode != "RGB":
                             img = img.convert("RGB")
+                        # Resize to 512x512 (Telegram recommended size for channel profile photos)
+                        img.thumbnail((512, 512), Image.LANCZOS)
+                        w, h = img.size
+                        if w != h:
+                            crop_size = min(w, h)
+                            left = (w - crop_size) // 2
+                            top = (h - crop_size) // 2
+                            img = img.crop((left, top, left + crop_size, top + crop_size))
+                        img = img.resize((512, 512), Image.LANCZOS)
                         out = io.BytesIO()
-                        img.save(out, format="JPEG", quality=90)
+                        img.save(out, format="JPEG", quality=92)
                         decoded = out.getvalue()
                     except Exception as conv_err:
                         logger.debug("Could not convert logo with PIL, using original: %s", conv_err)
                         ext = "jpg" if "jpeg" in logo_content_type.lower() or "jpg" in logo_content_type.lower() else "png"
                         file_name = f"logo.{ext}"
 
-                    # Brief delay so the newly created channel is ready for photo edit
                     await asyncio.sleep(1)
                     input_channel = await tg.get_input_entity(channel)
-                    uploaded_file = await tg.upload_file(io.BytesIO(decoded), file_name=file_name)
+                    file_obj = io.BytesIO(decoded)
+                    uploaded_file = await tg.upload_file(file_obj, file_name=file_name)
                     photo = InputChatUploadedPhoto(file=uploaded_file)
                     await tg(EditPhotoRequest(channel=input_channel, photo=photo))
-                    logger.info("Group profile photo set successfully")
+                    logger.info("Group profile photo set successfully (%d bytes)", len(decoded))
             except (PhotoInvalidError, FileReferenceInvalidError) as e:
                 logger.warning("Could not set group photo: %s", e)
             except Exception as e:
                 logger.warning("Could not set group photo: %s", e)
+        else:
+            logger.info("No logo in request (logo_base64=%s, logo_content_type=%s)", bool(logo_base64), bool(logo_content_type))
 
         invited: list[int] = []
         failed: list[dict] = []
+        input_channel = await tg.get_input_entity(channel)
+        max_flood_wait_sec = 60
 
         for telegram_id, username in users_to_invite:
             try:
@@ -342,13 +356,28 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                     failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": "invalid_entity"})
                     continue
                 input_user = InputUser(user_entity.id, user_entity.access_hash)
-                input_channel = await tg.get_input_entity(channel)
-                await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
-                invited.append(telegram_id)
+                try:
+                    await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
+                    invited.append(telegram_id)
+                except FloodWaitError as e:
+                    wait_sec = getattr(e, "seconds", None)
+                    if wait_sec is None:
+                        wait_sec = getattr(e, "value", 0) or 0
+                    if wait_sec <= max_flood_wait_sec:
+                        logger.info("FloodWait %ds for invite, retrying...", wait_sec)
+                        await asyncio.sleep(wait_sec)
+                        await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
+                        invited.append(telegram_id)
+                    else:
+                        failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": f"FloodWaitError:{wait_sec}s"})
+                        await asyncio.sleep(0.5)
+                await asyncio.sleep(1.5)
             except (UserNotMutualContactError, UserPrivacyRestrictedError) as e:
                 failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__})
+                await asyncio.sleep(0.5)
             except Exception as e:
                 failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
+                await asyncio.sleep(0.5)
 
         welcome_message = body.get("welcome_message")
         if welcome_message and isinstance(welcome_message, str) and welcome_message.strip():
@@ -379,8 +408,10 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
     except HTTPException:
         raise
     except RuntimeError as e:
+        logger.exception("RuntimeError creating Telegram group")
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        logger.exception("Error creating Telegram group: %s", e)
         raise HTTPException(
             status_code=502,
             detail=f"Impossible de créer le groupe Telegram: {e!s}",
