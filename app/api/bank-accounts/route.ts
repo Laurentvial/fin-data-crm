@@ -100,7 +100,7 @@ export async function POST(request: Request) {
       );
     }
     const [company] = await sql`
-      SELECT id, name, address, siret FROM companies WHERE id = ${company_id}::uuid LIMIT 1
+      SELECT id, name, address, siret, directeur FROM companies WHERE id = ${company_id}::uuid LIMIT 1
     `;
     if (!company) {
       return NextResponse.json(
@@ -138,8 +138,9 @@ export async function POST(request: Request) {
     const emailStr = emails.length > 0 ? emails.join(", ") : "—";
     const welcomeMessage = `NOM STE : ${company.name}
 ADRESSE : ${(company.address as string) ?? "—"}
-Email : ${emailStr}
+EMAIL : ${emailStr}
 SIRET : ${(company.siret as string) ?? "—"}
+DIRECTEUR : ${(company.directeur as string) ?? "—"}
 IBAN : ${ibanStr}
 BANQUE : ${bankName ?? "—"}`;
 

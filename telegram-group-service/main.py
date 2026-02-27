@@ -5,6 +5,7 @@ Creates Telegram supergroups via Telethon (Client API).
 Requires a user account session (not a bot).
 """
 
+import asyncio
 import base64
 import io
 import logging
@@ -280,6 +281,43 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                 detail="Could not extract chat_id from Telegram response",
             )
 
+        # Set group profile photo first (before invites) so the channel has its identity
+        logo_base64 = body.get("logo_base64")
+        logo_content_type = body.get("logo_content_type")
+        if logo_base64 and logo_content_type and isinstance(logo_base64, str) and isinstance(logo_content_type, str):
+            try:
+                decoded = base64.b64decode(logo_base64)
+                if decoded:
+                    # Convert to JPEG for Telegram profile photo compatibility (avoids PhotoInvalidError with WebP/SVG)
+                    file_name = "logo.jpg"
+                    try:
+                        from PIL import Image
+
+                        img = Image.open(io.BytesIO(decoded))
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
+                        elif img.mode != "RGB":
+                            img = img.convert("RGB")
+                        out = io.BytesIO()
+                        img.save(out, format="JPEG", quality=90)
+                        decoded = out.getvalue()
+                    except Exception as conv_err:
+                        logger.debug("Could not convert logo with PIL, using original: %s", conv_err)
+                        ext = "jpg" if "jpeg" in logo_content_type.lower() or "jpg" in logo_content_type.lower() else "png"
+                        file_name = f"logo.{ext}"
+
+                    # Brief delay so the newly created channel is ready for photo edit
+                    await asyncio.sleep(1)
+                    input_channel = await tg.get_input_entity(channel)
+                    uploaded_file = await tg.upload_file(io.BytesIO(decoded), file_name=file_name)
+                    photo = InputChatUploadedPhoto(file=uploaded_file)
+                    await tg(EditPhotoRequest(channel=input_channel, photo=photo))
+                    logger.info("Group profile photo set successfully")
+            except (PhotoInvalidError, FileReferenceInvalidError) as e:
+                logger.warning("Could not set group photo: %s", e)
+            except Exception as e:
+                logger.warning("Could not set group photo: %s", e)
+
         invited: list[int] = []
         failed: list[dict] = []
 
@@ -311,21 +349,6 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                 failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__})
             except Exception as e:
                 failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
-
-        logo_base64 = body.get("logo_base64")
-        logo_content_type = body.get("logo_content_type")
-        if logo_base64 and logo_content_type and isinstance(logo_base64, str) and isinstance(logo_content_type, str):
-            try:
-                decoded = base64.b64decode(logo_base64)
-                if decoded:
-                    input_channel = await tg.get_input_entity(channel)
-                    uploaded_file = await tg.upload_file(io.BytesIO(decoded))
-                    photo = InputChatUploadedPhoto(file=uploaded_file)
-                    await tg(EditPhotoRequest(channel=input_channel, photo=photo))
-            except (PhotoInvalidError, FileReferenceInvalidError) as e:
-                logger.warning("Could not set group photo: %s", e)
-            except Exception as e:
-                logger.warning("Could not set group photo: %s", e)
 
         welcome_message = body.get("welcome_message")
         if welcome_message and isinstance(welcome_message, str) and welcome_message.strip():
