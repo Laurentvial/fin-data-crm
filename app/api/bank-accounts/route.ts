@@ -201,8 +201,12 @@ export async function POST(request: Request) {
               [failedIds]
             )) as { rows?: unknown[] })
           : [];
-      const userRowsList = Array.isArray(userRows) ? userRows : (userRows as { rows?: unknown[] }).rows ?? [];
-      const byId = new Map(userRowsList.map((r: { telegram_id: string | number; name?: string; telegram_username?: string }) => [Number(r.telegram_id), r]));
+      const userRowsList = (Array.isArray(userRows) ? userRows : (userRows as { rows?: unknown[] }).rows ?? []) as {
+        telegram_id: string | number;
+        name?: string;
+        telegram_username?: string;
+      }[];
+      const byId = new Map(userRowsList.map((r) => [Number(r.telegram_id), r]));
       enrichedWarnings = failed.map((f) => ({
         telegram_id: f.telegram_id,
         name: byId.get(f.telegram_id)?.name ?? undefined,

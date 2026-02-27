@@ -110,7 +110,7 @@ export async function GET() {
     const result = (accounts as Record<string, unknown>[]).map((acc) => ({
       ...acc,
       transactions: txByAccount[acc.id as string] ?? [],
-    }));
+    })) as Array<{ id: string; transactions: (typeof txByAccount)[string] }>;
     result.sort(
       (a, b) =>
         (orderMap.get(a.id as string) ?? 999) -

@@ -9,7 +9,7 @@ async function requireAdmin() {
       { status: 401 }
     );
   }
-  if (session.user.role !== "admin") {
+  if ((session.user as { role?: string }).role !== "admin") {
     return NextResponse.json(
       { error: "Accès réservé aux administrateurs." },
       { status: 403 }

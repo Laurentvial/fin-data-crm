@@ -362,7 +362,6 @@ export function TransactionsGrid({
           <DataEditor
             width="100%"
             height="100%"
-            minHeight={400}
             columns={columns}
             rows={transactions.length}
             getCellContent={getCellContent}
