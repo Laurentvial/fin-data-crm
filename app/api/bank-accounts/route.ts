@@ -71,23 +71,21 @@ export async function POST(request: Request) {
     const bank_id = typeof body?.bank_id === "string" ? body.bank_id.trim() : null;
     const ibansRaw = body?.ibans;
     const ibanItems: { iban: string; bic?: string | null }[] = Array.isArray(ibansRaw)
-      ? ibansRaw
-          .map((v: unknown) => {
-            if (typeof v === "string") {
-              const iban = v.trim().replace(/\s/g, "").toUpperCase();
-              return iban.length > 0 ? { iban, bic: null } : null;
-            }
-            if (v && typeof v === "object" && "iban" in v && typeof (v as { iban: unknown }).iban === "string") {
-              const obj = v as { iban: string; bic?: string };
-              const iban = obj.iban.trim().replace(/\s/g, "").toUpperCase();
-              if (iban.length === 0) return null;
-              const bic =
-                typeof obj.bic === "string" ? (obj.bic.trim().replace(/\s/g, "").toUpperCase().slice(0, 11) || null) : null;
-              return { iban, bic };
-            }
-            return null;
-          })
-          .filter((x): x is { iban: string; bic?: string | null } => x !== null)
+      ? ibansRaw.flatMap((v: unknown) => {
+          if (typeof v === "string") {
+            const iban = v.trim().replace(/\s/g, "").toUpperCase();
+            return iban.length > 0 ? [{ iban, bic: null }] : [];
+          }
+          if (v && typeof v === "object" && "iban" in v && typeof (v as { iban: unknown }).iban === "string") {
+            const obj = v as { iban: string; bic?: string };
+            const iban = obj.iban.trim().replace(/\s/g, "").toUpperCase();
+            if (iban.length === 0) return [];
+            const bic =
+              typeof obj.bic === "string" ? (obj.bic.trim().replace(/\s/g, "").toUpperCase().slice(0, 11) || null) : null;
+            return [{ iban, bic }];
+          }
+          return [];
+        })
       : [];
     if (!name) {
       return NextResponse.json(
