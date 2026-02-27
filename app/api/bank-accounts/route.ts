@@ -211,9 +211,9 @@ BANQUE : ${bankName ?? "—"}`;
       const errText = await createRes.text();
       let msg = "Impossible de créer le groupe Telegram";
       try {
-        const errData = JSON.parse(errText) as { detail?: string | string[] };
+        const errData = JSON.parse(errText) as { detail?: string | Array<string | { msg?: string }> };
         const d = errData?.detail;
-        msg = typeof d === "string" ? d : Array.isArray(d) && d[0] ? String(d[0].msg ?? d[0]) : msg;
+        msg = typeof d === "string" ? d : Array.isArray(d) && d[0] ? String((d[0] as { msg?: string }).msg ?? d[0]) : msg;
       } catch {
         if (errText.trim()) msg = errText.slice(0, 200);
       }
