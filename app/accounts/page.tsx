@@ -92,6 +92,14 @@ function getInitials(name: string): string {
     .toUpperCase() || "?";
 }
 
+function getIbanCountryCodes(ibans: string[] | undefined): string[] {
+  if (!ibans?.length) return [];
+  const codes = ibans
+    .map((iban) => iban.replace(/\s/g, "").slice(0, 2).toUpperCase())
+    .filter((c) => c.length === 2);
+  return [...new Set(codes)];
+}
+
 function AccountCard({
   bankAccount,
   menuOpen,
@@ -111,6 +119,7 @@ function AccountCard({
 }) {
   const [logoError, setLogoError] = useState(false);
   const balance = bankAccount.balance ?? 0;
+  const ibanCountryCodes = getIbanCountryCodes(bankAccount.ibans);
 
   return (
     <div
@@ -141,7 +150,7 @@ function AccountCard({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="truncate font-semibold text-[var(--foreground)]">{bankAccount.name}</h3>
+          <h3 className="truncate font-semibold text-[var(--foreground)]">{displayName(bankAccount)}</h3>
           <button
             type="button"
             onClick={(e) => {
@@ -155,9 +164,11 @@ function AccountCard({
             <MoreVerticalIcon />
           </button>
         </div>
-        <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">
-          {bankAccount.company_name ?? "—"}
-        </p>
+        {ibanCountryCodes.length > 0 && (
+          <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">
+            {ibanCountryCodes.join(" / ")}
+          </p>
+        )}
         <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
           {new Intl.NumberFormat("fr-FR", {
             minimumFractionDigits: 2,

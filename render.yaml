@@ -1,7 +1,62 @@
 services:
+  # Main Next.js app
   - type: web
     name: bigboss-system
     runtime: node
     buildCommand: npm install && npm run build
     startCommand: npm start
-    # Add your env vars in the Render dashboard (e.g. DATABASE_URL)
+    healthCheckPath: /
+    buildFilter:
+      paths:
+        - app/**
+        - components/**
+        - lib/**
+        - package.json
+        - package-lock.json
+        - next.config.ts
+        - postcss.config.*
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NEON_AUTH_BASE_URL
+        sync: false
+      - key: NEON_AUTH_COOKIE_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: TELEGRAM_GROUP_SERVICE_URL
+        sync: false
+      - key: TELEGRAM_SERVICE_API_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: NEXT_PUBLIC_SHOW_FIRST_ACCOUNT_SETUP
+        value: "false"
+
+  # Python Telegram service
+  - type: web
+    name: bigboss-telegram
+    runtime: python
+    rootDir: telegram-group-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: telegram-session
+      mountPath: /opt/data
+      sizeGB: 1
+    buildFilter:
+      paths:
+        - telegram-group-service/**
+    envVars:
+      - key: TELEGRAM_SESSION_PATH
+        value: /opt/data/telegram_session
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: API_SECRET_KEY
+        sync: false
