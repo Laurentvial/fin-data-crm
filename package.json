@@ -13,9 +13,12 @@
     "@neondatabase/auth": "^0.2.0-beta.1",
     "@neondatabase/serverless": "^1.0.2",
     "@telegram-auth/server": "^1.0.4",
+    "cloudinary": "^2.9.0",
+    "handlebars": "^4.7.8",
     "lodash": "^4.17.23",
     "marked": "^17.0.3",
     "next": "16.1.6",
+    "puppeteer": "^24.37.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-responsive-carousel": "^3.2.23"

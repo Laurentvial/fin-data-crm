@@ -10,6 +10,59 @@ export interface Company {
   bank_ids?: string[];
   emails?: string[];
   phones?: string[];
+  country_code?: string;
+  vat_number?: string | null;
+  vat_rate?: number;
+  invoice_prefix?: string;
+  invoice_next_number?: number;
+  invoice_template_id?: string | null;
+  currency?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  vat_rate: number;
+  amount: number;
+}
+
+export interface InvoiceLineItemInput {
+  description: string;
+  quantity: number;
+  unit_price_ttc: number;
+}
+
+export interface Invoice {
+  id: string;
+  company_id: string;
+  transaction_id: string;
+  invoice_number: string;
+  issue_date: string;
+  due_date: string;
+  customer_name: string;
+  customer_address?: string | null;
+  customer_vat?: string | null;
+  line_items: InvoiceLineItem[];
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  currency: string;
+  status: string;
+  pdf_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceTemplate {
+  id: string;
+  company_id: string | null;
+  name: string;
+  country_code: string;
+  template_content: string;
+  is_default: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +108,9 @@ export interface Transaction {
   extracted_data_json: unknown;
   created_at: string;
   processed_by_user_id: string | null;
+  /** Present when an invoice exists for this transaction (from GET /api/transactions) */
+  invoice_id?: string | null;
+  invoice_pdf_url?: string | null;
 }
 
 export interface TransactionUpdateBody {

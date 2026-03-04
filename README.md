@@ -16,11 +16,16 @@ L'application utilise un système d'authentification fermé :
    NEON_AUTH_COOKIE_SECRET=<générer avec: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))">
    ```
 
-3. **Migration base de données** : exécuter `migrations/001_processed_by_user_id_to_uuid.sql` sur votre base Neon.
+3. **Migration base de données** : exécuter les migrations dans l'ordre sur votre base Neon :
+   - `migrations/001_processed_by_user_id_to_uuid.sql`
+   - … jusqu'à `migrations/010_invoices.sql` (facturation)
 
-4. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+4. **Facturation** (optionnel) : pour générer des factures PDF, configurer Cloudinary :
+   - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
 
-5. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
+5. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+
+6. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
 
 ## Getting Started
 

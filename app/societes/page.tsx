@@ -235,37 +235,67 @@ function CompanyCardMenu({
   );
 }
 
+const INVOICE_COUNTRIES = [
+  { code: "FR", label: "France" },
+  { code: "BE", label: "Belgique" },
+  { code: "CH", label: "Suisse" },
+  { code: "PT", label: "Portugal" },
+  { code: "ES", label: "Espagne" },
+];
+
 function CompanyModal({
   title,
   name,
   address,
   siret,
   directeur,
+  countryCode,
+  vatNumber,
+  vatRate,
+  invoicePrefix,
+  currency,
   onNameChange,
   onAddressChange,
   onSiretChange,
   onDirecteurChange,
+  onCountryCodeChange,
+  onVatNumberChange,
+  onVatRateChange,
+  onInvoicePrefixChange,
+  onCurrencyChange,
   onSave,
   onClose,
   saving,
+  isEdit,
 }: {
   title: string;
   name: string;
   address: string;
   siret: string;
   directeur: string;
+  countryCode: string;
+  vatNumber: string;
+  vatRate: string;
+  invoicePrefix: string;
+  currency: string;
   onNameChange: (v: string) => void;
   onAddressChange: (v: string) => void;
   onSiretChange: (v: string) => void;
   onDirecteurChange: (v: string) => void;
+  onCountryCodeChange?: (v: string) => void;
+  onVatNumberChange?: (v: string) => void;
+  onVatRateChange?: (v: string) => void;
+  onInvoicePrefixChange?: (v: string) => void;
+  onCurrencyChange?: (v: string) => void;
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
+  isEdit: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">{title}</h3>
@@ -312,6 +342,71 @@ function CompanyModal({
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
+          {isEdit && (
+            <>
+              <div className="border-t border-[var(--border)] pt-4 mt-4">
+                <h4 className="mb-3 text-sm font-medium text-[var(--foreground)]">Facturation</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Pays</label>
+                    <select
+                      value={countryCode}
+                      onChange={(e) => onCountryCodeChange?.(e.target.value)}
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    >
+                      {INVOICE_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">N° TVA</label>
+                    <input
+                      type="text"
+                      value={vatNumber}
+                      onChange={(e) => onVatNumberChange?.(e.target.value)}
+                      placeholder="TVA intracommunautaire"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Taux TVA (%)</label>
+                    <input
+                      type="number"
+                      value={vatRate}
+                      onChange={(e) => onVatRateChange?.(e.target.value)}
+                      placeholder="20"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Préfixe factures</label>
+                    <input
+                      type="text"
+                      value={invoicePrefix}
+                      onChange={(e) => onInvoicePrefixChange?.(e.target.value)}
+                      placeholder="FAC-"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Devise</label>
+                    <input
+                      type="text"
+                      value={currency}
+                      onChange={(e) => onCurrencyChange?.(e.target.value)}
+                      placeholder="EUR"
+                      maxLength={3}
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -350,6 +445,11 @@ function SocietesPageContent() {
   const [editAddress, setEditAddress] = useState("");
   const [editSiret, setEditSiret] = useState("");
   const [editDirecteur, setEditDirecteur] = useState("");
+  const [editCountryCode, setEditCountryCode] = useState("FR");
+  const [editVatNumber, setEditVatNumber] = useState("");
+  const [editVatRate, setEditVatRate] = useState("20");
+  const [editInvoicePrefix, setEditInvoicePrefix] = useState("FAC-");
+  const [editCurrency, setEditCurrency] = useState("EUR");
   const [saving, setSaving] = useState(false);
 
   const fetchCompanies = useCallback(async () => {
@@ -388,6 +488,11 @@ function SocietesPageContent() {
         setEditAddress(company.address ?? "");
         setEditSiret(company.siret ?? "");
         setEditDirecteur(company.directeur ?? "");
+        setEditCountryCode(company.country_code ?? "FR");
+        setEditVatNumber(company.vat_number ?? "");
+        setEditVatRate(String(company.vat_rate ?? 20));
+        setEditInvoicePrefix(company.invoice_prefix ?? "FAC-");
+        setEditCurrency(company.currency ?? "EUR");
         setError(null);
       }
     }
@@ -400,6 +505,11 @@ function SocietesPageContent() {
     setEditAddress("");
     setEditSiret("");
     setEditDirecteur("");
+    setEditCountryCode("FR");
+    setEditVatNumber("");
+    setEditVatRate("20");
+    setEditInvoicePrefix("FAC-");
+    setEditCurrency("EUR");
     setError(null);
   };
 
@@ -410,6 +520,11 @@ function SocietesPageContent() {
     setEditAddress(company.address ?? "");
     setEditSiret(company.siret ?? "");
     setEditDirecteur(company.directeur ?? "");
+    setEditCountryCode(company.country_code ?? "FR");
+    setEditVatNumber(company.vat_number ?? "");
+    setEditVatRate(String(company.vat_rate ?? 20));
+    setEditInvoicePrefix(company.invoice_prefix ?? "FAC-");
+    setEditCurrency(company.currency ?? "EUR");
     setError(null);
   };
 
@@ -421,6 +536,11 @@ function SocietesPageContent() {
     setEditAddress("");
     setEditSiret("");
     setEditDirecteur("");
+    setEditCountryCode("FR");
+    setEditVatNumber("");
+    setEditVatRate("20");
+    setEditInvoicePrefix("FAC-");
+    setEditCurrency("EUR");
     setError(null);
     if (editIdFromUrl) router.replace("/societes");
   };
@@ -428,12 +548,19 @@ function SocietesPageContent() {
   const handleSave = async () => {
     const name = editName.trim();
     if (!name) return;
-    const payload = {
+    const payload: Record<string, unknown> = {
       name,
       address: editAddress.trim() || null,
       siret: editSiret.trim() || null,
       directeur: editDirecteur.trim() || null,
     };
+    if (!isAddModal) {
+      payload.country_code = editCountryCode || "FR";
+      payload.vat_number = editVatNumber.trim() || null;
+      payload.vat_rate = parseFloat(editVatRate) || 20;
+      payload.invoice_prefix = editInvoicePrefix.trim() || "FAC-";
+      payload.currency = editCurrency.trim().slice(0, 3).toUpperCase() || "EUR";
+    }
     setSaving(true);
     setError(null);
     try {
@@ -441,7 +568,7 @@ function SocietesPageContent() {
         const res = await fetch("/api/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ name: payload.name, address: payload.address, siret: payload.siret, directeur: payload.directeur }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Échec de la création");
@@ -541,13 +668,24 @@ function SocietesPageContent() {
           address={editAddress}
           siret={editSiret}
           directeur={editDirecteur}
+          countryCode={editCountryCode}
+          vatNumber={editVatNumber}
+          vatRate={editVatRate}
+          invoicePrefix={editInvoicePrefix}
+          currency={editCurrency}
           onNameChange={setEditName}
           onAddressChange={setEditAddress}
           onSiretChange={setEditSiret}
           onDirecteurChange={setEditDirecteur}
+          onCountryCodeChange={setEditCountryCode}
+          onVatNumberChange={setEditVatNumber}
+          onVatRateChange={setEditVatRate}
+          onInvoicePrefixChange={setEditInvoicePrefix}
+          onCurrencyChange={setEditCurrency}
           onSave={handleSave}
           onClose={closeModal}
           saving={saving}
+          isEdit={!!editingCompany}
         />
       )}
     </div>

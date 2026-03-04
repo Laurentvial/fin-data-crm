@@ -36,6 +36,12 @@ services:
         sync: false
       - key: NEXT_PUBLIC_SHOW_FIRST_ACCOUNT_SETUP
         value: "false"
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
 
   # Python Telegram service
   - type: web

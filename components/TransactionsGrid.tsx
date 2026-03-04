@@ -88,13 +88,15 @@ interface TransactionsGridProps {
   onCellValueChanged?: (id: string, field: string, value: unknown) => Promise<void>;
   onSelectionSumChange?: (sum: number | null) => void;
   onDelete?: (id: string) => Promise<void>;
+  /** Called when user clicks "Facture" to generate an invoice. */
+  onGenerateInvoice?: (transaction: Transaction) => void;
   /** Called when user clicks a sortable column header. */
   onSortChange?: (field: string) => void;
   /** Current sort state for visual indicator. */
   sortState?: { column: string; direction: "asc" | "desc" };
 }
 
-const COL_FIELDS: (keyof Transaction | "rowNum" | "delete")[] = [
+const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
   "transaction_date",
@@ -103,6 +105,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete")[] = [
   "type",
   "description",
   "created_at",
+  "invoice",
   "delete",
 ];
 
@@ -127,6 +130,7 @@ export function TransactionsGrid({
   onCellValueChanged,
   onSelectionSumChange,
   onDelete,
+  onGenerateInvoice,
   onSortChange,
   sortState,
 }: TransactionsGridProps) {
@@ -143,19 +147,22 @@ export function TransactionsGrid({
     };
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(56 * scale), id: "rowNum" },
-      { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(140 * scale), id: "id" },
-      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(120 * scale), id: "transaction_date" },
+      { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(90 * scale), id: "id" },
+      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(90 * scale), id: "transaction_date" },
       { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(180 * scale), id: "bank_account_name" },
       { title: `Montant${sortIndicator("amount")}`, width: Math.round(120 * scale), id: "amount" },
-      { title: `Type${sortIndicator("type")}`, width: Math.round(120 * scale), id: "type" },
+      { title: `Type${sortIndicator("type")}`, width: Math.round(70 * scale), id: "type" },
       { title: `Description${sortIndicator("description")}`, width: 200, grow: 1, id: "description" },
-      { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(160 * scale), id: "created_at" },
+      { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(110 * scale), id: "created_at" },
     ];
+    if (onGenerateInvoice) {
+      cols.push({ title: "Facture", width: Math.round(140 * scale), id: "invoice" });
+    }
     if (onDelete) {
       cols.push({ title: "", width: Math.round(100 * scale), id: "delete" });
     }
     return cols;
-  }, [scale, onDelete, sortState]);
+  }, [scale, onDelete, onGenerateInvoice, sortState]);
 
   const onHeaderClicked = useCallback(
     (colIndex: number) => {
@@ -261,6 +268,21 @@ export function TransactionsGrid({
           readonly: true,
         };
       }
+      if (field === "invoice") {
+        const hasInvoice = Boolean(txn.invoice_id ?? txn.invoice_pdf_url);
+        const label = hasInvoice ? "Voir la facture" : "Créer une facture";
+        return {
+          kind: GridCellKind.Text,
+          data: label,
+          displayData: label,
+          allowOverlay: false,
+          readonly: true,
+          themeOverride: {
+            bgCell: hasInvoice ? "#8b5cf6" : "#9ca3af",
+            textDark: "#ffffff",
+          },
+        };
+      }
       if (field === "delete") {
         return {
           kind: GridCellKind.Text,
@@ -282,6 +304,12 @@ export function TransactionsGrid({
       const txn = transactions[row];
       if (!txn?.id || !onCellValueChanged) return;
 
+      if (field === "invoice") {
+        if (onGenerateInvoice) {
+          onGenerateInvoice(txn);
+        }
+        return;
+      }
       if (field === "delete") {
         if (onDelete && confirm("Supprimer cette transaction ?")) {
           await onDelete(txn.id);
@@ -313,7 +341,7 @@ export function TransactionsGrid({
         // Page handles error display
       }
     },
-    [transactions, onCellValueChanged, onDelete]
+    [transactions, onCellValueChanged, onDelete, onGenerateInvoice]
   );
 
   const onGridSelectionChange = useCallback(
@@ -359,7 +387,14 @@ export function TransactionsGrid({
       const [col, row] = cell;
       const field = COL_FIELDS[col];
       const txn = transactions[row];
-      if (field === "delete" && txn?.id && onDelete) {
+      if (field === "invoice" && txn && onGenerateInvoice) {
+        const hasInvoice = Boolean(txn.invoice_id ?? txn.invoice_pdf_url);
+        if (hasInvoice && txn.invoice_id) {
+          window.open(`/api/invoices/${txn.invoice_id}/pdf`, "_blank");
+        } else {
+          onGenerateInvoice(txn);
+        }
+      } else if (field === "delete" && txn?.id && onDelete) {
         if (confirm("Supprimer cette transaction ?")) {
           try {
             await onDelete(txn.id);
@@ -369,7 +404,7 @@ export function TransactionsGrid({
         }
       }
     },
-    [transactions, onDelete]
+    [transactions, onDelete, onGenerateInvoice]
   );
 
   const rowHeight = Math.round(56 * scale);
@@ -395,7 +430,7 @@ export function TransactionsGrid({
             rows={transactions.length}
             getCellContent={getCellContent}
             onCellEdited={onCellValueChanged ? onCellEdited : undefined}
-            onCellClicked={onDelete ? onCellClicked : undefined}
+            onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
             onHeaderClicked={onSortChange ? onHeaderClicked : undefined}
             gridSelection={onSelectionSumChange ? selection : undefined}
             onGridSelectionChange={onSelectionSumChange ? onGridSelectionChange : undefined}

@@ -1,0 +1,169 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth/server";
+import { sql } from "@/lib/db";
+import { generateInvoice } from "@/lib/invoicing/generate-invoice";
+
+async function requireAuth() {
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  return null;
+}
+
+export async function POST(request: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+
+  try {
+    const body = await request.json();
+    const transactionId = typeof body?.transaction_id === "string" ? body.transaction_id.trim() : "";
+    const customerName = typeof body?.customer_name === "string" ? body.customer_name.trim() : "";
+    const customerAddress =
+      typeof body?.customer_address === "string" ? body.customer_address.trim() || undefined : undefined;
+    const customerVat =
+      typeof body?.customer_vat === "string" ? body.customer_vat.trim() || undefined : undefined;
+    const lineItemsRaw = Array.isArray(body?.line_items) ? body.line_items : [];
+
+    if (!transactionId) {
+      return NextResponse.json(
+        { error: "transaction_id est requis" },
+        { status: 400 }
+      );
+    }
+    if (!customerName) {
+      return NextResponse.json(
+        { error: "customer_name est requis" },
+        { status: 400 }
+      );
+    }
+
+    const lineItems: Array<{ description: string; quantity: number; unit_price_ttc: number }> = [];
+    for (const item of lineItemsRaw) {
+      const desc = typeof item?.description === "string" ? item.description.trim() : "";
+      const qty = Number(item?.quantity);
+      const unitPrice = Number(item?.unit_price_ttc);
+      if (desc && qty > 0 && unitPrice > 0) {
+        lineItems.push({ description: desc, quantity: qty, unit_price_ttc: unitPrice });
+      }
+    }
+    if (lineItems.length === 0) {
+      return NextResponse.json(
+        { error: "Au moins une ligne valide (description, quantité > 0, prix unitaire TTC > 0) est requise" },
+        { status: 400 }
+      );
+    }
+
+    const linesTotal = lineItems.reduce(
+      (sum, li) => sum + li.quantity * li.unit_price_ttc,
+      0
+    );
+    const txnRows = await sql`
+      SELECT amount FROM transactions WHERE id = ${transactionId}::uuid
+    `;
+    const txn = Array.isArray(txnRows) ? txnRows[0] : txnRows;
+    if (!txn) {
+      return NextResponse.json(
+        { error: "Transaction introuvable" },
+        { status: 404 }
+      );
+    }
+    const transactionAmount = Math.abs(Number(txn.amount));
+    const roundedTotal = Math.round(linesTotal * 100) / 100;
+    if (Math.abs(roundedTotal - transactionAmount) >= 0.01) {
+      return NextResponse.json(
+        { error: "Le total des lignes doit être égal au montant de la transaction" },
+        { status: 400 }
+      );
+    }
+
+    const result = await generateInvoice({
+      transactionId,
+      customerName,
+      customerAddress,
+      customerVat,
+      lineItems,
+    });
+
+    return NextResponse.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("POST /api/invoices error:", err);
+    if (msg.includes("Transaction introuvable")) {
+      return NextResponse.json({ error: "Transaction introuvable" }, { status: 404 });
+    }
+    if (msg.includes("Cloudinary")) {
+      return NextResponse.json(
+        { error: "Erreur lors de l'upload du PDF. Vérifiez la configuration Cloudinary." },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(
+      { error: msg || "Échec de la génération de la facture" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const companyId = searchParams.get("company_id") ?? null;
+    const transactionId = searchParams.get("transaction_id") ?? null;
+    const limit = Math.min(Number(searchParams.get("limit")) || 100, 500);
+    const offset = Number(searchParams.get("offset")) || 0;
+
+    const rows = await sql`
+      SELECT
+        i.id, i.company_id, i.transaction_id, i.invoice_number, i.issue_date, i.due_date,
+        i.customer_name, i.customer_address, i.customer_vat, i.line_items,
+        i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+        i.created_at, i.updated_at,
+        c.name AS company_name
+      FROM invoices i
+      JOIN companies c ON c.id = i.company_id
+      WHERE
+        (${companyId}::uuid IS NULL OR i.company_id = ${companyId}::uuid)
+        AND (${transactionId}::uuid IS NULL OR i.transaction_id = ${transactionId}::uuid)
+      ORDER BY i.issue_date DESC, i.created_at DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `;
+
+    const invoices = (Array.isArray(rows) ? rows : [rows]).map((r) => ({
+      id: r.id,
+      company_id: r.company_id,
+      company_name: r.company_name,
+      transaction_id: r.transaction_id,
+      invoice_number: r.invoice_number,
+      issue_date: r.issue_date,
+      due_date: r.due_date,
+      customer_name: r.customer_name,
+      customer_address: r.customer_address,
+      customer_vat: r.customer_vat,
+      line_items: r.line_items,
+      subtotal: Number(r.subtotal),
+      tax_amount: Number(r.tax_amount),
+      total: Number(r.total),
+      currency: r.currency,
+      status: r.status,
+      pdf_url: r.pdf_url,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    }));
+
+    return NextResponse.json(invoices);
+  } catch (error) {
+    console.error("GET /api/invoices error:", error);
+    return NextResponse.json(
+      { error: "Échec du chargement des factures" },
+      { status: 500 }
+    );
+  }
+}

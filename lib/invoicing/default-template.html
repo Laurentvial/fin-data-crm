@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facture {{invoice.number}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      margin: 0;
+      padding: 0;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .page {
+      max-width: 100%;
+      margin: 0;
+    }
+    .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #2c3e50;
+    }
+    .invoice-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #2c3e50;
+      margin: 0;
+      letter-spacing: -0.5px;
+    }
+    .invoice-meta {
+      text-align: right;
+      font-size: 11px;
+      color: #555;
+    }
+    .invoice-meta strong {
+      display: block;
+      font-size: 14px;
+      color: #2c3e50;
+      margin-bottom: 4px;
+    }
+    .addresses {
+      display: flex;
+      justify-content: space-between;
+      gap: 40px;
+      margin-bottom: 28px;
+    }
+    .address-block {
+      flex: 1;
+      min-width: 0;
+    }
+    .address-block h3 {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      margin: 0 0 8px 0;
+    }
+    .address-block .name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+    }
+    .address-block p {
+      margin: 0 0 2px 0;
+      color: #444;
+    }
+    .dates-row {
+      display: flex;
+      gap: 32px;
+      margin-bottom: 24px;
+      padding: 12px 16px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .dates-row span {
+      color: #666;
+    }
+    .dates-row strong {
+      color: #1a1a1a;
+    }
+    table.line-items {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    table.line-items thead th {
+      text-align: left;
+      padding: 10px 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555;
+      background: #f1f3f5;
+      border-bottom: 2px solid #dee2e6;
+    }
+    table.line-items thead th.text-right {
+      text-align: right;
+    }
+    table.line-items tbody td {
+      padding: 12px;
+      border-bottom: 1px solid #e9ecef;
+      vertical-align: top;
+    }
+    table.line-items tbody tr:last-child td {
+      border-bottom: 2px solid #dee2e6;
+    }
+    table.line-items td.text-right {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .totals {
+      margin-left: auto;
+      width: 280px;
+      margin-bottom: 32px;
+    }
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      font-size: 12px;
+    }
+    .totals-row.subtotal,
+    .totals-row.tax {
+      color: #555;
+    }
+    .totals-row.total {
+      font-size: 16px;
+      font-weight: 700;
+      color: #2c3e50;
+      padding-top: 12px;
+      margin-top: 8px;
+      border-top: 2px solid #2c3e50;
+    }
+    .footer-mentions {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e9ecef;
+      font-size: 9px;
+      color: #666;
+      line-height: 1.5;
+    }
+    .footer-mentions p {
+      margin: 0 0 6px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="invoice-header">
+      <h1 class="invoice-title">Facture {{invoice.number}}</h1>
+      <div class="invoice-meta">
+        <strong>Date d'émission</strong>
+        {{formatDate invoice.issueDate}}
+        <br><br>
+        <strong>Échéance</strong>
+        {{formatDate invoice.dueDate}}
+      </div>
+    </header>
+
+    <div class="addresses">
+      <div class="address-block">
+        <h3>Émetteur</h3>
+        <div class="name">{{company.name}}</div>
+        {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+        {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
+        {{#if company.vat_number}}<p>{{countryRules.vatLabel}} : {{company.vat_number}}</p>{{/if}}
+        {{#if company.directeur}}<p>Directeur : {{company.directeur}}</p>{{/if}}
+      </div>
+      <div class="address-block">
+        <h3>Client</h3>
+        <div class="name">{{customer.name}}</div>
+        {{#if customer.address}}<p>{{customer.address}}</p>{{/if}}
+        {{#if customer.vat}}<p>{{countryRules.vatLabel}} client : {{customer.vat}}</p>{{/if}}
+      </div>
+    </div>
+
+    <table class="line-items">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Qté</th>
+          <th class="text-right">Prix unitaire</th>
+          <th class="text-right">{{countryRules.vatLabel}}</th>
+          <th class="text-right">Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each lineItems}}
+        <tr>
+          <td>{{this.description}}</td>
+          <td class="text-right">{{this.quantity}}</td>
+          <td class="text-right">{{formatNumber this.unit_price}} {{../invoice.currency}}</td>
+          <td class="text-right">{{this.vat_rate}}%</td>
+          <td class="text-right">{{formatNumber this.amount}} {{../invoice.currency}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-row subtotal">
+        <span>Sous-total HT</span>
+        <span>{{formatNumber invoice.subtotal}} {{invoice.currency}}</span>
+      </div>
+      <div class="totals-row tax">
+        <span>{{countryRules.vatLabel}}</span>
+        <span>{{formatNumber invoice.taxAmount}} {{invoice.currency}}</span>
+      </div>
+      <div class="totals-row total">
+        <span>Total TTC</span>
+        <span>{{formatNumber invoice.total}} {{invoice.currency}}</span>
+      </div>
+    </div>
+
+    {{#if countryRules.requiredMentions}}
+    <div class="footer-mentions">
+      {{#each countryRules.requiredMentions}}
+      <p>{{this}}</p>
+      {{/each}}
+    </div>
+    {{/if}}
+  </div>
+</body>
+</html>

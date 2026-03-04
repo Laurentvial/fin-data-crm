@@ -78,13 +78,15 @@ export default function SocieteDetailPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingKbis, setUploadingKbis] = useState(false);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      const [resCompany, resEmails, resPhones, resBank, resBanks, resLogo, resKbis] = await Promise.all([
+      const [resCompany, resEmails, resPhones, resBank, resBanks, resLogo, resKbis, resTemplates] = await Promise.all([
         fetch(`/api/accounts/${id}`),
         fetch(`/api/accounts/${id}/emails`),
         fetch(`/api/accounts/${id}/phones`),
@@ -92,6 +94,7 @@ export default function SocieteDetailPage() {
         fetch("/api/banks"),
         fetch(`/api/accounts/${id}/files/logo`).then((r) => (r.ok ? r : null)),
         fetch(`/api/accounts/${id}/files/kbis`).then((r) => (r.ok ? r : null)),
+        fetch("/api/templates"),
       ]);
 
       if (!resCompany.ok) throw new Error("Société introuvable");
@@ -136,6 +139,18 @@ export default function SocieteDetailPage() {
 
       setHasLogo(resLogo?.ok ?? false);
       setHasKbis(resKbis?.ok ?? false);
+
+      if (resTemplates?.ok) {
+        const templatesData = await resTemplates.json();
+        setTemplates(
+          (Array.isArray(templatesData) ? templatesData : []).map((t: { id: string; name: string; country_code: string; is_default: boolean }) => ({
+            id: t.id,
+            name: t.name,
+            country_code: t.country_code,
+            is_default: t.is_default,
+          }))
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -225,6 +240,35 @@ export default function SocieteDetailPage() {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
+    }
+  };
+
+  const handleTemplateChange = async (templateId: string | null) => {
+    if (!company) return;
+    setSavingTemplate(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: company.name,
+          address: company.address ?? null,
+          siret: company.siret ?? null,
+          directeur: company.directeur ?? null,
+          invoice_template_id: templateId || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec");
+      }
+      const updated = await res.json();
+      setCompany((prev) => (prev ? { ...prev, invoice_template_id: updated.invoice_template_id } : null));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -475,13 +519,41 @@ export default function SocieteDetailPage() {
                   <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Directeur</dt>
                   <dd className="text-sm">{company?.directeur ?? "—"}</dd>
                 </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
+                  <dd className="text-sm">{company?.country_code ?? "FR"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° TVA</dt>
+                  <dd className="text-sm">{company?.vat_number ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Taux TVA</dt>
+                  <dd className="text-sm">{company?.vat_rate != null ? `${company.vat_rate}%` : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Préfixe factures</dt>
+                  <dd className="text-sm">{company?.invoice_prefix ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Devise</dt>
+                  <dd className="text-sm">{company?.currency ?? "—"}</dd>
+                </div>
               </dl>
-              <Link
-                href={`/societes?edit=${id}`}
-                className="mt-4 inline-block text-sm text-[var(--primary)] hover:underline"
-              >
-                Modifier les informations
-              </Link>
+              <div className="mt-4 flex flex-wrap gap-4">
+                <Link
+                  href={`/societes?edit=${id}`}
+                  className="text-sm text-[var(--primary)] hover:underline"
+                >
+                  Modifier les informations
+                </Link>
+                <Link
+                  href={`/societes/${id}/factures`}
+                  className="text-sm text-[var(--primary)] hover:underline"
+                >
+                  Voir les factures
+                </Link>
+              </div>
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
@@ -646,6 +718,32 @@ export default function SocieteDetailPage() {
               )}
             </section>
           </div>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+            <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Template de facture</h2>
+            <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+              Choisissez le template à utiliser pour les factures de cette société. Les templates sont gérés dans les paramètres.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <select
+                value={company?.invoice_template_id ?? ""}
+                onChange={(e) => handleTemplateChange(e.target.value || null)}
+                disabled={savingTemplate || templates.length === 0}
+                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm min-w-[200px]"
+              >
+                <option value="">Template par défaut</option>
+                {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.is_default ? " (par défaut)" : ""}
+                    </option>
+                  ))}
+              </select>
+              {savingTemplate && <span className="text-sm text-[var(--muted-foreground)]">Enregistrement…</span>}
+            </div>
+            {templates.length === 0 && (
+              <p className="mt-2 text-xs text-[var(--muted-foreground)]">Aucun template disponible. Créez-en un dans les paramètres.</p>
+            )}
+          </section>
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4">

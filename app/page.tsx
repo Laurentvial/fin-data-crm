@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
+import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionFilters } from "@/components/TransactionFilters";
@@ -33,6 +34,7 @@ function HomeContent() {
   const [dateTo, setDateTo] = useState("");
   const [type, setType] = useState("");
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [invoiceModalTransaction, setInvoiceModalTransaction] = useState<Transaction | null>(null);
   const [zoom, setZoom] = useState(100);
   const [sortState, setSortState] = useState<{ column: string; direction: "asc" | "desc" } | null>(null);
 
@@ -165,6 +167,12 @@ function HomeContent() {
     []
   );
 
+  const handleInvoiceSuccess = useCallback((invoiceId: string, _pdfUrl: string, _invoiceNumber: string) => {
+    window.open(`/api/invoices/${invoiceId}/pdf`, "_blank");
+    setInvoiceModalTransaction(null);
+    fetchTransactions();
+  }, [fetchTransactions]);
+
   const handleAddTransaction = useCallback((newTx: Transaction) => {
     setTransactions((prev) => [newTx, ...prev]);
     setAddModalOpen(false);
@@ -269,6 +277,7 @@ function HomeContent() {
               onCellValueChanged={handleCellValueChanged}
               onSelectionSumChange={setSelectedSum}
               onDelete={handleDeleteTransaction}
+              onGenerateInvoice={(txn) => setInvoiceModalTransaction(txn)}
               onSortChange={handleSortChange}
               sortState={sortState ?? undefined}
             />
@@ -281,6 +290,13 @@ function HomeContent() {
           defaultBankAccountId={bankAccountId || undefined}
           onClose={() => setAddModalOpen(false)}
           onSuccess={handleAddTransaction}
+        />
+      )}
+      {invoiceModalTransaction && (
+        <GenerateInvoiceModal
+          transaction={invoiceModalTransaction}
+          onClose={() => setInvoiceModalTransaction(null)}
+          onSuccess={handleInvoiceSuccess}
         />
       )}
       <SheetFooter

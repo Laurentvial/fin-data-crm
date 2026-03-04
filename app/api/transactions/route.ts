@@ -109,10 +109,19 @@ export async function GET(request: NextRequest) {
         t.created_at,
         t.processed_by_user_id,
         ba.name AS bank_account_name,
-        c.name AS company_name
+        c.name AS company_name,
+        i.invoice_id,
+        i.invoice_pdf_url
       FROM transactions t
       LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
       LEFT JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN LATERAL (
+        SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
+        FROM invoices
+        WHERE transaction_id = t.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) i ON true
       WHERE
         (${bank_account_id}::uuid IS NULL OR t.bank_account_id = ${bank_account_id}::uuid)
         AND (${date_from}::date IS NULL OR t.transaction_date >= ${date_from}::date)

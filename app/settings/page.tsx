@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
-import type { Bank } from "@/lib/types";
+import type { Bank, InvoiceTemplate } from "@/lib/types";
 
 type User = { id: string; email: string; name: string; role?: string };
 
@@ -887,6 +887,337 @@ function BanksSection() {
   );
 }
 
+const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facture {{invoice.number}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; }
+    .invoice-header { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #2c3e50; }
+    .invoice-title { font-size: 24px; font-weight: 700; color: #2c3e50; margin: 0; }
+    .addresses { display: flex; justify-content: space-between; gap: 40px; margin-bottom: 24px; }
+    table.line-items { width: 100%; border-collapse: collapse; }
+    table.line-items th, table.line-items td { padding: 10px 12px; text-align: left; }
+    table.line-items th.text-right, table.line-items td.text-right { text-align: right; }
+    .totals { margin-left: auto; width: 280px; margin-top: 24px; }
+    .totals-row { display: flex; justify-content: space-between; padding: 8px 0; }
+  </style>
+</head>
+<body>
+  <header class="invoice-header">
+    <h1 class="invoice-title">Facture {{invoice.number}}</h1>
+    <div><strong>Date d'émission</strong> {{formatDate invoice.issueDate}}<br><strong>Échéance</strong> {{formatDate invoice.dueDate}}</div>
+  </header>
+  <div class="addresses">
+    <div><h3>Émetteur</h3><div>{{company.name}}</div>{{#if company.address}}<p>{{company.address}}</p>{{/if}}{{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}</div>
+    <div><h3>Client</h3><div>{{customer.name}}</div>{{#if customer.address}}<p>{{customer.address}}</p>{{/if}}</div>
+  </div>
+  <table class="line-items">
+    <thead><tr><th>Description</th><th class="text-right">Qté</th><th class="text-right">Prix unit.</th><th class="text-right">{{countryRules.vatLabel}}</th><th class="text-right">Montant</th></tr></thead>
+    <tbody>{{#each lineItems}}<tr><td>{{this.description}}</td><td class="text-right">{{this.quantity}}</td><td class="text-right">{{formatNumber this.unit_price}} {{../invoice.currency}}</td><td class="text-right">{{this.vat_rate}}%</td><td class="text-right">{{formatNumber this.amount}} {{../invoice.currency}}</td></tr>{{/each}}</tbody>
+  </table>
+  <div class="totals">
+    <div class="totals-row"><span>Sous-total HT</span><span>{{formatNumber invoice.subtotal}} {{invoice.currency}}</span></div>
+    <div class="totals-row"><span>{{countryRules.vatLabel}}</span><span>{{formatNumber invoice.taxAmount}} {{invoice.currency}}</span></div>
+    <div class="totals-row"><span>Total TTC</span><span>{{formatNumber invoice.total}} {{invoice.currency}}</span></div>
+  </div>
+</body>
+</html>`;
+
+function TemplatesSection() {
+  const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createCountry, setCreateCountry] = useState("FR");
+  const [createContent, setCreateContent] = useState(DEFAULT_TEMPLATE_CONTENT);
+  const [createPending, setCreatePending] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<InvoiceTemplate | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCountry, setEditCountry] = useState("FR");
+  const [editContent, setEditContent] = useState("");
+  const [editPending, setEditPending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchTemplates = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/templates");
+      if (!res.ok) throw new Error("Échec du chargement");
+      const data = await res.json();
+      setTemplates(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const name = createName.trim();
+    if (!name) return;
+    setCreatePending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          country_code: createCountry,
+          template_content: createContent,
+          is_default: templates.length === 0,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la création");
+      }
+      const created = await res.json();
+      setTemplates((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCreateName("");
+      setCreateCountry("FR");
+      setCreateContent(DEFAULT_TEMPLATE_CONTENT);
+      setCreateModalOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setCreatePending(false);
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!editingTemplate) return;
+    const name = editName.trim();
+    if (!name) return;
+    setEditPending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/templates/${editingTemplate.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          country_code: editCountry,
+          template_content: editContent,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la mise à jour");
+      }
+      const updated = await res.json();
+      setTemplates((prev) =>
+        prev.map((t) => (t.id === editingTemplate.id ? { ...t, ...updated } : t)).sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setEditingTemplate(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setEditPending(false);
+    }
+  };
+
+  const handleDelete = async (t: InvoiceTemplate) => {
+    if (!confirm(`Supprimer le template « ${t.name } » ?`)) return;
+    setDeletingId(t.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/templates/${t.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la suppression");
+      }
+      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const openCreate = () => {
+    setCreateModalOpen(true);
+    setCreateName("");
+    setCreateCountry("FR");
+    setCreateContent(DEFAULT_TEMPLATE_CONTENT);
+    setError(null);
+  };
+
+  const openEdit = (t: InvoiceTemplate) => {
+    setEditingTemplate(t);
+    setEditName(t.name);
+    setEditCountry(t.country_code);
+    setEditContent(t.template_content);
+    setError(null);
+  };
+
+  if (loading) {
+    return (
+      <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+        <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Templates de facture</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+      <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Templates de facture</h2>
+      <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+        Créez et gérez les templates de facture. Chaque société pourra choisir le template à utiliser dans sa page.
+      </p>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-[var(--foreground)]">Templates existants</h3>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+        >
+          Créer un template
+        </button>
+      </div>
+
+      <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-[var(--muted)]">
+            <tr>
+              <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Nom</th>
+              <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Pays</th>
+              <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Par défaut</th>
+              <th className="px-4 py-2 text-right font-medium text-[var(--foreground)]">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {templates.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                  Aucun template. Créez-en un pour que les sociétés puissent l&apos;utiliser.
+                </td>
+              </tr>
+            ) : (
+              templates.map((t) => (
+                <tr key={t.id} className="border-t border-[var(--border)]">
+                  <td className="px-4 py-2 text-[var(--foreground)]">{t.name}</td>
+                  <td className="px-4 py-2 text-[var(--foreground)]">{t.country_code}</td>
+                  <td className="px-4 py-2">{t.is_default ? <span className="text-[var(--primary)]">Oui</span> : "—"}</td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(t)}
+                        className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(t)}
+                        disabled={deletingId === t.id}
+                        className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
+                      >
+                        {deletingId === t.id ? "…" : "Supprimer"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {createModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Nouveau template</h3>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="Ex. Facture France"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Pays</label>
+                <select value={createCountry} onChange={(e) => setCreateCountry(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                  <option value="FR">France</option>
+                  <option value="BE">Belgique</option>
+                  <option value="CH">Suisse</option>
+                  <option value="PT">Portugal</option>
+                  <option value="ES">Espagne</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Contenu HTML (Handlebars)</label>
+                <textarea value={createContent} onChange={(e) => setCreateContent(e.target.value)} className="font-mono text-sm w-full min-h-[300px] rounded-lg border border-[var(--border)] bg-[var(--background)] p-3" spellCheck={false} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setCreateModalOpen(false)} className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]">Annuler</button>
+                <button type="submit" disabled={createPending || !createName.trim()} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50">{createPending ? "Création…" : "Créer"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingTemplate(null)}>
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Modifier {editingTemplate.name}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Pays</label>
+                <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                  <option value="FR">France</option>
+                  <option value="BE">Belgique</option>
+                  <option value="CH">Suisse</option>
+                  <option value="PT">Portugal</option>
+                  <option value="ES">Espagne</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Contenu HTML (Handlebars)</label>
+                <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="font-mono text-sm w-full min-h-[300px] rounded-lg border border-[var(--border)] bg-[var(--background)] p-3" spellCheck={false} />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingTemplate(null)} className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]">Annuler</button>
+              <button type="button" onClick={handleEdit} disabled={editPending || !editName.trim()} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50">{editPending ? "Enregistrement…" : "Enregistrer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -1176,6 +1507,9 @@ export default function SettingsPage() {
         {!usersLoading && isAdmin && (
           <TelegramConnectionSection />
         )}
+
+        {/* Section Templates de facture - visible aux admins */}
+        {!usersLoading && isAdmin && <TemplatesSection />}
 
         <section className="mt-8">
           <h2 className="mb-2 text-lg font-medium text-[var(--foreground)]">
