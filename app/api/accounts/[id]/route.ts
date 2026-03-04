@@ -22,7 +22,7 @@ export async function GET(
   const { id } = await params;
   try {
     const rows = await sql`
-      SELECT id, name, address, siret, directeur,
+      SELECT id, name, address, siret, directeur, website,
         country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency,
         invoice_template_id, created_at, updated_at
       FROM companies
@@ -64,6 +64,7 @@ export async function PATCH(
     const address = typeof body?.address === "string" ? body.address.trim() || null : null;
     const siret = typeof body?.siret === "string" ? body.siret.trim() || null : null;
     const directeur = typeof body?.directeur === "string" ? body.directeur.trim() || null : null;
+    const website = typeof body?.website === "string" ? body.website.trim() || null : null;
     const countryCode =
       typeof body?.country_code === "string" ? body.country_code.trim().slice(0, 2).toUpperCase() || null : undefined;
     const vatNumber =
@@ -90,10 +91,11 @@ export async function PATCH(
       "address = $2",
       "siret = $3",
       "directeur = $4",
+      "website = $5",
       "updated_at = NOW()",
     ];
-    const values: unknown[] = [name, address, siret, directeur];
-    let idx = 5;
+    const values: unknown[] = [name, address, siret, directeur, website];
+    let idx = 6;
     if (countryCode !== undefined) {
       updates.push(`country_code = $${idx++}`);
       values.push(countryCode);
@@ -124,7 +126,7 @@ export async function PATCH(
       UPDATE companies
       SET ${updates.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, name, address, siret, directeur, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, website, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, created_at, updated_at
     `;
     const result = await sql.query(queryText, values);
     const rows = Array.isArray(result) ? result : [result];

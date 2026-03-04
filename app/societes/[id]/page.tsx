@@ -520,6 +520,18 @@ export default function SocieteDetailPage() {
                   <dd className="text-sm">{company?.directeur ?? "—"}</dd>
                 </div>
                 <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Site web</dt>
+                  <dd className="text-sm">
+                    {company?.website ? (
+                      <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
+                        {company.website}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </dd>
+                </div>
+                <div>
                   <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
                   <dd className="text-sm">{company?.country_code ?? "FR"}</dd>
                 </div>

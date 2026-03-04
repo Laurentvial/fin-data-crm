@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facture {{invoice.number}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    @media print {
+      body { margin: 0; padding: 0; }
+      .page { page-break-after: avoid; page-break-inside: avoid; }
+    }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      line-height: 1.4;
+      margin: 0;
+      padding: 0;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .page {
+      max-width: 210mm;
+      margin: 0 auto;
+      position: relative;
+    }
+    /* Bandeau vert foncé en haut */
+    .header-bar {
+      background: #1a4d2e;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .header-bar .facture-label {
+      font-size: 18px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #fff;
+    }
+    .header-bar .brand-block {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: right;
+    }
+    .header-bar .logo-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .header-bar .logo-circle img {
+      max-width: 40px;
+      max-height: 40px;
+      object-fit: contain;
+    }
+    .header-bar .brand-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .header-bar .brand-subtitle {
+      font-size: 9px;
+      color: rgba(255,255,255,0.9);
+      text-transform: lowercase;
+    }
+    /* Bloc principal : Facturé à gauche, n° + date à droite */
+    .main-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    .facture-a-section {
+      flex: 1;
+    }
+    .facture-a-section .label {
+      font-size: 10px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .facture-a-section .client-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 2px;
+    }
+    .facture-a-section .client-address {
+      font-size: 10px;
+      color: #444;
+      line-height: 1.4;
+    }
+    .meta-block {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .meta-block .meta-row {
+      font-size: 10px;
+      margin-bottom: 4px;
+    }
+    .meta-block .meta-label {
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .meta-block .meta-value {
+      display: block;
+      font-weight: 400;
+      color: #444;
+    }
+    /* Société émettrice centrée */
+    .company-block {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #ccc;
+    }
+    .company-block .name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+    }
+    .company-block p {
+      margin: 0 0 2px 0;
+      font-size: 10px;
+      color: #444;
+    }
+    /* Tableau : en-tête vert foncé */
+    table.line-items {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 10px;
+      border: 1px solid #ccc;
+    }
+    table.line-items thead th {
+      padding: 10px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #fff;
+      background: #1a4d2e;
+      border: 1px solid #1a4d2e;
+      text-align: left;
+    }
+    table.line-items thead th:first-child {
+      text-align: left;
+    }
+    table.line-items thead th:nth-child(2),
+    table.line-items thead th:nth-child(3),
+    table.line-items thead th:nth-child(4),
+    table.line-items thead th:last-child {
+      text-align: right;
+    }
+    table.line-items tbody td {
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      vertical-align: top;
+      font-size: 10px;
+      background: #fff;
+    }
+    table.line-items tbody td:first-child {
+      text-align: left;
+    }
+    table.line-items tbody td:nth-child(2),
+    table.line-items tbody td:nth-child(3),
+    table.line-items tbody td:nth-child(4),
+    table.line-items tbody td:last-child {
+      text-align: right;
+      white-space: nowrap;
+    }
+    table.line-items tbody td .description {
+      line-height: 1.4;
+      white-space: pre-line;
+    }
+    /* Totaux */
+    .totals-block {
+      margin-left: auto;
+      width: 220px;
+      margin-bottom: 24px;
+      font-size: 10px;
+    }
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+    }
+    .totals-row.subtotal,
+    .totals-row.tax {
+      color: #444;
+    }
+    .totals-row.total-ttc {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1a1a1a;
+      padding-top: 10px;
+      margin-top: 6px;
+      border-top: 1px solid #ccc;
+    }
+    /* Règlement */
+    .payment-block {
+      margin-top: 20px;
+      font-size: 10px;
+    }
+    .payment-block .title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .payment-block .details p {
+      margin: 0 0 2px 0;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+    /* Bandeau vert en bas */
+    .footer-bar {
+      height: 12px;
+      background: #1a4d2e;
+      margin-top: 24px;
+    }
+    {{#if countryRules.requiredMentions}}
+    .footer-mentions {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 0.5px solid #ccc;
+      font-size: 9px;
+      color: #666;
+      line-height: 1.4;
+    }
+    .footer-mentions p {
+      margin: 0 0 4px 0;
+    }
+    {{/if}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- Bandeau vert FACTURE + logo -->
+    <div class="header-bar">
+      <div class="facture-label">FACTURE</div>
+      <div class="brand-block">
+        {{#if company.logo_url}}
+        <div class="logo-circle">
+          <img src="{{company.logo_url}}" alt="{{company.name}}" />
+        </div>
+        {{/if}}
+        <div>
+          <div class="brand-name">{{company.name}}</div>
+          {{#if company.directeur}}
+          <div class="brand-subtitle">{{company.directeur}}</div>
+          {{/if}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Facturé à gauche, n° + date à droite -->
+    <div class="main-top">
+      <div class="facture-a-section">
+        <div class="label">Facturé à</div>
+        <div class="client-name">{{customer.name}}</div>
+        {{#if customer.address}}
+        <div class="client-address">{{customer.address}}</div>
+        {{/if}}
+      </div>
+      <div class="meta-block">
+        <div class="meta-row">
+          <span class="meta-label">Facture n°</span>
+          <span class="meta-value">{{invoice.number}}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Date</span>
+          <span class="meta-value">{{formatDate invoice.issueDate}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Société émettrice centrée -->
+    <div class="company-block">
+      <div class="name">{{company.name}}</div>
+      {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+      {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
+      {{#if company.vat_number}}<p>TVA intracom : {{company.vat_number}}</p>{{/if}}
+      {{#if company.website}}<p><a href="{{company.website}}" style="color:#2563eb;text-decoration:none;">{{company.website}}</a></p>{{/if}}
+    </div>
+
+    <!-- Tableau : Désignation | Prix Unit. | Qté | Taux TVA | Montant -->
+    <div>
+      <table class="line-items">
+        <thead>
+          <tr>
+            <th>Désignation</th>
+            <th>Prix Unit.</th>
+            <th>Qté</th>
+            <th>Taux TVA</th>
+            <th>Montant</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each lineItems}}
+          <tr>
+            <td>
+              <div class="description">{{this.description}}</div>
+            </td>
+            <td>{{formatNumber this.unit_price}}</td>
+            <td>{{this.quantity}}</td>
+            <td>{{this.vat_rate}}%</td>
+            <td>{{formatNumber this.amount}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+
+      <!-- Totaux : Sous-total HT, TVA, Total TTC -->
+      <div class="totals-block">
+        <div class="totals-row subtotal">
+          <span>Sous-total HT</span>
+          <span>{{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}} {{formatNumber invoice.subtotal}}</span>
+        </div>
+        <div class="totals-row tax">
+          <span>TVA ({{invoice.vatRate}}%)</span>
+          <span>{{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}} {{formatNumber invoice.taxAmount}}</span>
+        </div>
+        <div class="totals-row total-ttc">
+          <span>Total TTC</span>
+          <span>{{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}} {{formatNumber invoice.total}}</span>
+        </div>
+      </div>
+
+      <!-- Règlement -->
+      {{#if payment}}
+      <div class="payment-block">
+        <div class="title">REGLEMENT</div>
+        <div class="details">
+          {{#if payment.iban}}<p>IBAN: {{payment.iban}}</p>{{/if}}
+          {{#if payment.bic}}<p>BIC: {{payment.bic}}</p>{{/if}}
+        </div>
+      </div>
+      {{/if}}
+
+      {{#if countryRules.requiredMentions}}
+      <div class="footer-mentions">
+        {{#each countryRules.requiredMentions}}
+        <p>{{this}}</p>
+        {{/each}}
+      </div>
+      {{/if}}
+    </div>
+
+    <!-- Bandeau vert en bas -->
+    <div class="footer-bar"></div>
+  </div>
+</body>
+</html>

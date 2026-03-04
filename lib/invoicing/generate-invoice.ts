@@ -35,7 +35,7 @@ export async function generateInvoice(
     SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
       ba.company_id, c.name AS company_name, c.address AS company_address, c.siret, c.directeur,
       c.vat_number, c.vat_rate, c.invoice_prefix, c.invoice_next_number, c.currency, c.country_code,
-      c.invoice_template_id
+      c.invoice_template_id, c.website AS company_website
     FROM transactions t
     JOIN bank_accounts ba ON ba.id = t.bank_account_id
     JOIN companies c ON c.id = ba.company_id
@@ -116,6 +116,33 @@ export async function generateInvoice(
 
   const countryRules = getCountryRules(countryCode);
 
+  let logoUrl: string | undefined;
+  const logoRows = await sql`
+    SELECT content_type, data_base64
+    FROM company_files
+    WHERE company_id = ${companyId}::uuid AND file_type = 'logo'
+    LIMIT 1
+  `;
+  const logoRow = Array.isArray(logoRows) ? logoRows[0] : logoRows;
+  if (logoRow?.data_base64) {
+    const ct = (logoRow.content_type as string) || "image/png";
+    logoUrl = `data:${ct};base64,${logoRow.data_base64}`;
+  }
+
+  const bankAccountId = txn.bank_account_id as string;
+  let payment: { iban?: string; bic?: string } | undefined;
+  const ibanRows = await sql`
+    SELECT iban, bic FROM bank_account_ibans
+    WHERE bank_account_id = ${bankAccountId}::uuid
+    ORDER BY created_at
+    LIMIT 1
+  `;
+  const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
+  if (ibanRow?.iban) {
+    const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
+    payment = { iban, bic: (ibanRow.bic as string) || undefined };
+  }
+
   const templateData = {
     company: {
       name: txn.company_name,
@@ -123,6 +150,8 @@ export async function generateInvoice(
       siret: txn.siret,
       directeur: txn.directeur,
       vat_number: txn.vat_number,
+      website: (txn.company_website as string) || undefined,
+      logo_url: logoUrl,
     },
     customer: {
       name: customerName,
@@ -137,8 +166,11 @@ export async function generateInvoice(
       taxAmount,
       total,
       currency,
+      vatRate: vatRatePct,
+      isEur: currency === "EUR",
     },
     lineItems,
+    payment,
     countryRules: {
       requiredMentions: countryRules.requiredMentions,
       vatLabel: countryRules.vatLabel,

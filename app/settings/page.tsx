@@ -942,6 +942,7 @@ function TemplatesSection() {
   const [editContent, setEditContent] = useState("");
   const [editPending, setEditPending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [previewPending, setPreviewPending] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -1062,6 +1063,33 @@ function TemplatesSection() {
     setError(null);
   };
 
+  const handlePreview = async (templateContent: string, countryCode: string) => {
+    setPreviewPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/templates/preview/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template_content: templateContent,
+          country_code: countryCode,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la prévisualisation");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setPreviewPending(false);
+    }
+  };
+
   if (loading) {
     return (
       <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
@@ -1122,6 +1150,14 @@ function TemplatesSection() {
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
+                        onClick={() => handlePreview(t.template_content, t.country_code)}
+                        disabled={previewPending}
+                        className="rounded px-2 py-1 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                      >
+                        {previewPending ? "…" : "Prévisualiser"}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => openEdit(t)}
                         className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
                       >
@@ -1175,6 +1211,14 @@ function TemplatesSection() {
                 <textarea value={createContent} onChange={(e) => setCreateContent(e.target.value)} className="font-mono text-sm w-full min-h-[300px] rounded-lg border border-[var(--border)] bg-[var(--background)] p-3" spellCheck={false} />
               </div>
               <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePreview(createContent, createCountry)}
+                  disabled={previewPending || !createContent.trim()}
+                  className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                >
+                  {previewPending ? "…" : "Prévisualiser"}
+                </button>
                 <button type="button" onClick={() => setCreateModalOpen(false)} className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]">Annuler</button>
                 <button type="submit" disabled={createPending || !createName.trim()} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50">{createPending ? "Création…" : "Créer"}</button>
               </div>
@@ -1208,12 +1252,21 @@ function TemplatesSection() {
               </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => handlePreview(editContent, editCountry)}
+                disabled={previewPending || !editContent.trim()}
+                className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+              >
+                {previewPending ? "…" : "Prévisualiser"}
+              </button>
               <button type="button" onClick={() => setEditingTemplate(null)} className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]">Annuler</button>
               <button type="button" onClick={handleEdit} disabled={editPending || !editName.trim()} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50">{editPending ? "Enregistrement…" : "Enregistrer"}</button>
             </div>
           </div>
         </div>
       )}
+
     </section>
   );
 }

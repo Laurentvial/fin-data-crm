@@ -6,6 +6,7 @@ export interface Company {
   address?: string | null;
   siret?: string | null;
   directeur?: string | null;
+  website?: string | null;
   has_logo?: boolean;
   bank_ids?: string[];
   emails?: string[];

@@ -146,20 +146,20 @@ export function TransactionsGrid({
       return sortState.direction === "asc" ? " ▲" : " ▼";
     };
     const cols: GridColumn[] = [
-      { title: "#", width: Math.round(56 * scale), id: "rowNum" },
-      { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(90 * scale), id: "id" },
-      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(90 * scale), id: "transaction_date" },
-      { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(180 * scale), id: "bank_account_name" },
-      { title: `Montant${sortIndicator("amount")}`, width: Math.round(120 * scale), id: "amount" },
-      { title: `Type${sortIndicator("type")}`, width: Math.round(70 * scale), id: "type" },
-      { title: `Description${sortIndicator("description")}`, width: 200, grow: 1, id: "description" },
-      { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(110 * scale), id: "created_at" },
+      { title: "#", width: Math.round(62 * scale), id: "rowNum" },
+      { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(100 * scale), id: "id" },
+      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(100 * scale), id: "transaction_date" },
+      { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(200 * scale), id: "bank_account_name" },
+      { title: `Montant${sortIndicator("amount")}`, width: Math.round(135 * scale), id: "amount" },
+      { title: `Type${sortIndicator("type")}`, width: Math.round(80 * scale), id: "type" },
+      { title: `Description${sortIndicator("description")}`, width: 220, grow: 1, id: "description" },
+      { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(120 * scale), id: "created_at" },
     ];
     if (onGenerateInvoice) {
-      cols.push({ title: "Facture", width: Math.round(140 * scale), id: "invoice" });
+      cols.push({ title: "Facture", width: Math.round(155 * scale), id: "invoice" });
     }
     if (onDelete) {
-      cols.push({ title: "", width: Math.round(100 * scale), id: "delete" });
+      cols.push({ title: "", width: Math.round(110 * scale), id: "delete" });
     }
     return cols;
   }, [scale, onDelete, onGenerateInvoice, sortState]);
@@ -278,8 +278,8 @@ export function TransactionsGrid({
           allowOverlay: false,
           readonly: true,
           themeOverride: {
-            bgCell: hasInvoice ? "#8b5cf6" : "#9ca3af",
-            textDark: "#ffffff",
+            bgCell: hasInvoice ? "#22c55e" : "#ffffff",
+            textDark: hasInvoice ? "#ffffff" : "#1a1a1a",
           },
         };
       }

@@ -249,6 +249,7 @@ function CompanyModal({
   address,
   siret,
   directeur,
+  website,
   countryCode,
   vatNumber,
   vatRate,
@@ -273,6 +274,7 @@ function CompanyModal({
   address: string;
   siret: string;
   directeur: string;
+  website: string;
   countryCode: string;
   vatNumber: string;
   vatRate: string;
@@ -282,6 +284,7 @@ function CompanyModal({
   onAddressChange: (v: string) => void;
   onSiretChange: (v: string) => void;
   onDirecteurChange: (v: string) => void;
+  onWebsiteChange: (v: string) => void;
   onCountryCodeChange?: (v: string) => void;
   onVatNumberChange?: (v: string) => void;
   onVatRateChange?: (v: string) => void;
@@ -339,6 +342,16 @@ function CompanyModal({
               value={directeur}
               onChange={(e) => onDirecteurChange(e.target.value)}
               placeholder="Nom du directeur"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Site web</label>
+            <input
+              type="url"
+              value={website}
+              onChange={(e) => onWebsiteChange(e.target.value)}
+              placeholder="https://exemple.com"
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
@@ -445,6 +458,7 @@ function SocietesPageContent() {
   const [editAddress, setEditAddress] = useState("");
   const [editSiret, setEditSiret] = useState("");
   const [editDirecteur, setEditDirecteur] = useState("");
+  const [editWebsite, setEditWebsite] = useState("");
   const [editCountryCode, setEditCountryCode] = useState("FR");
   const [editVatNumber, setEditVatNumber] = useState("");
   const [editVatRate, setEditVatRate] = useState("20");
@@ -488,6 +502,7 @@ function SocietesPageContent() {
         setEditAddress(company.address ?? "");
         setEditSiret(company.siret ?? "");
         setEditDirecteur(company.directeur ?? "");
+        setEditWebsite(company.website ?? "");
         setEditCountryCode(company.country_code ?? "FR");
         setEditVatNumber(company.vat_number ?? "");
         setEditVatRate(String(company.vat_rate ?? 20));
@@ -505,6 +520,7 @@ function SocietesPageContent() {
     setEditAddress("");
     setEditSiret("");
     setEditDirecteur("");
+    setEditWebsite("");
     setEditCountryCode("FR");
     setEditVatNumber("");
     setEditVatRate("20");
@@ -520,6 +536,7 @@ function SocietesPageContent() {
     setEditAddress(company.address ?? "");
     setEditSiret(company.siret ?? "");
     setEditDirecteur(company.directeur ?? "");
+    setEditWebsite(company.website ?? "");
     setEditCountryCode(company.country_code ?? "FR");
     setEditVatNumber(company.vat_number ?? "");
     setEditVatRate(String(company.vat_rate ?? 20));
@@ -536,6 +553,7 @@ function SocietesPageContent() {
     setEditAddress("");
     setEditSiret("");
     setEditDirecteur("");
+    setEditWebsite("");
     setEditCountryCode("FR");
     setEditVatNumber("");
     setEditVatRate("20");
@@ -553,6 +571,7 @@ function SocietesPageContent() {
       address: editAddress.trim() || null,
       siret: editSiret.trim() || null,
       directeur: editDirecteur.trim() || null,
+      website: editWebsite.trim() || null,
     };
     if (!isAddModal) {
       payload.country_code = editCountryCode || "FR";
@@ -568,7 +587,7 @@ function SocietesPageContent() {
         const res = await fetch("/api/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: payload.name, address: payload.address, siret: payload.siret, directeur: payload.directeur }),
+          body: JSON.stringify({ name: payload.name, address: payload.address, siret: payload.siret, directeur: payload.directeur, website: payload.website }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Échec de la création");
@@ -668,6 +687,8 @@ function SocietesPageContent() {
           address={editAddress}
           siret={editSiret}
           directeur={editDirecteur}
+          website={editWebsite}
+          onWebsiteChange={setEditWebsite}
           countryCode={editCountryCode}
           vatNumber={editVatNumber}
           vatRate={editVatRate}
