@@ -259,6 +259,7 @@ function CompanyModal({
   onAddressChange,
   onSiretChange,
   onDirecteurChange,
+  onWebsiteChange,
   onCountryCodeChange,
   onVatNumberChange,
   onVatRateChange,

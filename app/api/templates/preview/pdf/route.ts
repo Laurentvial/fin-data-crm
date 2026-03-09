@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     const html = renderHandlebarsTemplate(templateContent, data);
     const pdfBuffer = await htmlToPdfBuffer(html);
 
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": 'inline; filename="apercu-facture.pdf"',
