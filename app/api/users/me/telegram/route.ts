@@ -103,6 +103,15 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (msg.includes("Username") && msg.toLowerCase().includes("invalid")) {
+      return NextResponse.json(
+        {
+          error:
+            "Nom de bot invalide. Vérifiez NEXT_PUBLIC_TELEGRAM_BOT_USERNAME (sans @) et que le domaine est lié dans BotFather.",
+        },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
       { error: "Erreur lors de la liaison du compte Telegram." },
       { status: 500 }

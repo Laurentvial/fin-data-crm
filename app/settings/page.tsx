@@ -29,7 +29,9 @@ function UserTelegramLinkSection() {
   const [error, setError] = useState<string | null>(null);
   const [unlinkPending, setUnlinkPending] = useState(false);
   const widgetContainerRef = useRef<HTMLDivElement>(null);
-  const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim();
+  const rawBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim();
+  const botUsername = rawBotUsername ? rawBotUsername.replace(/^@+/, "") : "";
+  const botUsernameValid = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(botUsername);
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -61,17 +63,20 @@ function UserTelegramLinkSection() {
       window.history.replaceState({}, "", "/settings");
     }
     if (params.get("telegram_error")) {
+      const err = params.get("telegram_error");
       setError(
-        params.get("telegram_error") === "invalid"
-          ? "Données Telegram invalides. Vérifiez que le domaine est lié dans BotFather et que TELEGRAM_BOT_TOKEN est correct."
-          : "Erreur de configuration Telegram."
+        err === "invalid"
+          ? "Données Telegram invalides. Vérifiez que : (1) le domaine est lié dans BotFather avec /setdomain, (2) NEXT_PUBLIC_TELEGRAM_BOT_USERNAME est le nom du bot sans @ (ex. MonBot), (3) TELEGRAM_BOT_TOKEN est correct."
+          : err === "config"
+            ? "Le bot Telegram n'est pas configuré (TELEGRAM_BOT_TOKEN manquant)."
+            : "Erreur de configuration Telegram."
       );
       window.history.replaceState({}, "", "/settings");
     }
   }, [fetchStatus]);
 
   useEffect(() => {
-    if (!status?.linked && botUsername && widgetContainerRef.current && !widgetContainerRef.current.querySelector("script")) {
+    if (!status?.linked && botUsernameValid && widgetContainerRef.current && !widgetContainerRef.current.querySelector("script")) {
       const script = document.createElement("script");
       script.src = "https://telegram.org/js/telegram-widget.js?22";
       script.setAttribute("data-telegram-login", botUsername);
@@ -80,7 +85,7 @@ function UserTelegramLinkSection() {
       script.async = true;
       widgetContainerRef.current.appendChild(script);
     }
-  }, [status?.linked, botUsername]);
+  }, [status?.linked, botUsername, botUsernameValid]);
 
   const handleUnlink = async () => {
     if (!confirm("Délier votre compte Telegram ? Vous ne serez plus ajouté aux nouveaux groupes.")) return;
@@ -139,8 +144,12 @@ function UserTelegramLinkSection() {
             {unlinkPending ? "…" : "Délier"}
           </button>
         </div>
-      ) : botUsername ? (
+      ) : botUsernameValid ? (
         <div ref={widgetContainerRef} className="min-h-[50px]" />
+      ) : botUsername ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          Nom de bot invalide : <code className="font-mono">{rawBotUsername || "(vide)"}</code>. Utilisez 5–32 caractères (lettres, chiffres, underscore), sans @. Ex. : <code className="font-mono">MonBot</code>
+        </div>
       ) : (
         <p className="text-sm text-[var(--muted-foreground)]">
           Le bot Telegram n&apos;est pas configuré. Demandez à l&apos;administrateur d&apos;ajouter NEXT_PUBLIC_TELEGRAM_BOT_USERNAME.
