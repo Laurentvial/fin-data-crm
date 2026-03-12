@@ -180,14 +180,43 @@ export async function generateInvoice(
   const html = renderHandlebarsTemplate(templateContent, templateData);
   const pdfBuffer = await htmlToPdfBuffer(html);
 
+  // Create or find customer linked to company
+  const nameNorm = customerName.trim().toLowerCase();
+  const existingCustomerRows = await sql`
+    SELECT id FROM customers
+    WHERE company_id = ${companyId}::uuid AND lower(trim(name)) = ${nameNorm}
+    LIMIT 1
+  `;
+  const existingCustomer = Array.isArray(existingCustomerRows) ? existingCustomerRows[0] : existingCustomerRows;
+  let customerId: string | null = null;
+  if (existingCustomer?.id) {
+    customerId = existingCustomer.id as string;
+    // Update address/vat if provided and different
+    await sql`
+      UPDATE customers SET
+        address = COALESCE(${customerAddress ?? null}, address),
+        vat_number = COALESCE(${customerVat ?? null}, vat_number),
+        updated_at = NOW()
+      WHERE id = ${customerId}::uuid
+    `;
+  } else {
+    const insertCustomerRows = await sql`
+      INSERT INTO customers (company_id, name, address, vat_number)
+      VALUES (${companyId}::uuid, ${customerName.trim()}, ${customerAddress ?? null}, ${customerVat ?? null})
+      RETURNING id
+    `;
+    const insertedCustomer = Array.isArray(insertCustomerRows) ? insertCustomerRows[0] : insertCustomerRows;
+    customerId = (insertedCustomer?.id as string) ?? null;
+  }
+
   const insertRows = await sql`
     INSERT INTO invoices (
-      company_id, transaction_id, invoice_number, issue_date, due_date,
+      company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
       customer_name, customer_address, customer_vat, line_items,
       subtotal, tax_amount, total, currency, status
     )
     VALUES (
-      ${companyId}::uuid, ${transactionId}::uuid, ${invoiceNumber},
+      ${companyId}::uuid, ${transactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
       ${issueDate}::date, ${dueDateStr}::date,
       ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
       ${JSON.stringify(lineItems)}::jsonb,

@@ -36,6 +36,15 @@ export interface InvoiceLineItemInput {
   unit_price_ttc: number;
 }
 
+export interface Customer {
+  id: string;
+  company_id: string;
+  name: string;
+  address?: string | null;
+  vat_number?: string | null;
+  created_at: string;
+}
+
 export interface Invoice {
   id: string;
   company_id: string;
@@ -100,6 +109,7 @@ export interface Transaction {
   id: string;
   bank_account_id: string;
   bank_account_name?: string;
+  company_id?: string;
   company_name?: string;
   transaction_date: string;
   amount: string;

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import type { Transaction } from "@/lib/types";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { Customer, Transaction } from "@/lib/types";
 import type { InvoiceLineItemInput } from "@/lib/types";
 
 interface LineItemRow {
@@ -39,6 +39,64 @@ export function GenerateInvoiceModal({
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [showCustomerList, setShowCustomerList] = useState(false);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const customerListRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const companyId = transaction.company_id;
+
+  const fetchCustomers = useCallback(async (search?: string) => {
+    if (!companyId) return;
+    setLoadingCustomers(true);
+    try {
+      const params = new URLSearchParams({ company_id: companyId });
+      if (search?.trim()) params.set("q", search.trim());
+      const res = await fetch(`/api/customers?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomers(data);
+      }
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    if (showCustomerList && companyId) {
+      fetchCustomers(customerName.trim() || undefined);
+    }
+  }, [showCustomerList, companyId, customerName, fetchCustomers]);
+
+  const handleSelectCustomer = useCallback((c: Customer) => {
+    setCustomerName(c.name);
+    setCustomerAddress(c.address ?? "");
+    setCustomerVat(c.vat_number ?? "");
+    setShowCustomerList(false);
+    nameInputRef.current?.focus();
+  }, []);
+
+  const handleNameFocus = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    if (companyId) setShowCustomerList(true);
+  }, [companyId]);
+
+  const handleNameBlur = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+    }
+    blurTimeoutRef.current = setTimeout(() => {
+      blurTimeoutRef.current = null;
+      if (!customerListRef.current?.contains(document.activeElement)) {
+        setShowCustomerList(false);
+      }
+    }, 150);
+  }, []);
 
   const amount = Number(transaction.amount);
   const transactionAmount = Math.abs(amount);
@@ -161,18 +219,56 @@ export function GenerateInvoiceModal({
           <p className="mt-1 font-medium">Montant : {displayAmount} €</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
+          <div ref={customerListRef} className="relative">
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
               Nom du client *
             </label>
             <input
+              ref={nameInputRef}
               type="text"
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Nom ou raison sociale"
+              onChange={(e) => {
+                setCustomerName(e.target.value);
+                if (companyId) setShowCustomerList(true);
+              }}
+              onFocus={handleNameFocus}
+              onBlur={handleNameBlur}
+              placeholder="Nom ou raison sociale — rechercher un client existant"
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               autoFocus
             />
+            {showCustomerList && companyId && (
+              <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg">
+                {loadingCustomers ? (
+                  <div className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+                    Chargement…
+                  </div>
+                ) : customers.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+                    Aucun client enregistré. Saisissez les informations pour créer un nouveau client.
+                  </div>
+                ) : (
+                  <ul className="py-1">
+                    {customers.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCustomer(c)}
+                          className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
+                        >
+                          <span className="font-medium">{c.name}</span>
+                          {(c.address || c.vat_number) && (
+                            <span className="ml-2 text-[var(--muted-foreground)]">
+                              — {[c.address, c.vat_number].filter(Boolean).join(" • ")}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">

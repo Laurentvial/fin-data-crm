@@ -69,7 +69,9 @@ function UserTelegramLinkSection() {
           ? "Données Telegram invalides. Vérifiez que : (1) le domaine est lié dans BotFather avec /setdomain, (2) NEXT_PUBLIC_TELEGRAM_BOT_USERNAME est le nom du bot sans @ (ex. MonBot), (3) TELEGRAM_BOT_TOKEN est correct."
           : err === "config"
             ? "Le bot Telegram n'est pas configuré (TELEGRAM_BOT_TOKEN manquant)."
-            : "Erreur de configuration Telegram."
+            : err === "domain" || err === "domain_invalid"
+              ? "Domaine du bot invalide. Dans @BotFather, envoyez /setdomain à votre bot, puis indiquez le domaine exact de ce site (ex. monapp.com sans https://). En local : utilisez ngrok ou Cloudflare Tunnel et enregistrez l’URL temporaire."
+              : "Erreur de configuration Telegram."
       );
       window.history.replaceState({}, "", "/settings");
     }
@@ -77,15 +79,32 @@ function UserTelegramLinkSection() {
 
   useEffect(() => {
     if (!status?.linked && botUsernameValid && widgetContainerRef.current && !widgetContainerRef.current.querySelector("script")) {
+      (window as unknown as { onTelegramAuth?: (user: Record<string, unknown>) => void }).onTelegramAuth = async (user) => {
+        try {
+          const res = await fetch("/api/users/me/telegram", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(user),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            fetchStatus();
+          } else {
+            setError(data.error ?? "Échec de la liaison");
+          }
+        } catch {
+          setError("Erreur réseau");
+        }
+      };
       const script = document.createElement("script");
       script.src = "https://telegram.org/js/telegram-widget.js?22";
       script.setAttribute("data-telegram-login", botUsername);
       script.setAttribute("data-size", "large");
-      script.setAttribute("data-auth-url", `${typeof window !== "undefined" ? window.location.origin : ""}/api/telegram-callback`);
+      script.setAttribute("data-onauth", "onTelegramAuth");
       script.async = true;
       widgetContainerRef.current.appendChild(script);
     }
-  }, [status?.linked, botUsername, botUsernameValid]);
+  }, [status?.linked, botUsername, botUsernameValid, fetchStatus]);
 
   const handleUnlink = async () => {
     if (!confirm("Délier votre compte Telegram ? Vous ne serez plus ajouté aux nouveaux groupes.")) return;
@@ -123,6 +142,11 @@ function UserTelegramLinkSection() {
         <span className="mt-2 block text-xs">
           Astuce : ajoutez le compte admin Telegram à vos contacts. Vérifiez aussi que Paramètres → Confidentialité → Groupes et canaux → « Qui peut vous ajouter aux groupes » est sur « Tout le monde » ou « Mes contacts ».
         </span>
+        {botUsernameValid && (
+          <span className="mt-2 block text-xs">
+            Si rien ne se passe au clic : autorisez les popups pour ce site, et désactivez temporairement « Bloquer les cookies tiers » (Paramètres du navigateur). Si le widget affiche « Bot domain invalid » : dans @BotFather, envoyez <code className="font-mono">/setdomain</code> à votre bot, puis saisissez le domaine exact de ce site (ex. <code className="font-mono">monapp.com</code> sans https://). En développement local, utilisez ngrok ou Cloudflare Tunnel et enregistrez l&apos;URL générée.
+          </span>
+        )}
       </p>
       {error && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
@@ -145,7 +169,12 @@ function UserTelegramLinkSection() {
           </button>
         </div>
       ) : botUsernameValid ? (
-        <div ref={widgetContainerRef} className="min-h-[50px]" />
+        <div>
+          <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+            Cliquez sur le bouton ci-dessous pour lier votre compte Telegram (il peut afficher votre identifiant, ex. « Log in as … »). Autorisez les popups si une fenêtre ne s&apos;ouvre pas.
+          </p>
+          <div ref={widgetContainerRef} className="min-h-[50px]" />
+        </div>
       ) : botUsername ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
           Nom de bot invalide : <code className="font-mono">{rawBotUsername || "(vide)"}</code>. Utilisez 5–32 caractères (lettres, chiffres, underscore), sans @. Ex. : <code className="font-mono">MonBot</code>

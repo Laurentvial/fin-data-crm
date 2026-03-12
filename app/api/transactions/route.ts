@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
         t.created_at,
         t.processed_by_user_id,
         ba.name AS bank_account_name,
+        ba.company_id,
         c.name AS company_name,
         i.invoice_id,
         i.invoice_pdf_url
