@@ -254,6 +254,7 @@ function CompanyModal({
   vatNumber,
   vatRate,
   invoicePrefix,
+  invoiceNextNumber,
   currency,
   onNameChange,
   onAddressChange,
@@ -264,6 +265,7 @@ function CompanyModal({
   onVatNumberChange,
   onVatRateChange,
   onInvoicePrefixChange,
+  onInvoiceNextNumberChange,
   onCurrencyChange,
   onSave,
   onClose,
@@ -280,6 +282,7 @@ function CompanyModal({
   vatNumber: string;
   vatRate: string;
   invoicePrefix: string;
+  invoiceNextNumber: string;
   currency: string;
   onNameChange: (v: string) => void;
   onAddressChange: (v: string) => void;
@@ -290,6 +293,7 @@ function CompanyModal({
   onVatNumberChange?: (v: string) => void;
   onVatRateChange?: (v: string) => void;
   onInvoicePrefixChange?: (v: string) => void;
+  onInvoiceNextNumberChange?: (v: string) => void;
   onCurrencyChange?: (v: string) => void;
   onSave: () => void;
   onClose: () => void;
@@ -407,6 +411,20 @@ function CompanyModal({
                     />
                   </div>
                   <div>
+                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Prochain numéro de facture</label>
+                    <input
+                      type="number"
+                      value={invoiceNextNumber}
+                      onChange={(e) => onInvoiceNextNumberChange?.(e.target.value)}
+                      placeholder="1"
+                      min="1"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      La prochaine facture sera {invoicePrefix || "FAC-"}{new Date().getFullYear()}-{String(invoiceNextNumber || "1").padStart(4, "0")}
+                    </p>
+                  </div>
+                  <div>
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Devise</label>
                     <input
                       type="text"
@@ -464,6 +482,7 @@ function SocietesPageContent() {
   const [editVatNumber, setEditVatNumber] = useState("");
   const [editVatRate, setEditVatRate] = useState("20");
   const [editInvoicePrefix, setEditInvoicePrefix] = useState("FAC-");
+  const [editInvoiceNextNumber, setEditInvoiceNextNumber] = useState("1");
   const [editCurrency, setEditCurrency] = useState("EUR");
   const [saving, setSaving] = useState(false);
 
@@ -493,26 +512,39 @@ function SocietesPageContent() {
     fetchCompanies();
   }, [fetchCompanies]);
 
+  const populateEditForm = useCallback((c: Company) => {
+    setEditName(c.name);
+    setEditAddress(c.address ?? "");
+    setEditSiret(c.siret ?? "");
+    setEditDirecteur(c.directeur ?? "");
+    setEditWebsite(c.website ?? "");
+    setEditCountryCode(c.country_code ?? "FR");
+    setEditVatNumber(c.vat_number ?? "");
+    setEditVatRate(String(c.vat_rate ?? 20));
+    setEditInvoicePrefix(c.invoice_prefix ?? "FAC-");
+    setEditInvoiceNextNumber(String(c.invoice_next_number ?? 1));
+    setEditCurrency(c.currency ?? "EUR");
+  }, []);
+
   useEffect(() => {
-    if (editIdFromUrl && companies.length > 0) {
-      const company = companies.find((c) => c.id === editIdFromUrl);
-      if (company) {
-        setEditingCompany(company);
-        setIsAddModal(false);
-        setEditName(company.name);
-        setEditAddress(company.address ?? "");
-        setEditSiret(company.siret ?? "");
-        setEditDirecteur(company.directeur ?? "");
-        setEditWebsite(company.website ?? "");
-        setEditCountryCode(company.country_code ?? "FR");
-        setEditVatNumber(company.vat_number ?? "");
-        setEditVatRate(String(company.vat_rate ?? 20));
-        setEditInvoicePrefix(company.invoice_prefix ?? "FAC-");
-        setEditCurrency(company.currency ?? "EUR");
-        setError(null);
-      }
-    }
-  }, [editIdFromUrl, companies]);
+    if (!editIdFromUrl || companies.length === 0) return;
+    const company = companies.find((c) => c.id === editIdFromUrl);
+    if (!company) return;
+    setEditingCompany(company);
+    setIsAddModal(false);
+    setError(null);
+    populateEditForm(company);
+    let cancelled = false;
+    fetch(`/api/accounts/${editIdFromUrl}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((fresh) => {
+        if (cancelled || !fresh) return;
+        populateEditForm(fresh);
+        setEditingCompany((prev) => (prev ? { ...prev, ...fresh } : prev));
+      })
+      .catch(() => { /* keep form populated from company */ });
+    return () => { cancelled = true; };
+  }, [editIdFromUrl, companies, populateEditForm]);
 
   const openAdd = () => {
     setEditingCompany(null);
@@ -526,24 +558,26 @@ function SocietesPageContent() {
     setEditVatNumber("");
     setEditVatRate("20");
     setEditInvoicePrefix("FAC-");
+    setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
     setError(null);
   };
 
-  const openEdit = (company: Company) => {
+  const openEdit = async (company: Company) => {
     setEditingCompany(company);
     setIsAddModal(false);
-    setEditName(company.name);
-    setEditAddress(company.address ?? "");
-    setEditSiret(company.siret ?? "");
-    setEditDirecteur(company.directeur ?? "");
-    setEditWebsite(company.website ?? "");
-    setEditCountryCode(company.country_code ?? "FR");
-    setEditVatNumber(company.vat_number ?? "");
-    setEditVatRate(String(company.vat_rate ?? 20));
-    setEditInvoicePrefix(company.invoice_prefix ?? "FAC-");
-    setEditCurrency(company.currency ?? "EUR");
     setError(null);
+    populateEditForm(company);
+    try {
+      const res = await fetch(`/api/accounts/${company.id}`);
+      const fresh = res.ok ? await res.json() : null;
+      if (fresh) {
+        populateEditForm(fresh);
+        setEditingCompany((prev) => (prev ? { ...prev, ...fresh } : prev));
+      }
+    } catch {
+      /* keep form populated from company */
+    }
   };
 
   const closeModal = () => {
@@ -559,6 +593,7 @@ function SocietesPageContent() {
     setEditVatNumber("");
     setEditVatRate("20");
     setEditInvoicePrefix("FAC-");
+    setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
     setError(null);
     if (editIdFromUrl) router.replace("/societes");
@@ -579,6 +614,10 @@ function SocietesPageContent() {
       payload.vat_number = editVatNumber.trim() || null;
       payload.vat_rate = parseFloat(editVatRate) || 20;
       payload.invoice_prefix = editInvoicePrefix.trim() || "FAC-";
+      const nextNum = parseInt(editInvoiceNextNumber, 10);
+      if (!Number.isNaN(nextNum) && nextNum >= 1) {
+        payload.invoice_next_number = nextNum;
+      }
       payload.currency = editCurrency.trim().slice(0, 3).toUpperCase() || "EUR";
     }
     setSaving(true);
@@ -694,6 +733,7 @@ function SocietesPageContent() {
           vatNumber={editVatNumber}
           vatRate={editVatRate}
           invoicePrefix={editInvoicePrefix}
+          invoiceNextNumber={editInvoiceNextNumber}
           currency={editCurrency}
           onNameChange={setEditName}
           onAddressChange={setEditAddress}
@@ -703,6 +743,7 @@ function SocietesPageContent() {
           onVatNumberChange={setEditVatNumber}
           onVatRateChange={setEditVatRate}
           onInvoicePrefixChange={setEditInvoicePrefix}
+          onInvoiceNextNumberChange={setEditInvoiceNextNumber}
           onCurrencyChange={setEditCurrency}
           onSave={handleSave}
           onClose={closeModal}

@@ -77,6 +77,15 @@ export async function PATCH(
           : undefined;
     const invoicePrefix =
       typeof body?.invoice_prefix === "string" ? body.invoice_prefix.trim() || null : undefined;
+    const invoiceNextNumber =
+      typeof body?.invoice_next_number === "number" && body.invoice_next_number >= 1
+        ? Math.floor(body.invoice_next_number)
+        : typeof body?.invoice_next_number === "string"
+          ? (() => {
+              const n = parseInt(body.invoice_next_number, 10);
+              return !Number.isNaN(n) && n >= 1 ? n : undefined;
+            })()
+          : undefined;
     const currency =
       typeof body?.currency === "string" ? body.currency.trim().slice(0, 3).toUpperCase() || null : undefined;
     const invoiceTemplateId =
@@ -111,6 +120,10 @@ export async function PATCH(
     if (invoicePrefix !== undefined) {
       updates.push(`invoice_prefix = $${idx++}`);
       values.push(invoicePrefix);
+    }
+    if (invoiceNextNumber !== undefined) {
+      updates.push(`invoice_next_number = $${idx++}`);
+      values.push(invoiceNextNumber);
     }
     if (currency !== undefined) {
       updates.push(`currency = $${idx++}`);

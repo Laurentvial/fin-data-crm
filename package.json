@@ -18,12 +18,14 @@
     "lodash": "^4.17.23",
     "marked": "^17.0.3",
     "next": "16.1.6",
-    "puppeteer": "^24.37.5",
+    "@sparticuz/chromium": "^131.0.0",
+    "puppeteer-core": "^24.37.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-responsive-carousel": "^3.2.23"
   },
   "devDependencies": {
+    "puppeteer": "^24.37.5",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

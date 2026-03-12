@@ -29,6 +29,7 @@ export async function GET() {
         c.vat_number,
         c.vat_rate,
         c.invoice_prefix,
+        c.invoice_next_number,
         c.currency,
         c.created_at,
         c.updated_at,
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     const rows = await sql`
       INSERT INTO companies (name, address, siret, directeur, website)
       VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website})
-      RETURNING id, name, address, siret, directeur, website, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, website, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, invoice_template_id, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

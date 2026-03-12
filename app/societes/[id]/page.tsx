@@ -548,6 +548,14 @@ export default function SocieteDetailPage() {
                   <dd className="text-sm">{company?.invoice_prefix ?? "—"}</dd>
                 </div>
                 <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Prochain numéro</dt>
+                  <dd className="text-sm">
+                    {company?.invoice_next_number != null
+                      ? `${company.invoice_prefix ?? "FAC-"}${new Date().getFullYear()}-${String(company.invoice_next_number).padStart(4, "0")}`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
                   <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Devise</dt>
                   <dd className="text-sm">{company?.currency ?? "—"}</dd>
                 </div>
