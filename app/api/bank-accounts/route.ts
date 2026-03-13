@@ -56,20 +56,39 @@ export async function GET() {
 export async function POST(request: Request) {
   const authError = await requireAuth();
   if (authError) return authError;
-  const serviceUrl = process.env.TELEGRAM_GROUP_SERVICE_URL;
-  const apiKey = process.env.TELEGRAM_SERVICE_API_KEY;
-  if (!serviceUrl || !apiKey) {
-    return NextResponse.json(
-      { error: "Service Telegram non configuré (TELEGRAM_GROUP_SERVICE_URL, TELEGRAM_SERVICE_API_KEY)." },
-      { status: 503 }
-    );
-  }
   try {
     const body = await request.json();
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     const company_id = typeof body?.company_id === "string" ? body.company_id.trim() : "";
     const bank_id = typeof body?.bank_id === "string" ? body.bank_id.trim() : null;
     const ibansRaw = body?.ibans;
+    const telegramChatIdRaw = body?.telegram_chat_id;
+    const existingTelegramChatId =
+      telegramChatIdRaw !== undefined && telegramChatIdRaw !== null && telegramChatIdRaw !== ""
+        ? (typeof telegramChatIdRaw === "number"
+            ? Number.isFinite(telegramChatIdRaw)
+              ? Math.floor(telegramChatIdRaw)
+              : null
+            : typeof telegramChatIdRaw === "string"
+              ? (() => {
+                  const s = telegramChatIdRaw.trim();
+                  if (!s) return null;
+                  const n = parseInt(s, 10);
+                  return Number.isFinite(n) ? n : null;
+                })()
+              : null)
+        : null;
+
+    const useExistingGroup = existingTelegramChatId !== null;
+    const serviceUrl = process.env.TELEGRAM_GROUP_SERVICE_URL;
+    const apiKey = process.env.TELEGRAM_SERVICE_API_KEY;
+    if (!useExistingGroup && (!serviceUrl || !apiKey)) {
+      return NextResponse.json(
+        { error: "Service Telegram non configuré (TELEGRAM_GROUP_SERVICE_URL, TELEGRAM_SERVICE_API_KEY)." },
+        { status: 503 }
+      );
+    }
+
     const ibanItems: { iban: string; bic?: string | null }[] = Array.isArray(ibansRaw)
       ? ibansRaw.flatMap((v: unknown) => {
           if (typeof v === "string") {
@@ -159,78 +178,107 @@ BANQUE : ${bankName ?? "—"}`;
       }
     }
 
-    const telegramUsers = await sql`
-      SELECT ut.telegram_id, ut.telegram_username
-      FROM user_telegram ut
-    `;
-    const users =
-      telegramUsers.length > 0
-        ? telegramUsers.map((u) => ({
-            telegram_id: Number(u.telegram_id),
-            telegram_username: u.telegram_username ?? undefined,
-          }))
-        : undefined;
+    let chat_id: number;
+    let invited: number[] = [];
+    let failed: { telegram_id: number; telegram_username?: string; reason: string }[] = [];
 
-    const createGroupBody: {
-      title: string;
-      users?: { telegram_id: number; telegram_username?: string }[];
-      logo_base64?: string;
-      logo_content_type?: string;
-      welcome_message?: string;
-      kbis_base64?: string;
-      kbis_content_type?: string;
-      kbis_filename?: string;
-    } = {
-      title,
-      users,
-      welcome_message: welcomeMessage,
-    };
-    if (logoBase64 && logoContentType) {
-      createGroupBody.logo_base64 = logoBase64;
-      createGroupBody.logo_content_type = logoContentType;
-      console.log("Sending bank logo to Telegram service:", logoContentType, logoBase64.length, "chars base64");
+    if (useExistingGroup) {
+      chat_id = existingTelegramChatId!;
     } else {
-      console.log("No bank logo to send (bank_id=%s, hasLogo=%s)", bank_id ?? "null", !!logoBase64);
-    }
-    if (kbisRow && typeof kbisRow.data_base64 === "string") {
-      createGroupBody.kbis_base64 = kbisRow.data_base64 as string;
-      createGroupBody.kbis_content_type = (kbisRow.content_type as string) || "application/pdf";
-      if (typeof kbisRow.filename === "string" && kbisRow.filename) {
-        createGroupBody.kbis_filename = kbisRow.filename;
+      const telegramUsers = await sql`
+        SELECT ut.telegram_id, ut.telegram_username
+        FROM user_telegram ut
+      `;
+      const users =
+        telegramUsers.length > 0
+          ? telegramUsers.map((u) => ({
+              telegram_id: Number(u.telegram_id),
+              telegram_username: u.telegram_username ?? undefined,
+            }))
+          : undefined;
+
+      const createGroupBody: {
+        title: string;
+        users?: { telegram_id: number; telegram_username?: string }[];
+        logo_base64?: string;
+        logo_content_type?: string;
+        welcome_message?: string;
+        kbis_base64?: string;
+        kbis_content_type?: string;
+        kbis_filename?: string;
+      } = {
+        title,
+        users,
+        welcome_message: welcomeMessage,
+      };
+      if (logoBase64 && logoContentType) {
+        createGroupBody.logo_base64 = logoBase64;
+        createGroupBody.logo_content_type = logoContentType;
+        console.log("Sending bank logo to Telegram service:", logoContentType, logoBase64.length, "chars base64");
+      } else {
+        console.log("No bank logo to send (bank_id=%s, hasLogo=%s)", bank_id ?? "null", !!logoBase64);
+      }
+      if (kbisRow && typeof kbisRow.data_base64 === "string") {
+        createGroupBody.kbis_base64 = kbisRow.data_base64 as string;
+        createGroupBody.kbis_content_type = (kbisRow.content_type as string) || "application/pdf";
+        if (typeof kbisRow.filename === "string" && kbisRow.filename) {
+          createGroupBody.kbis_filename = kbisRow.filename;
+        }
+      }
+      const createRes = await fetch(`${serviceUrl!.replace(/\/$/, "")}/create-group`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey!,
+        },
+        body: JSON.stringify(createGroupBody),
+      });
+      if (!createRes.ok) {
+        const errText = await createRes.text();
+        let msg = "Impossible de créer le groupe Telegram";
+        try {
+          const errData = JSON.parse(errText) as { detail?: string | Array<string | { msg?: string }> };
+          const d = errData?.detail;
+          msg = typeof d === "string" ? d : Array.isArray(d) && d[0] ? String((d[0] as { msg?: string }).msg ?? d[0]) : msg;
+        } catch {
+          if (errText.trim()) msg = errText.slice(0, 200);
+        }
+        console.error("Telegram create-group error:", createRes.status, msg);
+        return NextResponse.json({ error: msg }, { status: createRes.status >= 500 ? 502 : createRes.status });
+      }
+      const createData = (await createRes.json()) as {
+        chat_id: number;
+        invited?: number[];
+        failed?: { telegram_id: number; telegram_username?: string; reason: string }[];
+      };
+      const createResult = createData;
+      chat_id = createResult.chat_id;
+      invited = createResult.invited ?? [];
+      failed = createResult.failed ?? [];
+      if (typeof chat_id !== "number") {
+        return NextResponse.json(
+          { error: "Réponse invalide du service Telegram." },
+          { status: 502 }
+        );
       }
     }
-    const createRes = await fetch(`${serviceUrl.replace(/\/$/, "")}/create-group`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-      },
-      body: JSON.stringify(createGroupBody),
-    });
-    if (!createRes.ok) {
-      const errText = await createRes.text();
-      let msg = "Impossible de créer le groupe Telegram";
-      try {
-        const errData = JSON.parse(errText) as { detail?: string | Array<string | { msg?: string }> };
-        const d = errData?.detail;
-        msg = typeof d === "string" ? d : Array.isArray(d) && d[0] ? String((d[0] as { msg?: string }).msg ?? d[0]) : msg;
-      } catch {
-        if (errText.trim()) msg = errText.slice(0, 200);
+    if (useExistingGroup) {
+      const [existing] = await sql`
+        SELECT ba.name AS account_name, c.name AS company_name
+        FROM bank_accounts ba
+        JOIN companies c ON c.id = ba.company_id
+        WHERE ba.telegram_chat_id = ${chat_id} LIMIT 1
+      `;
+      if (existing) {
+        const ex = existing as { account_name?: string; company_name?: string };
+        const label = [ex.company_name, ex.account_name].filter(Boolean).join(" – ") || "un autre compte";
+        return NextResponse.json(
+          {
+            error: `Ce groupe Telegram (ID ${chat_id}) est déjà lié à « ${label} ». Supprimez d'abord ce compte ou utilisez un autre groupe.`,
+          },
+          { status: 409 }
+        );
       }
-      console.error("Telegram create-group error:", createRes.status, msg);
-      return NextResponse.json({ error: msg }, { status: createRes.status >= 500 ? 502 : createRes.status });
-    }
-    const createData = (await createRes.json()) as {
-      chat_id: number;
-      invited?: number[];
-      failed?: { telegram_id: number; telegram_username?: string; reason: string }[];
-    };
-    const { chat_id, invited = [], failed = [] } = createData;
-    if (typeof chat_id !== "number") {
-      return NextResponse.json(
-        { error: "Réponse invalide du service Telegram." },
-        { status: 502 }
-      );
     }
     const rows = await sql`
       INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id)
@@ -310,6 +358,13 @@ BANQUE : ${bankName ?? "—"}`;
     return NextResponse.json(payload);
   } catch (error) {
     console.error("POST /api/bank-accounts error:", error);
+    const pgErr = error as { code?: string; constraint?: string };
+    if (pgErr?.code === "23505" && pgErr?.constraint === "ix_bank_accounts_telegram_chat_id") {
+      return NextResponse.json(
+        { error: "Ce groupe Telegram est déjà lié à un autre compte. Supprimez d'abord ce compte ou utilisez un autre groupe." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       { error: "Échec de la création du compte bancaire." },
       { status: 500 }

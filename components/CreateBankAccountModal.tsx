@@ -21,6 +21,9 @@ export interface CreateBankAccountModalProps {
   inviteWarning?: string | null;
   /** When set, the company selector is hidden and this company is used */
   fixedCompanyId?: string;
+  /** Optional: link an existing Telegram group by ID (e.g. -5186500052) instead of creating a new one */
+  linkExistingGroupId?: string;
+  onLinkExistingGroupIdChange?: (v: string) => void;
 }
 
 export function CreateBankAccountModal({
@@ -40,6 +43,8 @@ export function CreateBankAccountModal({
   error,
   inviteWarning,
   fixedCompanyId,
+  linkExistingGroupId = "",
+  onLinkExistingGroupIdChange,
 }: CreateBankAccountModalProps) {
   const addIban = () => onIbansChange([...ibans, { iban: "", bic: undefined }]);
   const removeIban = (i: number) => onIbansChange(ibans.filter((_, idx) => idx !== i));
@@ -62,9 +67,11 @@ export function CreateBankAccountModal({
         className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Créer un compte bancaire</h3>
+        <h3 className="subsection-header mb-4 text-lg font-medium">Créer un compte bancaire</h3>
         <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-          Un groupe Telegram sera créé automatiquement et lié à ce compte.
+          {linkExistingGroupId !== ""
+            ? "Liez un groupe Telegram existant en entrant son ID (ex. -5186500052)."
+            : "Un groupe Telegram sera créé automatiquement et lié à ce compte."}
         </p>
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
@@ -77,6 +84,28 @@ export function CreateBankAccountModal({
           </div>
         )}
         <div className="space-y-4">
+          {onLinkExistingGroupIdChange && (
+            <div>
+              <label className="mb-1 flex cursor-pointer items-center gap-2 text-sm font-medium text-[var(--foreground)]">
+                <input
+                  type="checkbox"
+                  checked={linkExistingGroupId !== ""}
+                  onChange={(e) => onLinkExistingGroupIdChange(e.target.checked ? (linkExistingGroupId || "-") : "")}
+                  className="rounded border-[var(--border)]"
+                />
+                Lier un groupe Telegram existant
+              </label>
+              {linkExistingGroupId !== "" && (
+                <input
+                  type="text"
+                  value={linkExistingGroupId}
+                  onChange={(e) => onLinkExistingGroupIdChange(e.target.value)}
+                  placeholder="ID du groupe (ex. -5186500052)"
+                  className="mt-2 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                />
+              )}
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
             <input

@@ -10,7 +10,7 @@ export default function SetupPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--background)] p-6">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold text-[var(--foreground)]">
+          <h1 className="page-title text-2xl font-semibold">
             Configuration initiale
           </h1>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">

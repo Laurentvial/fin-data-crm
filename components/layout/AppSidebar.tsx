@@ -106,7 +106,7 @@ export function AppSidebar() {
   };
 
   return (
-    <aside className="flex w-60 flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)]">
+    <aside className="flex w-60 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)]">
       <nav className="flex flex-1 flex-col gap-1 p-3 pt-4">
         {navMain.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
@@ -115,19 +115,19 @@ export function AppSidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-[var(--primary-muted)] text-[var(--primary)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                  ? "bg-[var(--primary-muted)] text-[var(--primary)] border-l-2 border-[var(--primary)] -ml-0.5 pl-3.5"
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] border-l-2 border-transparent"
               }`}
             >
-              <Icon className="h-5 w-5 shrink-0" />
+              <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--primary)]" : ""}`} />
               {item.label}
             </Link>
           );
         })}
         <div className="my-2 border-t border-[var(--border)] pt-2">
-          <p className="px-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+          <p className="subsection-header px-3 text-xs font-semibold uppercase tracking-wider">
             Administration
           </p>
         </div>
@@ -138,21 +138,21 @@ export function AppSidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-[var(--primary-muted)] text-[var(--primary)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                  ? "bg-[var(--primary-muted)] text-[var(--primary)] border-l-2 border-[var(--primary)] -ml-0.5 pl-3.5"
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] border-l-2 border-transparent"
               }`}
             >
-              <Icon className="h-5 w-5 shrink-0" />
+              <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--primary)]" : ""}`} />
               {item.label}
             </Link>
           );
         })}
       </nav>
-      <div className="border-t border-[var(--border)] p-3">
+      <div className="border-t border-[var(--sidebar-border)] p-3">
         <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--primary-muted)] text-[var(--primary)] font-semibold ring-2 ring-[var(--primary-muted-border)]">
             <span className="text-xs font-medium">{initials}</span>
           </div>
           <div className="min-w-0 flex-1">
@@ -167,7 +167,7 @@ export function AppSidebar() {
         <button
           type="button"
           onClick={handleSignOut}
-          className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--destructive-muted)] hover:text-[var(--destructive)] transition-colors"
         >
           <LogOutIcon />
           Déconnexion

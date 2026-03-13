@@ -64,12 +64,12 @@ function PlusIcon({ className }: { className?: string }) {
 
 export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterPanelOpen }: SheetToolbarProps) {
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--background)] px-4">
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm">
       {onAddClick && (
         <button
           type="button"
           onClick={onAddClick}
-          className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
         >
           <PlusIcon className="h-4 w-4" />
           Ajouter
@@ -80,8 +80,8 @@ export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterP
         onClick={onFilterClick}
         className={
           filterPanelOpen
-            ? "flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium bg-[var(--primary-muted)] text-[var(--primary)]"
-            : "flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+            ? "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary-muted)] text-[var(--primary)] border border-[var(--primary-muted-border)]"
+            : "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
         }
       >
         <FilterIcon className="h-4 w-4" />
@@ -89,7 +89,7 @@ export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterP
       </button>
       <button
         type="button"
-        className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--accent-muted)] hover:text-[var(--accent)]"
       >
         <SortIcon className="h-4 w-4" />
         Trier
@@ -97,7 +97,7 @@ export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterP
       <button
         type="button"
         onClick={onExportClick}
-        className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--success-muted)] hover:text-[var(--success)]"
       >
         <DownloadIcon className="h-4 w-4" />
         Exporter

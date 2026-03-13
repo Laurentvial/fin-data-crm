@@ -1,17 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --background-alt: #f1f5f9;
+  --foreground: #0f172a;
   --card: #ffffff;
   --border: #e2e8f0;
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
-  --primary: #2563eb;
+  --primary: #0d9488;
+  --primary-hover: #0f766e;
   --primary-foreground: #ffffff;
-  --primary-muted: #eff6ff;
-  --sidebar-bg: #f8fafc;
+  --primary-muted: #ccfbf1;
+  --primary-muted-border: #99f6e4;
+  --accent: #0891b2;
+  --accent-muted: #e0f2fe;
+  --success: #059669;
+  --success-muted: #d1fae5;
+  --warning: #d97706;
+  --warning-muted: #fef3c7;
+  --destructive: #dc2626;
+  --destructive-muted: #fee2e2;
+  --sidebar-bg: #f0fdfa;
+  --sidebar-border: #e6fffa;
   --header-bg: #ffffff;
+  --card-shadow: 0 1px 3px rgba(13, 148, 136, 0.08);
+  --card-hover-shadow: 0 4px 12px rgba(13, 148, 136, 0.15);
 }
 
 @theme inline {
@@ -23,17 +37,31 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0f172a;
+    --background: #0e1a2e;
+    --background-alt: #0c1929;
     --foreground: #f1f5f9;
     --card: #1e293b;
     --border: #334155;
     --muted: #1e293b;
     --muted-foreground: #94a3b8;
-    --primary: #3b82f6;
-    --primary-foreground: #ffffff;
-    --primary-muted: #1e3a5f;
+    --primary: #2dd4bf;
+    --primary-hover: #5eead4;
+    --primary-foreground: #0f172a;
+    --primary-muted: #134e4a;
+    --primary-muted-border: #0f766e;
+    --accent: #22d3ee;
+    --accent-muted: #164e63;
+    --success: #34d399;
+    --success-muted: #064e3b;
+    --warning: #fbbf24;
+    --warning-muted: #78350f;
+    --destructive: #f87171;
+    --destructive-muted: #7f1d1d;
     --sidebar-bg: #0f172a;
+    --sidebar-border: #1e293b;
     --header-bg: #0f172a;
+    --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --card-hover-shadow: 0 4px 12px rgba(45, 212, 191, 0.08);
   }
 }
 
@@ -41,4 +69,30 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Colored titles and section headers */
+.page-title {
+  color: var(--primary);
+}
+.section-header {
+  color: var(--primary);
+  border-left: 3px solid var(--primary-muted-border);
+  padding-left: 0.75rem;
+}
+.subsection-header {
+  color: var(--accent);
+}
+.table-header {
+  color: var(--primary);
+}
+
+/* Subtle layered background for main content area */
+.main-content-bg {
+  background: linear-gradient(
+    180deg,
+    var(--background) 0%,
+    var(--background-alt) 30%,
+    var(--background) 100%
+  );
 }

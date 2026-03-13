@@ -17,8 +17,8 @@ import "@glideapps/glide-data-grid/dist/index.css";
 import type { Transaction, TransactionType } from "@/lib/types";
 
 const LIGHT_THEME: Partial<Theme> = {
-  accentColor: "#2563eb",
-  accentLight: "#eff6ff",
+  accentColor: "#0d9488",
+  accentLight: "#ccfbf1",
   textDark: "#171717",
   textMedium: "#64748b",
   textLight: "#94a3b8",
@@ -30,8 +30,8 @@ const LIGHT_THEME: Partial<Theme> = {
 };
 
 const DARK_THEME: Partial<Theme> = {
-  accentColor: "#3b82f6",
-  accentLight: "#1e3a5f",
+  accentColor: "#2dd4bf",
+  accentLight: "#134e4a",
   textDark: "#f1f5f9",
   textMedium: "#94a3b8",
   textLight: "#cbd5e1",

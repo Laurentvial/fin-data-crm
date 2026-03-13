@@ -25,7 +25,12 @@ function TelegramCallbackContent() {
         for (const key of keys) {
           const val = searchParams.get(key);
           if (val != null) {
-            userData[key] = val;
+            if (key === "id" || key === "auth_date") {
+              const num = parseInt(val, 10);
+              userData[key] = Number.isNaN(num) ? val : num;
+            } else {
+              userData[key] = val;
+            }
           }
         }
 
@@ -33,6 +38,7 @@ function TelegramCallbackContent() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(userData),
+          credentials: "same-origin",
         });
 
         const data = await res.json();
@@ -47,7 +53,12 @@ function TelegramCallbackContent() {
           }
         } else {
           setStatus("error");
-          setError(data.error ?? "Échec de la liaison");
+          const errMsg = data.error ?? "Échec de la liaison";
+          setError(errMsg);
+          if (typeof window !== "undefined" && window.opener) {
+            window.opener.location.href = "/settings?telegram_error=invalid";
+            window.close();
+          }
         }
       } catch {
         setStatus("error");

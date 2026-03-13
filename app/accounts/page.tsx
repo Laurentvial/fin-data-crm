@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { BankSelect } from "@/components/BankSelect";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import type { Bank, BankAccount, Company, IbanItem } from "@/lib/types";
@@ -67,6 +67,15 @@ function PlusIcon({ className }: { className?: string }) {
   );
 }
 
+function BuildingIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+      <path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M8 10h.01M8 14h.01M16 14h.01" />
+    </svg>
+  );
+}
+
 function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -123,7 +132,7 @@ function AccountCard({
 
   return (
     <div
-      className="relative flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-shadow hover:shadow-md"
+      className="relative flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)]"
       onClick={() => onCardClick(bankAccount)}
       role="button"
       tabIndex={0}
@@ -325,11 +334,11 @@ function EditBankAccountModal({
         className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">
+        <h3 className="subsection-header mb-4 text-lg font-medium">
           Modifier {displayName(bankAccount)}
         </h3>
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          <div className="mb-4 rounded-lg border border-[var(--destructive-muted)] bg-[var(--destructive-muted)]/50 px-3 py-2 text-sm text-[var(--destructive)]">
             {error}
           </div>
         )}
@@ -468,9 +477,21 @@ function AccountsPageContent() {
   const [createCompanyId, setCreateCompanyId] = useState("");
   const [createBankId, setCreateBankId] = useState("");
   const [createIbans, setCreateIbans] = useState<IbanItem[]>([]);
+  const [createLinkExistingGroupId, setCreateLinkExistingGroupId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createInviteWarning, setCreateInviteWarning] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredBankAccounts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return bankAccounts;
+    return bankAccounts.filter(
+      (ba) =>
+        (ba.company_name ?? "").toLowerCase().includes(q) ||
+        (ba.name ?? "").toLowerCase().includes(q)
+    );
+  }, [bankAccounts, search]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoading(true);
@@ -558,6 +579,7 @@ function AccountsPageContent() {
     setCreateCompanyId(companies[0]?.id ?? "");
     setCreateBankId("");
     setCreateIbans([]);
+    setCreateLinkExistingGroupId("");
     setError(null);
     setCreateInviteWarning(null);
   };
@@ -580,22 +602,24 @@ function AccountsPageContent() {
           bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
         }))
         .filter((v) => v.iban.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[] } = {
+      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[]; telegram_chat_id?: string } = {
         name,
         company_id: createCompanyId,
         ibans: ibansToSend,
       };
       if (createBankId) body.bank_id = createBankId;
+      const linkId = createLinkExistingGroupId.trim();
+      if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
       const res = await fetch("/api/bank-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error ?? "Échec de la création");
       }
-      const created = await res.json();
+      const created = data;
       setBankAccounts((prev) => [...prev, created].sort((a, b) => (a.company_name ?? "").localeCompare(b.company_name ?? "") || a.name.localeCompare(b.name)));
       const warnings = created.telegram_invite_warnings as { telegram_id: number; name?: string; telegram_username?: string; reason: string }[] | undefined;
       if (Array.isArray(warnings) && warnings.length > 0) {
@@ -650,11 +674,11 @@ function AccountsPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error ?? "Échec de la mise à jour");
       }
-      const updated = await res.json();
+      const updated = data;
       setBankAccounts((prev) =>
         prev.map((ba) =>
           ba.id === editingAccount.id
@@ -683,20 +707,40 @@ function AccountsPageContent() {
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-[var(--foreground)]">Comptes bancaires</h1>
-          {companies.length > 0 && (
-            <button
-              type="button"
-              onClick={openCreateModal}
-              className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-            >
-              <PlusIcon className="h-4 w-4" />
-              Créer un compte
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
+              <BuildingIcon className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="page-title text-2xl font-semibold">Comptes bancaires</h1>
+              <p className="text-sm text-[var(--muted-foreground)]">Gérez vos comptes et transactions</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {bankAccounts.length > 0 && (
+              <input
+                type="search"
+                placeholder="Rechercher par nom de compte ou société…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+                aria-label="Rechercher par nom de compte ou société"
+              />
+            )}
+            {companies.length > 0 && (
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
+              >
+                <PlusIcon className="h-4 w-4" />
+                Créer un compte
+              </button>
+            )}
+          </div>
         </div>
         {error && !createModalOpen && !editingAccount && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          <div className="mb-4 rounded-lg border border-[var(--destructive-muted)] bg-[var(--destructive-muted)]/50 px-3 py-2 text-sm text-[var(--destructive)]">
             {error}
           </div>
         )}
@@ -704,9 +748,13 @@ function AccountsPageContent() {
           <p className="text-[var(--muted-foreground)]">Chargement…</p>
         ) : bankAccounts.length === 0 ? (
           <p className="text-[var(--muted-foreground)]">Aucun compte.</p>
+        ) : filteredBankAccounts.length === 0 ? (
+          <p className="text-[var(--muted-foreground)]">
+            Aucun compte ne correspond à « {search} ».
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            {bankAccounts.map((ba) => (
+            {filteredBankAccounts.map((ba) => (
               <AccountCard
                 key={ba.id}
                 bankAccount={ba}
@@ -780,6 +828,11 @@ function AccountsPageContent() {
           }}
           onIbansChange={(v) => {
             setCreateIbans(v);
+            setError(null);
+          }}
+          linkExistingGroupId={createLinkExistingGroupId}
+          onLinkExistingGroupIdChange={(v) => {
+            setCreateLinkExistingGroupId(v);
             setError(null);
           }}
           onSubmit={handleCreate}

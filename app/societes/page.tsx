@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { Bank, Company } from "@/lib/types";
 
@@ -74,7 +74,7 @@ function CompanyCard({
 }) {
   return (
     <div
-      className="relative flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-shadow hover:shadow-md"
+      className="relative flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)]"
       onClick={() => onCardClick(company.id)}
       role="button"
       tabIndex={0}
@@ -306,7 +306,7 @@ function CompanyModal({
         className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">{title}</h3>
+        <h3 className="subsection-header mb-4 text-lg font-medium">{title}</h3>
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
@@ -363,7 +363,7 @@ function CompanyModal({
           {isEdit && (
             <>
               <div className="border-t border-[var(--border)] pt-4 mt-4">
-                <h4 className="mb-3 text-sm font-medium text-[var(--foreground)]">Facturation</h4>
+                <h4 className="subsection-header mb-3 text-sm font-medium">Facturation</h4>
                 <div className="space-y-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Pays</label>
@@ -485,6 +485,15 @@ function SocietesPageContent() {
   const [editInvoiceNextNumber, setEditInvoiceNextNumber] = useState("1");
   const [editCurrency, setEditCurrency] = useState("EUR");
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredCompanies = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return companies;
+    return companies.filter((c) =>
+      (c.name ?? "").toLowerCase().includes(q)
+    );
+  }, [companies, search]);
 
   const fetchCompanies = useCallback(async () => {
     setLoading(true);
@@ -638,11 +647,11 @@ function SocietesPageContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        const data = await res.json();
         if (!res.ok) {
-          const data = await res.json();
           throw new Error(data.error ?? "Échec de la mise à jour");
         }
-        const updated = await res.json();
+        const updated = data;
         setCompanies((prev) =>
           prev
             .map((c) => (c.id === editingCompany.id ? { ...c, ...updated } : c))
@@ -677,34 +686,59 @@ function SocietesPageContent() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
-        <h1 className="mb-6 text-2xl font-semibold text-[var(--foreground)]">Sociétés</h1>
-        <p className="mb-6 text-sm text-[var(--muted-foreground)]">
-          Gérez les sociétés. Chaque société peut avoir plusieurs comptes bancaires.
-        </p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="page-title text-2xl font-semibold">Sociétés</h1>
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Gérez les sociétés. Chaque société peut avoir plusieurs comptes bancaires.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {companies.length > 0 && (
+              <input
+                type="search"
+                placeholder="Rechercher par nom de société…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+                aria-label="Rechercher par nom de société"
+              />
+            )}
+            <button
+              type="button"
+              onClick={openAdd}
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
+            >
+              + Créer une société
+            </button>
+          </div>
+        </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          <div className="mb-4 rounded-lg border border-[var(--destructive-muted)] bg-[var(--destructive-muted)]/50 px-3 py-2 text-sm text-[var(--destructive)]">
             {error}
           </div>
         )}
-
-        <div className="mb-4 flex justify-end">
-          <button
-            type="button"
-            onClick={openAdd}
-            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-          >
-            Ajouter une société
-          </button>
-        </div>
 
         {loading ? (
           <p className="text-[var(--muted-foreground)]">Chargement…</p>
         ) : companies.length === 0 ? (
           <p className="text-[var(--muted-foreground)]">Aucune société. Cliquez sur « Ajouter une société » pour commencer.</p>
+        ) : filteredCompanies.length === 0 ? (
+          <p className="text-[var(--muted-foreground)]">
+            Aucune société ne correspond à « {search} ».
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            {companies.map((c) => (
+            {filteredCompanies.map((c) => (
               <CompanyCard
                 key={c.id}
                 company={c}

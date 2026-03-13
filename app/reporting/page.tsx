@@ -33,7 +33,7 @@ function ReportingContent() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
-        <h1 className="mb-4 text-2xl font-semibold text-[var(--foreground)]">Rapports</h1>
+        <h1 className="page-title mb-4 text-2xl font-semibold">Rapports</h1>
         {bankAccountIdFromUrl && (
           <p className="mb-4 text-sm text-[var(--muted-foreground)]">
             Filtre actif : <span className="font-medium text-[var(--foreground)]">{bankAccount ? displayName(bankAccount) : "Compte sélectionné"}</span>

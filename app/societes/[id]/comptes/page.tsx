@@ -25,6 +25,7 @@ export default function CompanyAccountsPage() {
   >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -69,6 +70,29 @@ export default function CompanyAccountsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleDeleteBankAccount = async (ba: BankAccount) => {
+    if (!confirm(`Supprimer le compte « ${ba.name} » ? Cette action est irréversible.`)) return;
+    setDeletingBankAccountId(ba.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/bank-accounts/${ba.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la suppression");
+      }
+      setBankAccounts((prev) => prev.filter((b) => b.id !== ba.id));
+      setTransactionsByAccount((prev) => {
+        const next = { ...prev };
+        delete next[ba.id];
+        return next;
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingBankAccountId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -118,7 +142,7 @@ export default function CompanyAccountsPage() {
           </Link>
         </div>
 
-        <h1 className="mb-6 text-2xl font-semibold text-[var(--foreground)]">
+        <h1 className="page-title mb-6 text-2xl font-semibold">
           {company?.name ?? "Société"} – Comptes bancaires
         </h1>
 
@@ -140,6 +164,8 @@ export default function CompanyAccountsPage() {
                 bankAccount={ba}
                 transactions={transactionsByAccount[ba.id] ?? []}
                 hideCompanyName
+                onDelete={handleDeleteBankAccount}
+                deleting={deletingBankAccountId === ba.id}
               />
             ))}
           </div>

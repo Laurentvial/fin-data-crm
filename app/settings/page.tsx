@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 import type { Bank, InvoiceTemplate } from "@/lib/types";
 
-type User = { id: string; email: string; name: string; role?: string };
+type User = { id: string; email: string; name: string; role?: string; telegram_id?: number; telegram_username?: string };
 
 function UploadIcon({ className }: { className?: string }) {
   return (
@@ -79,32 +79,15 @@ function UserTelegramLinkSection() {
 
   useEffect(() => {
     if (!status?.linked && botUsernameValid && widgetContainerRef.current && !widgetContainerRef.current.querySelector("script")) {
-      (window as unknown as { onTelegramAuth?: (user: Record<string, unknown>) => void }).onTelegramAuth = async (user) => {
-        try {
-          const res = await fetch("/api/users/me/telegram", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(user),
-          });
-          const data = await res.json();
-          if (res.ok) {
-            fetchStatus();
-          } else {
-            setError(data.error ?? "Échec de la liaison");
-          }
-        } catch {
-          setError("Erreur réseau");
-        }
-      };
       const script = document.createElement("script");
       script.src = "https://telegram.org/js/telegram-widget.js?22";
       script.setAttribute("data-telegram-login", botUsername);
       script.setAttribute("data-size", "large");
-      script.setAttribute("data-onauth", "onTelegramAuth");
+      script.setAttribute("data-auth-url", `${typeof window !== "undefined" ? window.location.origin : ""}/settings/telegram-callback`);
       script.async = true;
       widgetContainerRef.current.appendChild(script);
     }
-  }, [status?.linked, botUsername, botUsernameValid, fetchStatus]);
+  }, [status?.linked, botUsername, botUsernameValid]);
 
   const handleUnlink = async () => {
     if (!confirm("Délier votre compte Telegram ? Vous ne serez plus ajouté aux nouveaux groupes.")) return;
@@ -128,7 +111,7 @@ function UserTelegramLinkSection() {
   if (loading) {
     return (
       <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Mon Telegram</h2>
+        <h2 className="section-header mb-4 text-lg font-medium">Mon Telegram</h2>
         <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
       </section>
     );
@@ -136,7 +119,7 @@ function UserTelegramLinkSection() {
 
   return (
     <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-      <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Mon Telegram</h2>
+      <h2 className="section-header mb-4 text-lg font-medium">Mon Telegram</h2>
       <p className="mb-4 text-sm text-[var(--muted-foreground)]">
         Liez votre compte Telegram pour être automatiquement ajouté aux groupes créés lors de l&apos;ajout de comptes bancaires.
         <span className="mt-2 block text-xs">
@@ -218,6 +201,14 @@ function UserRow({
           <option value="admin">Administrateur</option>
         </select>
       </td>
+      <td className="px-4 py-2 text-[var(--foreground)]">{user.telegram_id != null ? (
+        <span className="font-mono text-sm" title={user.telegram_username ? `@${user.telegram_username}` : undefined}>
+          {user.telegram_id}
+          {user.telegram_username && ` (@${user.telegram_username})`}
+        </span>
+      ) : (
+        <span className="text-[var(--muted-foreground)]">—</span>
+      )}</td>
       <td className="px-4 py-2 text-right">
         <div className="flex justify-end gap-2">
           <button
@@ -265,7 +256,7 @@ function EditUserModal({
         className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">
+        <h3 className="subsection-header mb-4 text-lg font-medium">
           Modifier {user.name}
         </h3>
         <div className="space-y-4">
@@ -420,7 +411,7 @@ function TelegramConnectionSection() {
   if (loading) {
     return (
       <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">
+        <h2 className="section-header mb-4 text-lg font-medium">
           Connexion Telegram
         </h2>
         <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
@@ -430,7 +421,7 @@ function TelegramConnectionSection() {
 
   return (
     <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-      <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">
+      <h2 className="section-header mb-4 text-lg font-medium">
         Connexion Telegram
       </h2>
       <p className="mb-4 text-sm text-[var(--muted-foreground)]">
@@ -708,7 +699,7 @@ function BanksSection() {
   if (loading) {
     return (
       <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Banques</h2>
+        <h2 className="section-header mb-4 text-lg font-medium">Banques</h2>
         <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
       </section>
     );
@@ -716,7 +707,7 @@ function BanksSection() {
 
   return (
     <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-      <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Banques</h2>
+      <h2 className="section-header mb-4 text-lg font-medium">Banques</h2>
       <p className="mb-4 text-sm text-[var(--muted-foreground)]">
         Créez des banques et importez leurs logos. Lors de la création ou modification d&apos;un compte bancaire, vous pourrez associer une banque.
       </p>
@@ -728,7 +719,7 @@ function BanksSection() {
       )}
 
       <div className="mb-6 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-[var(--foreground)]">Banques existantes</h3>
+        <h3 className="subsection-header text-sm font-medium">Banques existantes</h3>
         <button
           type="button"
           onClick={openCreateModal}
@@ -741,11 +732,11 @@ function BanksSection() {
       <div>
         <div className="rounded-lg border border-[var(--border)] overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-[var(--muted)]">
+            <thead className="bg-[var(--primary-muted)]">
               <tr>
-                <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Logo</th>
-                <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Nom</th>
-                <th className="px-4 py-2 text-right font-medium text-[var(--foreground)]">Actions</th>
+                <th className="table-header px-4 py-2 text-left font-medium">Logo</th>
+                <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
+                <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -803,7 +794,7 @@ function BanksSection() {
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Ajouter une banque</h3>
+            <h3 className="subsection-header mb-4 text-lg font-medium">Ajouter une banque</h3>
             {error && (
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                 {error}
@@ -863,7 +854,7 @@ function BanksSection() {
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Modifier {editingBank.name}</h3>
+            <h3 className="subsection-header mb-4 text-lg font-medium">Modifier {editingBank.name}</h3>
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
@@ -1131,7 +1122,7 @@ function TemplatesSection() {
   if (loading) {
     return (
       <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Templates de facture</h2>
+        <h2 className="section-header mb-4 text-lg font-medium">Templates de facture</h2>
         <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
       </section>
     );
@@ -1139,7 +1130,7 @@ function TemplatesSection() {
 
   return (
     <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-      <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Templates de facture</h2>
+      <h2 className="section-header mb-4 text-lg font-medium">Templates de facture</h2>
       <p className="mb-4 text-sm text-[var(--muted-foreground)]">
         Créez et gérez les templates de facture. Chaque société pourra choisir le template à utiliser dans sa page.
       </p>
@@ -1151,7 +1142,7 @@ function TemplatesSection() {
       )}
 
       <div className="mb-6 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-[var(--foreground)]">Templates existants</h3>
+        <h3 className="subsection-header text-sm font-medium">Templates existants</h3>
         <button
           type="button"
           onClick={openCreate}
@@ -1163,12 +1154,12 @@ function TemplatesSection() {
 
       <div className="rounded-lg border border-[var(--border)] overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-[var(--muted)]">
+          <thead className="bg-[var(--primary-muted)]">
             <tr>
-              <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Nom</th>
-              <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Pays</th>
-              <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">Par défaut</th>
-              <th className="px-4 py-2 text-right font-medium text-[var(--foreground)]">Actions</th>
+              <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
+              <th className="table-header px-4 py-2 text-left font-medium">Pays</th>
+              <th className="table-header px-4 py-2 text-left font-medium">Par défaut</th>
+              <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1221,7 +1212,7 @@ function TemplatesSection() {
       {createModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Nouveau template</h3>
+            <h3 className="subsection-header mb-4 text-lg font-medium">Nouveau template</h3>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
@@ -1268,7 +1259,7 @@ function TemplatesSection() {
       {editingTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingTemplate(null)}>
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">Modifier {editingTemplate.name}</h3>
+            <h3 className="subsection-header mb-4 text-lg font-medium">Modifier {editingTemplate.name}</h3>
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
@@ -1331,7 +1322,19 @@ export default function SettingsPage() {
       const { data } = await authClient.admin.listUsers({
         query: { limit: 50, sortBy: "createdAt", sortDirection: "desc" },
       });
-      setUsers(data?.users ?? []);
+      const userList = (data?.users ?? []) as User[];
+      const linksRes = await fetch("/api/admin/users/telegram-links");
+      if (linksRes.ok) {
+        const { links } = await linksRes.json();
+        const byUserId = new Map((links as { user_id: string; telegram_id: number; telegram_username?: string }[]).map((l) => [l.user_id, l]));
+        const merged = userList.map((u) => {
+          const link = byUserId.get(u.id);
+          return link ? { ...u, telegram_id: link.telegram_id, telegram_username: link.telegram_username } : u;
+        });
+        setUsers(merged);
+      } else {
+        setUsers(userList);
+      }
     }
     setUsersLoading(false);
   }, []);
@@ -1430,14 +1433,14 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
-        <h1 className="mb-6 text-2xl font-semibold text-[var(--foreground)]">
+        <h1 className="page-title mb-6 text-2xl font-semibold">
           Paramètres
         </h1>
 
         {/* Section Utilisateurs - visible uniquement aux admins */}
         {!usersLoading && isAdmin && (
           <section className="mb-8">
-            <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">
+            <h2 className="section-header mb-4 text-lg font-medium">
               Utilisateurs
             </h2>
             <p className="mb-4 text-sm text-[var(--muted-foreground)]">
@@ -1516,32 +1519,35 @@ export default function SettingsPage() {
             )}
 
             <div>
-              <h3 className="mb-2 text-sm font-medium text-[var(--foreground)]">
+              <h3 className="subsection-header mb-2 text-sm font-medium">
                 Utilisateurs existants
               </h3>
-              <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+              <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--card)]">
                 <table className="w-full text-sm">
-                  <thead className="bg-[var(--muted)]">
+                  <thead className="bg-[var(--primary-muted)]">
                     <tr>
-                      <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">
+                      <th className="table-header px-4 py-2 text-left font-medium">
                         Nom
                       </th>
-                      <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">
+                      <th className="table-header px-4 py-2 text-left font-medium">
                         Email
                       </th>
-                      <th className="px-4 py-2 text-left font-medium text-[var(--foreground)]">
+                      <th className="table-header px-4 py-2 text-left font-medium">
                         Rôle
                       </th>
-                      <th className="px-4 py-2 text-right font-medium text-[var(--foreground)]">
+                      <th className="table-header px-4 py-2 text-left font-medium">
+                        Telegram
+                      </th>
+                      <th className="table-header px-4 py-2 text-right font-medium">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="bg-[var(--card)]">
                     {users.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={5}
                           className="px-4 py-6 text-center text-[var(--muted-foreground)]"
                         >
                           Aucun utilisateur
@@ -1603,7 +1609,7 @@ export default function SettingsPage() {
         {!usersLoading && isAdmin && <TemplatesSection />}
 
         <section className="mt-8">
-          <h2 className="mb-2 text-lg font-medium text-[var(--foreground)]">
+          <h2 className="section-header mb-2 text-lg font-medium">
             Sources de données
           </h2>
           <p className="text-sm text-[var(--muted-foreground)]">

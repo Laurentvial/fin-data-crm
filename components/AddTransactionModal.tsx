@@ -78,12 +78,20 @@ export function AddTransactionModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+        className="w-full max-w-md rounded-xl border border-[var(--primary-muted-border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">
-          Ajouter une transaction
-        </h3>
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-muted)] text-[var(--primary)]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </div>
+          <h3 className="subsection-header text-lg font-medium">
+            Ajouter une transaction
+          </h3>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
@@ -93,7 +101,7 @@ export function AddTransactionModal({
               value={bankAccountId}
               onChange={(e) => setBankAccountId(e.target.value)}
               required
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             >
               <option value="">-- Sélectionner --</option>
               {bankAccounts.map((ba) => (
@@ -112,7 +120,7 @@ export function AddTransactionModal({
               value={transactionDate}
               onChange={(e) => setTransactionDate(e.target.value)}
               required
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             />
           </div>
           <div>
@@ -127,7 +135,7 @@ export function AddTransactionModal({
               onChange={(e) => setAmount(e.target.value)}
               required
               placeholder="0.00"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             />
           </div>
           <div>
@@ -137,7 +145,7 @@ export function AddTransactionModal({
             <select
               value={type}
               onChange={(e) => setType(e.target.value as TransactionType)}
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             >
               <option value="DEBIT">Débit</option>
               <option value="CREDIT">Crédit</option>
@@ -152,11 +160,11 @@ export function AddTransactionModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Description de la transaction"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             />
           </div>
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+            <div className="rounded-lg border border-[var(--destructive-muted)] bg-[var(--destructive-muted)]/50 px-3 py-2 text-sm text-[var(--destructive)]">
               {error}
             </div>
           )}
@@ -171,7 +179,7 @@ export function AddTransactionModal({
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors shadow-sm"
             >
               {saving ? "Création…" : "Ajouter"}
             </button>

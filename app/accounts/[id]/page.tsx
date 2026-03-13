@@ -138,7 +138,7 @@ export default function AccountDetailPage() {
               />
             </div>
           )}
-          <h1 className="text-2xl font-semibold text-[var(--foreground)]">
+          <h1 className="page-title text-2xl font-semibold">
             {bankAccount?.name ?? "Compte"}
           </h1>
         </div>
@@ -212,7 +212,7 @@ export default function AccountDetailPage() {
           </section>
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-            <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Actions</h2>
+            <h2 className="section-header mb-4 text-lg font-medium">Actions</h2>
             <div className="flex flex-wrap gap-3">
               <Link
                 href={`/?bank_account_id=${encodeURIComponent(id)}`}

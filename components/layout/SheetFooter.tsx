@@ -52,7 +52,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
           : "Toutes les modifications sont enregistrées";
 
   return (
-    <footer className="flex h-9 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--background)] px-4 text-xs text-[var(--muted-foreground)]">
+    <footer className="flex h-9 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--header-bg)] px-4 text-xs text-[var(--muted-foreground)]">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -87,19 +87,19 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
       <div className="flex items-center gap-2">
         <span
           className={`flex items-center gap-1.5 ${
-            saveStatus === "error" ? "text-red-600" : saveStatus === "saving" ? "text-amber-600" : ""
+            saveStatus === "error" ? "text-[var(--destructive)]" : saveStatus === "saving" ? "text-[var(--warning)]" : saveStatus === "saved" ? "text-[var(--success)]" : ""
           }`}
         >
           <CloudIcon className="h-4 w-4" />
           {statusText}
         </span>
-        <span className="flex items-center gap-1 rounded border border-[var(--border)] px-2 py-0.5">
+        <span className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2 py-0.5">
           Zoom : {zoom} %
           <button
             type="button"
             onClick={onZoomOut}
             disabled={!onZoomOut || zoom <= ZOOM_MIN}
-            className="opacity-50 hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="rounded px-1 text-[var(--primary)] hover:bg-[var(--primary-muted)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             aria-label="Zoom arrière"
           >
             −
@@ -108,7 +108,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
             type="button"
             onClick={onZoomIn}
             disabled={!onZoomIn || zoom >= ZOOM_MAX}
-            className="opacity-50 hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="rounded px-1 text-[var(--primary)] hover:bg-[var(--primary-muted)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             aria-label="Zoom avant"
           >
             +

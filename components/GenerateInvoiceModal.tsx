@@ -208,7 +208,7 @@ export function GenerateInvoiceModal({
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 text-lg font-medium text-[var(--foreground)]">
+        <h3 className="subsection-header mb-4 text-lg font-medium">
           Générer une facture
         </h3>
         <div className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--muted)]/50 p-3 text-sm">

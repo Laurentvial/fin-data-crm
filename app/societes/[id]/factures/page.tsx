@@ -77,7 +77,7 @@ export default function SocieteFacturesPage() {
           Retour à {companyName || "la société"}
         </Link>
 
-        <h1 className="mb-6 text-2xl font-semibold text-[var(--foreground)]">
+        <h1 className="page-title mb-6 text-2xl font-semibold">
           Factures – {companyName || "Société"}
         </h1>
 

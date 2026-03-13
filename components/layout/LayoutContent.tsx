@@ -14,9 +14,9 @@ function LayoutContentInner({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[var(--background)]">
       {sidebarOpen && <AppSidebar />}
-      <div className="flex min-h-screen flex-1 flex-col min-w-0">{children}</div>
+      <div className="main-content-bg flex min-h-screen flex-1 flex-col min-w-0">{children}</div>
     </div>
   );
 }

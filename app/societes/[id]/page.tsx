@@ -72,9 +72,11 @@ export default function SocieteDetailPage() {
   const [createAccountName, setCreateAccountName] = useState("");
   const [createAccountBankId, setCreateAccountBankId] = useState("");
   const [createAccountIbans, setCreateAccountIbans] = useState<IbanItem[]>([]);
+  const [createAccountLinkExistingGroupId, setCreateAccountLinkExistingGroupId] = useState("");
   const [addingBankAccount, setAddingBankAccount] = useState(false);
   const [bankAccountError, setBankAccountError] = useState<string | null>(null);
   const [bankAccountInviteWarning, setBankAccountInviteWarning] = useState<string | null>(null);
+  const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingKbis, setUploadingKbis] = useState(false);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
@@ -348,6 +350,7 @@ export default function SocieteDetailPage() {
     setCreateAccountName("");
     setCreateAccountBankId("");
     setCreateAccountIbans([]);
+    setCreateAccountLinkExistingGroupId("");
     setBankAccountError(null);
     setBankAccountInviteWarning(null);
   };
@@ -356,6 +359,29 @@ export default function SocieteDetailPage() {
     setCreateAccountModalOpen(false);
     setBankAccountError(null);
     setBankAccountInviteWarning(null);
+  };
+
+  const handleDeleteBankAccount = async (ba: BankAccount) => {
+    if (!confirm(`Supprimer le compte « ${ba.name} » ? Cette action est irréversible.`)) return;
+    setDeletingBankAccountId(ba.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/bank-accounts/${ba.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la suppression");
+      }
+      setBankAccounts((prev) => prev.filter((b) => b.id !== ba.id));
+      setTransactionsByAccount((prev) => {
+        const next = { ...prev };
+        delete next[ba.id];
+        return next;
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingBankAccountId(null);
+    }
   };
 
   const handleAddBankAccount = async () => {
@@ -370,12 +396,14 @@ export default function SocieteDetailPage() {
           bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
         }))
         .filter((v) => v.iban.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[] } = {
+      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[]; telegram_chat_id?: string } = {
         name,
         company_id: id,
         ibans: ibansToSend,
       };
       if (createAccountBankId) body.bank_id = createAccountBankId;
+      const linkId = createAccountLinkExistingGroupId.trim();
+      if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
       const res = await fetch("/api/bank-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -452,7 +480,7 @@ export default function SocieteDetailPage() {
           Retour aux sociétés
         </Link>
 
-        <h1 className="mb-6 text-2xl font-semibold text-[var(--foreground)]">
+        <h1 className="page-title mb-6 text-2xl font-semibold">
           {company?.name ?? "Société"}
         </h1>
 
@@ -465,7 +493,7 @@ export default function SocieteDetailPage() {
         <div className="space-y-8">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,200px)_1fr_minmax(0,180px)]">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Logo</h2>
+              <h2 className="section-header mb-4 text-lg font-medium">Logo</h2>
               <label className="group flex cursor-pointer flex-col items-start gap-2 rounded-lg py-2 min-h-[120px] w-full">
                 {hasLogo ? (
                   <div className="relative w-full min-h-[80px] flex-1">
@@ -501,7 +529,7 @@ export default function SocieteDetailPage() {
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Informations</h2>
+              <h2 className="section-header mb-4 text-lg font-medium">Informations</h2>
               <dl className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Nom</dt>
@@ -577,7 +605,7 @@ export default function SocieteDetailPage() {
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Kbis</h2>
+              <h2 className="section-header mb-4 text-lg font-medium">Kbis</h2>
               <label className="group flex cursor-pointer flex-col items-center justify-center gap-0 rounded-lg py-0 min-h-[120px] w-full">
                 {hasKbis ? (
                   <div className="relative w-full min-h-[120px] flex-1 flex flex-col items-center justify-center p-0">
@@ -615,7 +643,7 @@ export default function SocieteDetailPage() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Emails</h2>
+              <h2 className="section-header mb-4 text-lg font-medium">Emails</h2>
               <div className="mb-4 flex flex-wrap gap-2">
                 <input
                   type="email"
@@ -688,7 +716,7 @@ export default function SocieteDetailPage() {
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Numéros de téléphone</h2>
+              <h2 className="section-header mb-4 text-lg font-medium">Numéros de téléphone</h2>
               <div className="mb-4 flex flex-wrap gap-2">
                 <input
                   type="tel"
@@ -740,7 +768,7 @@ export default function SocieteDetailPage() {
           </div>
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-            <h2 className="mb-4 text-lg font-medium text-[var(--foreground)]">Template de facture</h2>
+            <h2 className="section-header mb-4 text-lg font-medium">Template de facture</h2>
             <p className="mb-4 text-sm text-[var(--muted-foreground)]">
               Choisissez le template à utiliser pour les factures de cette société. Les templates sont gérés dans les paramètres.
             </p>
@@ -767,7 +795,7 @@ export default function SocieteDetailPage() {
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-              <h2 className="text-lg font-medium text-[var(--foreground)]">Comptes bancaires</h2>
+              <h2 className="section-header text-lg font-medium">Comptes bancaires</h2>
               <button
                 type="button"
                 onClick={openCreateAccountModal}
@@ -787,7 +815,7 @@ export default function SocieteDetailPage() {
               </div>
             )}
             <p className="mb-4 text-xs text-[var(--muted-foreground)]">
-              Un groupe Telegram sera créé automatiquement et lié au compte.
+              Un groupe Telegram sera créé automatiquement, ou cochez « Lier un groupe Telegram existant » pour utiliser un groupe déjà créé (ID ex. -5186500052).
             </p>
             {bankAccounts.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">Aucun compte bancaire lié.</p>
@@ -799,6 +827,8 @@ export default function SocieteDetailPage() {
                     bankAccount={ba}
                     transactions={transactionsByAccount[ba.id] ?? []}
                     hideCompanyName
+                    onDelete={handleDeleteBankAccount}
+                    deleting={deletingBankAccountId === ba.id}
                   />
                 ))}
               </div>
@@ -826,6 +856,11 @@ export default function SocieteDetailPage() {
           }}
           onIbansChange={(v) => {
             setCreateAccountIbans(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          linkExistingGroupId={createAccountLinkExistingGroupId}
+          onLinkExistingGroupIdChange={(v) => {
+            setCreateAccountLinkExistingGroupId(v);
             if (bankAccountError) setBankAccountError(null);
           }}
           onSubmit={handleAddBankAccount}
