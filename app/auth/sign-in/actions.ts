@@ -7,12 +7,20 @@ export async function signInWithEmail(
   _prevState: { error: string } | null,
   formData: FormData
 ) {
+  const email = (formData.get("email") as string)?.trim();
+  const password = formData.get("password") as string;
+
+  if (!email || !password) {
+    return { error: "Email et mot de passe requis." };
+  }
+
   const { error } = await auth.signIn.email({
-    email: formData.get("email") as string,
-    password: formData.get("password") as string,
+    email,
+    password,
   });
 
   if (error) {
+    // Surface the actual error for debugging (e.g. "Invalid credentials", network errors)
     return { error: error.message || "Échec de la connexion. Réessayez." };
   }
 
