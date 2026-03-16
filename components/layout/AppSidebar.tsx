@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
@@ -88,7 +89,28 @@ function LogOutIcon({ className }: { className?: string }) {
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const [session, setSession] = useState<{ user?: { name?: string; role?: string } } | null>(null);
+  const [isPending, setIsPending] = useState(true);
+
+  const fetchSession = useCallback(async () => {
+    const { data } = await authClient.getSession();
+    setSession(data);
+    setIsPending(false);
+  }, []);
+
+  useEffect(() => {
+    fetchSession();
+  }, [fetchSession]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchSession();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [fetchSession]);
 
   const initials = session?.user?.name
     ? session.user.name
