@@ -89,7 +89,7 @@ function LogOutIcon({ className }: { className?: string }) {
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [session, setSession] = useState<{ user?: { name?: string; role?: string } } | null>(null);
+  const [session, setSession] = useState<Awaited<ReturnType<typeof authClient.getSession>>["data"]>(null);
   const [isPending, setIsPending] = useState(true);
 
   const fetchSession = useCallback(async () => {
@@ -115,7 +115,7 @@ export function AppSidebar() {
   const initials = session?.user?.name
     ? session.user.name
         .split(" ")
-        .map((n) => n[0])
+        .map((n: string) => n[0])
         .join("")
         .toUpperCase()
         .slice(0, 2)
