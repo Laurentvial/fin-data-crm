@@ -53,7 +53,7 @@ export default function CompanyAccountsPage() {
           );
           if (resTx.ok) {
             const txData = await resTx.json();
-            txMap[ba.id] = txData;
+            txMap[ba.id] = Array.isArray(txData) ? txData : (txData.transactions ?? []);
           } else {
             txMap[ba.id] = [];
           }

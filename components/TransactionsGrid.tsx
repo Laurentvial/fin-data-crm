@@ -112,7 +112,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
 function formatAmount(value: string | undefined, type: TransactionType): string {
   if (value == null) return "";
   const num = Number(value);
-  const signed = type === "DEBIT" ? -Math.abs(num) : num;
+  const signed = type === "DEBIT" ? -num : num;
   return new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -368,7 +368,7 @@ export function TransactionsGrid({
             if (col === AMOUNT_COL) {
               const num = Number(txn.amount);
               if (!Number.isNaN(num)) {
-                const signed = txn.type === "DEBIT" ? -Math.abs(num) : num;
+                const signed = txn.type === "DEBIT" ? -num : num;
                 sum += signed;
               }
               break;

@@ -96,44 +96,66 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(Number(searchParams.get("limit")) || 500, 1000);
     const offset = Number(searchParams.get("offset")) || 0;
 
-    const rows = await sql`
-      SELECT
-        t.id,
-        t.bank_account_id,
-        t.transaction_date,
-        t.amount,
-        t.description,
-        t.type,
-        t.raw_image_path,
-        t.extracted_data_json,
-        t.created_at,
-        t.processed_by_user_id,
-        ba.name AS bank_account_name,
-        ba.company_id,
-        c.name AS company_name,
-        i.invoice_id,
-        i.invoice_pdf_url
-      FROM transactions t
-      LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
-      LEFT JOIN companies c ON c.id = ba.company_id
-      LEFT JOIN LATERAL (
-        SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
-        FROM invoices
-        WHERE transaction_id = t.id
-        ORDER BY created_at DESC
-        LIMIT 1
-      ) i ON true
-      WHERE
-        (${bank_account_id}::uuid IS NULL OR t.bank_account_id = ${bank_account_id}::uuid)
-        AND (${date_from}::date IS NULL OR t.transaction_date >= ${date_from}::date)
-        AND (${date_to}::date IS NULL OR t.transaction_date <= ${date_to}::date)
-        AND (${type}::text IS NULL OR t.type::text = ${type})
-      ORDER BY t.transaction_date DESC, t.created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
+    const [rows, balanceRows] = await Promise.all([
+      sql`
+        SELECT
+          t.id,
+          t.bank_account_id,
+          t.transaction_date,
+          t.amount,
+          t.description,
+          t.type,
+          t.raw_image_path,
+          t.extracted_data_json,
+          t.created_at,
+          t.processed_by_user_id,
+          ba.name AS bank_account_name,
+          ba.company_id,
+          c.name AS company_name,
+          i.invoice_id,
+          i.invoice_pdf_url
+        FROM transactions t
+        LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
+        LEFT JOIN companies c ON c.id = ba.company_id
+        LEFT JOIN LATERAL (
+          SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
+          FROM invoices
+          WHERE transaction_id = t.id
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) i ON true
+        WHERE
+          (${bank_account_id}::uuid IS NULL OR t.bank_account_id = ${bank_account_id}::uuid)
+          AND (${date_from}::date IS NULL OR t.transaction_date >= ${date_from}::date)
+          AND (${date_to}::date IS NULL OR t.transaction_date <= ${date_to}::date)
+          AND (${type}::text IS NULL OR t.type::text = ${type})
+        ORDER BY t.transaction_date DESC, t.created_at DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `,
+      sql`
+        SELECT COALESCE(SUM(
+          CASE WHEN t.type = 'DEBIT' THEN -(t.amount::numeric) ELSE t.amount::numeric END
+        ), 0)::float AS total_balance
+        FROM transactions t
+        WHERE
+          (${bank_account_id}::uuid IS NULL OR t.bank_account_id = ${bank_account_id}::uuid)
+          AND (${date_from}::date IS NULL OR t.transaction_date >= ${date_from}::date)
+          AND (${date_to}::date IS NULL OR t.transaction_date <= ${date_to}::date)
+          AND (${type}::text IS NULL OR t.type::text = ${type})
+      `,
+    ]);
 
-    return NextResponse.json(rows);
+    const totalBalance =
+      Array.isArray(balanceRows) && balanceRows[0] != null
+        ? Number((balanceRows[0] as { total_balance: number }).total_balance)
+        : 0;
+    const roundedBalance = Math.round(totalBalance * 100) / 100;
+
+    return NextResponse.json({
+      transactions: rows,
+      total_balance: roundedBalance,
+    });
   } catch (error) {
     console.error("GET /api/transactions error:", error);
     return NextResponse.json(

@@ -53,7 +53,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
 
   return (
     <footer className="flex h-9 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--header-bg)] px-4 text-xs text-[var(--muted-foreground)]">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 min-w-0">
         <button
           type="button"
           onClick={sidebar?.toggleSidebar}
@@ -64,7 +64,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
         </button>
         <span>Total des transactions : {totalCount.toLocaleString("fr-FR")}</span>
         {selectedSum != null && (
-          <span className="font-medium text-[var(--foreground)]">
+          <span className="shrink-0 font-medium text-[var(--foreground)] whitespace-nowrap">
             Somme sélectionnée :{" "}
             {new Intl.NumberFormat("fr-FR", {
               minimumFractionDigits: 2,
@@ -74,7 +74,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
           </span>
         )}
         {totalBalance != null && (
-          <span className="font-medium text-[var(--foreground)]">
+          <span className="shrink-0 font-medium text-[var(--foreground)] whitespace-nowrap">
             Solde total :{" "}
             {new Intl.NumberFormat("fr-FR", {
               minimumFractionDigits: 2,

@@ -15,6 +15,11 @@ const TransactionsGrid = dynamic(
   { ssr: false, loading: () => <div className="flex min-h-[400px] items-center justify-center text-[var(--muted-foreground)]">Chargement du tableau…</div> }
 );
 
+function signedAmount(t: Transaction): number {
+  const num = Number(t.amount);
+  return (Number.isNaN(num) ? 0 : t.type === "DEBIT" ? -num : num);
+}
+
 function HomeContent() {
   const searchParams = useSearchParams();
   const bankAccountIdFromUrl = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
@@ -69,8 +74,8 @@ function HomeContent() {
         case "amount": {
           const na = Number(a.amount);
           const nb = Number(b.amount);
-          const sa = a.type === "DEBIT" ? -Math.abs(na) : na;
-          const sb = b.type === "DEBIT" ? -Math.abs(nb) : nb;
+          const sa = a.type === "DEBIT" ? -na : na;
+          const sb = b.type === "DEBIT" ? -nb : nb;
           cmp = sa - sb;
           break;
         }
@@ -102,6 +107,8 @@ function HomeContent() {
     }
   }, []);
 
+  const [totalBalance, setTotalBalance] = useState<number>(0);
+
   const fetchTransactions = useCallback(async () => {
     setLoadingTransactions(true);
     try {
@@ -113,7 +120,14 @@ function HomeContent() {
       const res = await fetch(`/api/transactions?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch transactions");
       const data = await res.json();
-      setTransactions(data);
+      const txns = Array.isArray(data) ? data : data.transactions ?? [];
+      const balance = typeof data.total_balance === "number" ? data.total_balance : null;
+      setTransactions(txns);
+      setTotalBalance(balance ?? txns.reduce((s: number, t: Transaction) => {
+        const num = Number(t.amount);
+        const signed = t.type === "DEBIT" ? -num : num;
+        return s + (Number.isNaN(num) ? 0 : signed);
+      }, 0));
     } finally {
       setLoadingTransactions(false);
     }
@@ -154,9 +168,14 @@ function HomeContent() {
           throw new Error(err.error ?? `HTTP ${res.status}`);
         }
         const updated = await res.json();
+        const oldRow = transactions.find((r) => r.id === id);
+        const newRow = oldRow ? { ...oldRow, ...updated } : updated;
+        const delta = signedAmount(newRow) - (oldRow ? signedAmount(oldRow) : 0);
+        setTotalBalance((b) => Math.round((b + delta) * 100) / 100);
         setTransactions((prev) =>
-          prev.map((row) => (row.id === id ? { ...row, ...updated } : row))
+          prev.map((row) => (row.id === id ? newRow : row))
         );
+        fetchTransactions();
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus("idle"), 2000);
       } catch (err) {
@@ -164,7 +183,7 @@ function HomeContent() {
         setSaveMessage(err instanceof Error ? err.message : "Erreur");
       }
     },
-    []
+    [fetchTransactions, transactions]
   );
 
   const handleInvoiceSuccess = useCallback((invoiceId: string, _pdfUrl: string, _invoiceNumber: string) => {
@@ -175,12 +194,15 @@ function HomeContent() {
 
   const handleAddTransaction = useCallback((newTx: Transaction) => {
     setTransactions((prev) => [newTx, ...prev]);
+    setTotalBalance((b) => Math.round((b + signedAmount(newTx)) * 100) / 100);
     setAddModalOpen(false);
-  }, []);
+    fetchTransactions();
+  }, [fetchTransactions]);
 
   const handleDeleteTransaction = useCallback(async (id: string) => {
     setSaveStatus("saving");
     setSaveMessage("");
+    const deleted = transactions.find((t) => t.id === id);
     try {
       const res = await fetch(`/api/transactions/${id}`, {
         method: "DELETE",
@@ -190,20 +212,18 @@ function HomeContent() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
+      if (deleted) {
+        setTotalBalance((b) => Math.round((b - signedAmount(deleted)) * 100) / 100);
+      }
       setTransactions((prev) => prev.filter((t) => t.id !== id));
+      fetchTransactions();
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
       setSaveStatus("error");
       setSaveMessage(err instanceof Error ? err.message : "Erreur");
     }
-  }, []);
-
-  const totalBalance = transactions.reduce((sum, t) => {
-    const num = Number(t.amount);
-    const signed = t.type === "DEBIT" ? -Math.abs(num) : num;
-    return sum + (Number.isNaN(num) ? 0 : signed);
-  }, 0);
+  }, [fetchTransactions, transactions]);
 
   const handleZoomIn = useCallback(() => {
     setZoom((z) => Math.min(150, z + 10));
@@ -216,7 +236,7 @@ function HomeContent() {
     const headers = ["ID", "Date", "Compte", "Montant", "Type", "Description", "Créé le"];
     const rows = sortedTransactions.map((t) => {
       const num = Number(t.amount);
-      const signed = t.type === "DEBIT" ? -Math.abs(num) : num;
+      const signed = t.type === "DEBIT" ? -num : num;
       return [
         t.id,
         t.transaction_date,
