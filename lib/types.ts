@@ -164,7 +164,7 @@ export interface CompanyPhone {
 export interface CompanyFile {
   id: string;
   company_id: string;
-  file_type: "logo" | "kbis";
+  file_type: "logo" | "kbis" | "statut" | "pi_gerant";
   filename: string | null;
   content_type: string | null;
   created_at: string;

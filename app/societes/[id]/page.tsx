@@ -61,6 +61,8 @@ export default function SocieteDetailPage() {
   >({});
   const [hasLogo, setHasLogo] = useState(false);
   const [hasKbis, setHasKbis] = useState(false);
+  const [hasStatut, setHasStatut] = useState(false);
+  const [hasPiGerant, setHasPiGerant] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,6 +86,8 @@ export default function SocieteDetailPage() {
   const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingKbis, setUploadingKbis] = useState(false);
+  const [uploadingStatut, setUploadingStatut] = useState(false);
+  const [uploadingPiGerant, setUploadingPiGerant] = useState(false);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -93,7 +97,7 @@ export default function SocieteDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resLogo, resKbis, resTemplates] = await Promise.all([
+      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resLogo, resKbis, resStatut, resPiGerant, resTemplates] = await Promise.all([
         fetch(`/api/accounts/${id}`),
         fetch(`/api/accounts/${id}/emails`),
         fetch(`/api/accounts/${id}/phones`),
@@ -102,6 +106,8 @@ export default function SocieteDetailPage() {
         fetch("/api/account-types"),
         fetch(`/api/accounts/${id}/files/logo`).then((r) => (r.ok ? r : null)),
         fetch(`/api/accounts/${id}/files/kbis`).then((r) => (r.ok ? r : null)),
+        fetch(`/api/accounts/${id}/files/statut`).then((r) => (r.ok ? r : null)),
+        fetch(`/api/accounts/${id}/files/pi_gerant`).then((r) => (r.ok ? r : null)),
         fetch("/api/templates"),
       ]);
 
@@ -152,6 +158,8 @@ export default function SocieteDetailPage() {
 
       setHasLogo(resLogo?.ok ?? false);
       setHasKbis(resKbis?.ok ?? false);
+      setHasStatut(resStatut?.ok ?? false);
+      setHasPiGerant(resPiGerant?.ok ?? false);
 
       if (resTemplates?.ok) {
         const templatesData = await resTemplates.json();
@@ -330,15 +338,20 @@ export default function SocieteDetailPage() {
     }
   };
 
-  const handleUploadKbis = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadDoc = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "kbis" | "statut" | "pi_gerant",
+    setUploading: (v: boolean) => void,
+    setHas: (v: boolean) => void
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadingKbis(true);
+    setUploading(true);
     setError(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("type", "kbis");
+      formData.append("type", type);
       const res = await fetch(`/api/accounts/${id}/files`, {
         method: "POST",
         body: formData,
@@ -347,11 +360,11 @@ export default function SocieteDetailPage() {
         const data = await res.json();
         throw new Error(data.error ?? "Échec de l'upload");
       }
-      setHasKbis(true);
+      setHas(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
-      setUploadingKbis(false);
+      setUploading(false);
       e.target.value = "";
     }
   };
@@ -506,7 +519,7 @@ export default function SocieteDetailPage() {
         )}
 
         <div className="space-y-8">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,200px)_1fr_minmax(0,180px)]">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,200px)_1fr]">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
               <h2 className="section-header mb-4 text-lg font-medium">Logo</h2>
               <label className="group flex cursor-pointer flex-col items-start gap-2 rounded-lg py-2 min-h-[120px] w-full">
@@ -619,42 +632,81 @@ export default function SocieteDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="section-header mb-4 text-lg font-medium">Kbis</h2>
-              <label className="group flex cursor-pointer flex-col items-center justify-center gap-0 rounded-lg py-0 min-h-[120px] w-full">
-                {hasKbis ? (
-                  <div className="relative w-full min-h-[120px] flex-1 flex flex-col items-center justify-center p-0">
-                    <PdfIcon className="my-0 shrink-0" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                      <a
-                        href={`/api/accounts/${id}/files/kbis`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-                      >
-                        Voir Kbis
-                      </a>
-                      <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
-                        {uploadingKbis ? "Upload…" : "Remplacer"}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <span className="text-sm text-[var(--muted-foreground)]">
-                    {uploadingKbis ? "Upload…" : "Choisir un PDF"}
-                  </span>
-                )}
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  disabled={uploadingKbis}
-                  onChange={handleUploadKbis}
-                />
-              </label>
-            </section>
           </div>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+            <h2 className="section-header mb-4 text-lg font-medium">Documents</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {(
+                [
+                  {
+                    key: "kbis",
+                    label: "Kbis",
+                    has: hasKbis,
+                    uploading: uploadingKbis,
+                    setUploading: setUploadingKbis,
+                    setHas: setHasKbis,
+                  },
+                  {
+                    key: "statut",
+                    label: "Statut de la société",
+                    has: hasStatut,
+                    uploading: uploadingStatut,
+                    setUploading: setUploadingStatut,
+                    setHas: setHasStatut,
+                  },
+                  {
+                    key: "pi_gerant",
+                    label: "Pièce d'identité du gérant",
+                    has: hasPiGerant,
+                    uploading: uploadingPiGerant,
+                    setUploading: setUploadingPiGerant,
+                    setHas: setHasPiGerant,
+                  },
+                ] as const
+              ).map(({ key, label, has, uploading, setUploading, setHas }) => (
+                <label
+                  key={key}
+                  className="group flex cursor-pointer flex-col items-center justify-center gap-0 rounded-lg border border-[var(--border)] bg-[var(--background)] py-6 min-h-[140px] w-full"
+                >
+                  {has ? (
+                    <div className="relative w-full min-h-[120px] flex-1 flex flex-col items-center justify-center p-0">
+                      <PdfIcon className="my-0 shrink-0" />
+                      <p className="text-xs font-medium text-[var(--muted-foreground)] mt-1">{label}</p>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                        <a
+                          href={`/api/accounts/${id}/files/${key}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                        >
+                          Voir
+                        </a>
+                        <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
+                          {uploading ? "Upload…" : "Remplacer"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <UploadIcon className="text-[var(--muted-foreground)]" />
+                      <span className="mt-2 text-sm text-[var(--muted-foreground)]">
+                        {uploading ? "Upload…" : label}
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => handleUploadDoc(e, key, setUploading, setHas)}
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">

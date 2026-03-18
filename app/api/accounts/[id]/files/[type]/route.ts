@@ -13,7 +13,7 @@ async function requireAuth() {
   return null;
 }
 
-const ALLOWED_TYPES = ["logo", "kbis"] as const;
+const ALLOWED_TYPES = ["logo", "kbis", "statut", "pi_gerant"] as const;
 
 export async function GET(
   _request: Request,

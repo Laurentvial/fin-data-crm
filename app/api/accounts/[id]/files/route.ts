@@ -13,7 +13,7 @@ async function requireAuth() {
   return null;
 }
 
-const ALLOWED_TYPES = ["logo", "kbis"] as const;
+const ALLOWED_TYPES = ["logo", "kbis", "statut", "pi_gerant"] as const;
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export async function POST(
@@ -40,14 +40,14 @@ export async function POST(
 
     if (!file || !type) {
       return NextResponse.json(
-        { error: "Fichier et type (logo ou kbis) requis." },
+        { error: "Fichier et type requis." },
         { status: 400 }
       );
     }
 
     if (!ALLOWED_TYPES.includes(type as (typeof ALLOWED_TYPES)[number])) {
       return NextResponse.json(
-        { error: "Type invalide. Utilisez 'logo' ou 'kbis'." },
+        { error: "Type invalide. Utilisez logo, kbis, statut ou pi_gerant." },
         { status: 400 }
       );
     }

@@ -45,6 +45,14 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
 function getInitials(name: string): string {
   return name
     .trim()
@@ -495,6 +503,35 @@ function SocietesPageContent() {
     );
   }, [companies, search]);
 
+  const companiesByLetter = useMemo(() => {
+    const map: Record<string, Company[]> = {};
+    for (const c of filteredCompanies) {
+      const first = (c.name ?? "").trim().charAt(0).toUpperCase();
+      const key = /[A-Z]/.test(first) ? first : "#";
+      if (!map[key]) map[key] = [];
+      map[key].push(c);
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+    }
+    return map;
+  }, [filteredCompanies]);
+
+  const sortedLetters = useMemo(() => {
+    const letters = Object.keys(companiesByLetter);
+    return letters.sort((a, b) => (a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b)));
+  }, [companiesByLetter]);
+
+  const [openLetters, setOpenLetters] = useState<Set<string>>(new Set());
+  const toggleLetter = (letter: string) => {
+    setOpenLetters((prev) => {
+      const next = new Set(prev);
+      if (next.has(letter)) next.delete(letter);
+      else next.add(letter);
+      return next;
+    });
+  };
+
   const fetchCompanies = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -737,19 +774,52 @@ function SocietesPageContent() {
             Aucune société ne correspond à « {search} ».
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            {filteredCompanies.map((c) => (
-              <CompanyCard
-                key={c.id}
-                company={c}
-                banks={banks}
-                menuOpen={menuOpenId === c.id}
-                onMenuToggle={() => setMenuOpenId((prev) => (prev === c.id ? null : c.id))}
-                onEdit={openEdit}
-                onDelete={handleDelete}
-                onCardClick={(companyId) => router.push(`/societes/${companyId}/comptes`)}
-              />
-            ))}
+          <div className="space-y-2">
+            {sortedLetters.map((letter) => {
+              const list = companiesByLetter[letter];
+              const isOpen = openLetters.has(letter);
+              return (
+                <div
+                  key={letter}
+                  className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleLetter(letter)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left font-semibold text-[var(--foreground)] hover:bg-[var(--muted)]/50 transition-colors"
+                    aria-expanded={isOpen}
+                  >
+                    <span className="text-lg">
+                      {letter === "#" ? "Autres (0-9, symboles)" : letter}
+                    </span>
+                    <span className="text-sm font-normal text-[var(--muted-foreground)]">
+                      {list.length} société{list.length > 1 ? "s" : ""}
+                    </span>
+                    <ChevronDownIcon
+                      className={`shrink-0 text-[var(--muted-foreground)] transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-[var(--border)] p-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                        {list.map((c) => (
+                          <CompanyCard
+                            key={c.id}
+                            company={c}
+                            banks={banks}
+                            menuOpen={menuOpenId === c.id}
+                            onMenuToggle={() => setMenuOpenId((prev) => (prev === c.id ? null : c.id))}
+                            onEdit={openEdit}
+                            onDelete={handleDelete}
+                            onCardClick={(companyId) => router.push(`/societes/${companyId}/comptes`)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </main>
