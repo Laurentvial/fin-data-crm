@@ -85,10 +85,20 @@ export interface Bank {
   updated_at: string;
 }
 
+export interface AccountType {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IbanItem {
   iban: string;
   bic?: string | null;
 }
+
+export type AccountStatus = "Ouvert" | "Fermé" | "Problème";
 
 export interface BankAccount {
   id: string;
@@ -98,6 +108,9 @@ export interface BankAccount {
   telegram_chat_id: number;
   bank_id?: string | null;
   bank_name?: string | null;
+  account_type_id?: string | null;
+  account_type_name?: string | null;
+  account_status?: AccountStatus;
   has_logo?: boolean;
   ibans?: IbanItem[];
   balance?: number;

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
-import type { Bank, InvoiceTemplate } from "@/lib/types";
+import { getCachedSession } from "@/lib/auth/session-cache";
+import type { AccountType, Bank, InvoiceTemplate } from "@/lib/types";
 
 type User = { id: string; email: string; name: string; role?: string; telegram_id?: number; telegram_username?: string };
 
@@ -916,6 +917,278 @@ function BanksSection() {
   );
 }
 
+function AccountTypesSection() {
+  const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createPending, setCreatePending] = useState(false);
+  const [editingType, setEditingType] = useState<AccountType | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPending, setEditPending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchAccountTypes = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account-types");
+      if (!res.ok) throw new Error("Échec du chargement");
+      const data = await res.json();
+      setAccountTypes(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAccountTypes();
+  }, [fetchAccountTypes]);
+
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const name = createName.trim();
+    if (!name) return;
+    setCreatePending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, sort_order: accountTypes.length }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la création");
+      }
+      const created = await res.json();
+      setAccountTypes((prev) => [...prev, created].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)));
+      setCreateName("");
+      setCreateModalOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setCreatePending(false);
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!editingType) return;
+    const name = editName.trim();
+    if (!name) return;
+    setEditPending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/account-types/${editingType.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la mise à jour");
+      }
+      const updated = await res.json();
+      setAccountTypes((prev) =>
+        prev.map((t) => (t.id === editingType.id ? { ...t, ...updated } : t)).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+      );
+      setEditingType(null);
+      setEditName("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setEditPending(false);
+    }
+  };
+
+  const handleDelete = async (t: AccountType) => {
+    if (!confirm(`Supprimer le type « ${t.name} » ? Les comptes utilisant ce type n'en auront plus.`)) return;
+    setDeletingId(t.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/account-types/${t.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la suppression");
+      }
+      setAccountTypes((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+        <h2 className="section-header mb-4 text-lg font-medium">Types de comptes</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+      <h2 className="section-header mb-4 text-lg font-medium">Types de comptes</h2>
+      <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+        Créez des types de comptes (ex. Compte courant, Épargne, Professionnel). Lors de la création ou modification d&apos;un compte bancaire, vous pourrez sélectionner un type.
+      </p>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="subsection-header text-sm font-medium">Types existants</h3>
+        <button
+          type="button"
+          onClick={() => { setCreateModalOpen(true); setCreateName(""); setError(null); }}
+          className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+        >
+          Ajouter un type
+        </button>
+      </div>
+
+      <div>
+        <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-[var(--primary-muted)]">
+              <tr>
+                <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
+                <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accountTypes.length === 0 ? (
+                <tr>
+                  <td colSpan={2} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                    Aucun type de compte. Créez-en un pour que les comptes puissent en avoir un.
+                  </td>
+                </tr>
+              ) : (
+                accountTypes.map((t) => (
+                  <tr key={t.id} className="border-t border-[var(--border)]">
+                    <td className="px-4 py-2 text-[var(--foreground)]">{t.name}</td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setEditingType(t); setEditName(t.name); setError(null); }}
+                          className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(t)}
+                          disabled={deletingId === t.id}
+                          className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
+                        >
+                          {deletingId === t.id ? "…" : "Supprimer"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {createModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+          <div
+            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="subsection-header mb-4 text-lg font-medium">Ajouter un type de compte</h3>
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                {error}
+              </div>
+            )}
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="Ex. Compte courant"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  autoFocus
+                />
+              </div>
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateModalOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={createPending || !createName.trim()}
+                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                >
+                  {createPending ? "Création…" : "Créer"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingType(null)}>
+          <div
+            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="subsection-header mb-4 text-lg font-medium">Modifier {editingType.name}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingType(null)}
+                className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleEdit}
+                disabled={editPending || !editName.trim()}
+                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+              >
+                {editPending ? "Enregistrement…" : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1313,7 +1586,7 @@ export default function SettingsPage() {
   const [editEmail, setEditEmail] = useState("");
 
   const loadUsers = useCallback(async () => {
-    const { data: session } = await authClient.getSession();
+    const session = await getCachedSession();
     const role = session?.user?.role;
     setIsAdmin(role === "admin");
     setCurrentUserId(session?.user?.id ?? null);
@@ -1600,6 +1873,9 @@ export default function SettingsPage() {
         {/* Section Banques - visible aux admins */}
         {!usersLoading && isAdmin && <BanksSection />}
 
+        {/* Section Types de comptes - visible aux admins */}
+        {!usersLoading && isAdmin && <AccountTypesSection />}
+
         {/* Section Connexion Telegram (session MTProto) - visible aux admins */}
         {!usersLoading && isAdmin && (
           <TelegramConnectionSection />
@@ -1607,15 +1883,6 @@ export default function SettingsPage() {
 
         {/* Section Templates de facture - visible aux admins */}
         {!usersLoading && isAdmin && <TemplatesSection />}
-
-        <section className="mt-8">
-          <h2 className="section-header mb-2 text-lg font-medium">
-            Sources de données
-          </h2>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            Les paramètres des sources de données seront disponibles ici.
-          </p>
-        </section>
       </main>
     </div>
   );

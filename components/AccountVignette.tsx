@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import type { BankAccount, Transaction } from "@/lib/types";
 
 function ListIcon({ className }: { className?: string }) {
@@ -100,6 +101,15 @@ export function AccountVignette({
           {bankAccount.company_name}
         </p>
       )}
+      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+        {bankAccount.account_type_name && (
+          <span className="text-[var(--muted-foreground)]">{bankAccount.account_type_name}</span>
+        )}
+        {bankAccount.account_type_name && (
+          <span className="text-[var(--muted-foreground)]">·</span>
+        )}
+        <AccountStatusBadge status={bankAccount.account_status ?? "Ouvert"} />
+      </p>
       <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
         {new Intl.NumberFormat("fr-FR", {
           minimumFractionDigits: 2,

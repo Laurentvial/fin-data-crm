@@ -41,29 +41,35 @@ function HomeContent() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [invoiceModalTransaction, setInvoiceModalTransaction] = useState<Transaction | null>(null);
   const [zoom, setZoom] = useState(100);
-  const [sortState, setSortState] = useState<{ column: string; direction: "asc" | "desc" } | null>(null);
+  const [sortState, setSortState] = useState<{ column: string; direction: "asc" | "desc" } | null>({
+    column: "transaction_date",
+    direction: "desc",
+  });
 
   const handleSortChange = useCallback((field: string) => {
     setSortState((prev) => {
       if (prev?.column === field) {
-        if (prev.direction === "asc") return { column: field, direction: "desc" as const };
-        return null; // 3rd click: reset to default
+        if (prev.direction === "desc") return { column: field, direction: "asc" as const };
+        return null; // asc -> reset to default
       }
       return { column: field, direction: "asc" as const };
     });
   }, []);
 
   const sortedTransactions = useMemo(() => {
-    if (!sortState) return transactions;
-    const dir = sortState.direction === "asc" ? 1 : -1;
+    const effective = sortState ?? { column: "transaction_date", direction: "desc" as const };
+    const dir = effective.direction === "asc" ? 1 : -1;
+    const parseDate = (d: string | undefined): number =>
+      d ? new Date(d).getTime() : 0;
     return [...transactions].sort((a, b) => {
       let cmp = 0;
-      switch (sortState.column) {
+      switch (effective.column) {
         case "id":
           cmp = (a.id ?? "").localeCompare(b.id ?? "");
           break;
         case "transaction_date":
-          cmp = new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime();
+          cmp = parseDate(a.transaction_date) - parseDate(b.transaction_date);
+          if (cmp === 0) cmp = parseDate(a.created_at) - parseDate(b.created_at);
           break;
         case "bank_account_name": {
           const na = a.bank_account_name ?? a.company_name ?? "";
@@ -299,7 +305,7 @@ function HomeContent() {
               onDelete={handleDeleteTransaction}
               onGenerateInvoice={(txn) => setInvoiceModalTransaction(txn)}
               onSortChange={handleSortChange}
-              sortState={sortState ?? undefined}
+              sortState={sortState ?? { column: "transaction_date", direction: "desc" }}
             />
           </div>
         </div>

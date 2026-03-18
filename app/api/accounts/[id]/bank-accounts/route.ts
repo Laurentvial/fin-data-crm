@@ -37,7 +37,10 @@ export async function GET(
         ba.name,
         ba.telegram_chat_id,
         ba.bank_id,
+        ba.account_type_id,
+        ba.account_status,
         b.name AS bank_name,
+        at.name AS account_type_name,
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
@@ -52,9 +55,10 @@ export async function GET(
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id
+      LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.company_id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, b.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, b.name, at.name, ba.created_at, ba.updated_at, c.name
       ORDER BY ba.name
     `;
     return NextResponse.json(rows);

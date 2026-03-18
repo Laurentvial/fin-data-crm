@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { BankSelect } from "@/components/BankSelect";
+import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
-import type { Bank, BankAccount, Company, IbanItem } from "@/lib/types";
+import type { AccountStatus, AccountType, Bank, BankAccount, Company, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -172,6 +173,15 @@ function AccountCard({
             <MoreVerticalIcon />
           </button>
         </div>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+          {bankAccount.account_type_name && (
+            <span className="text-[var(--muted-foreground)]">{bankAccount.account_type_name}</span>
+          )}
+          {bankAccount.account_type_name && (
+            <span className="text-[var(--muted-foreground)]">·</span>
+          )}
+          <AccountStatusBadge status={bankAccount.account_status ?? "Ouvert"} />
+        </p>
         {ibanCountryCodes.length > 0 && (
           <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">
             {ibanCountryCodes.join(" / ")}
@@ -283,14 +293,19 @@ function EditBankAccountModal({
   bankAccount,
   companies,
   banks,
+  accountTypes,
   name,
   companyId,
   bankId,
+  accountTypeId,
+  accountStatus,
   telegramChatId,
   ibans,
   onNameChange,
   onCompanyIdChange,
   onBankIdChange,
+  onAccountTypeIdChange,
+  onAccountStatusChange,
   onTelegramChatIdChange,
   onIbansChange,
   onSave,
@@ -301,14 +316,19 @@ function EditBankAccountModal({
   bankAccount: BankAccount;
   companies: Company[];
   banks: Bank[];
+  accountTypes: AccountType[];
   name: string;
   companyId: string;
   bankId: string;
+  accountTypeId: string;
+  accountStatus: AccountStatus;
   telegramChatId: string;
   ibans: IbanItem[];
   onNameChange: (v: string) => void;
   onCompanyIdChange: (v: string) => void;
   onBankIdChange: (v: string) => void;
+  onAccountTypeIdChange: (v: string) => void;
+  onAccountStatusChange: (v: AccountStatus) => void;
   onTelegramChatIdChange: (v: string) => void;
   onIbansChange: (v: IbanItem[]) => void;
   onSave: () => void;
@@ -376,6 +396,35 @@ function EditBankAccountModal({
               banks={banks}
               placeholder="Aucune banque"
             />
+          </div>
+          {accountTypes.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type de compte</label>
+              <select
+                value={accountTypeId}
+                onChange={(e) => onAccountTypeIdChange(e.target.value)}
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              >
+                <option value="">Aucun type</option>
+                {accountTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
+            <select
+              value={accountStatus}
+              onChange={(e) => onAccountStatusChange(e.target.value as AccountStatus)}
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            >
+              <option value="Ouvert">Ouvert</option>
+              <option value="Fermé">Fermé</option>
+              <option value="Problème">Problème</option>
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Telegram Chat ID</label>
@@ -462,6 +511,7 @@ function AccountsPageContent() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -469,6 +519,8 @@ function AccountsPageContent() {
   const [editName, setEditName] = useState("");
   const [editCompanyId, setEditCompanyId] = useState("");
   const [editBankId, setEditBankId] = useState("");
+  const [editAccountTypeId, setEditAccountTypeId] = useState("");
+  const [editAccountStatus, setEditAccountStatus] = useState<AccountStatus>("Ouvert");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
   const [editIbans, setEditIbans] = useState<IbanItem[]>([]);
   const [saving, setSaving] = useState(false);
@@ -476,42 +528,85 @@ function AccountsPageContent() {
   const [createName, setCreateName] = useState("");
   const [createCompanyId, setCreateCompanyId] = useState("");
   const [createBankId, setCreateBankId] = useState("");
+  const [createAccountTypeId, setCreateAccountTypeId] = useState("");
+  const [createAccountStatus, setCreateAccountStatus] = useState<AccountStatus>("Ouvert");
   const [createIbans, setCreateIbans] = useState<IbanItem[]>([]);
   const [createLinkExistingGroupId, setCreateLinkExistingGroupId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createInviteWarning, setCreateInviteWarning] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
 
   const filteredBankAccounts = useMemo(() => {
+    let list = bankAccounts;
     const q = search.trim().toLowerCase();
-    if (!q) return bankAccounts;
-    return bankAccounts.filter(
-      (ba) =>
-        (ba.company_name ?? "").toLowerCase().includes(q) ||
-        (ba.name ?? "").toLowerCase().includes(q)
-    );
-  }, [bankAccounts, search]);
+    if (q) {
+      list = list.filter(
+        (ba) =>
+          (ba.company_name ?? "").toLowerCase().includes(q) ||
+          (ba.name ?? "").toLowerCase().includes(q)
+      );
+    }
+    if (selectedBankId !== null) {
+      if (selectedBankId === "") {
+        list = list.filter((ba) => !ba.bank_id);
+      } else {
+        list = list.filter((ba) => ba.bank_id === selectedBankId);
+      }
+    }
+    return list;
+  }, [bankAccounts, search, selectedBankId]);
+
+  const banksWithCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const bankNames = new Map<string, string>();
+    const bankLogos = new Map<string, boolean>();
+    banks.forEach((b) => {
+      counts.set(b.id, 0);
+      bankNames.set(b.id, b.name);
+      bankLogos.set(b.id, !!b.has_logo);
+    });
+    counts.set("", 0);
+    bankAccounts.forEach((ba) => {
+      const key = ba.bank_id ?? "";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (key && !bankNames.has(key)) bankNames.set(key, ba.bank_name ?? "Banque");
+    });
+    const result: { id: string; name: string; count: number; hasLogo?: boolean }[] = [];
+    result.push({ id: "__all__", name: "Toutes les banques", count: bankAccounts.length, hasLogo: false });
+    const bankIds = [...new Set([...banks.map((b) => b.id), ...bankAccounts.map((ba) => ba.bank_id).filter(Boolean)])] as string[];
+    bankIds.forEach((bid) => {
+      const c = counts.get(bid) ?? 0;
+      if (c > 0) result.push({ id: bid, name: bankNames.get(bid) ?? "Banque", count: c, hasLogo: bankLogos.get(bid) });
+    });
+    const noBankCount = counts.get("") ?? 0;
+    if (noBankCount > 0) result.push({ id: "", name: "Sans banque", count: noBankCount, hasLogo: false });
+    return result;
+  }, [banks, bankAccounts]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [resBa, resCo, resBanks] = await Promise.all([
+      const [resBa, resCo, resBanks, resAccountTypes] = await Promise.all([
         fetch("/api/bank-accounts"),
         fetch("/api/accounts"),
         fetch("/api/banks"),
+        fetch("/api/account-types"),
       ]);
       if (!resBa.ok) throw new Error("Échec du chargement des comptes");
       if (!resCo.ok) throw new Error("Échec du chargement des sociétés");
-      const [dataBa, dataCo, dataBanks] = await Promise.all([
+      const [dataBa, dataCo, dataBanks, dataAccountTypes] = await Promise.all([
         resBa.json(),
         resCo.json(),
         resBanks.ok ? resBanks.json() : Promise.resolve([]),
+        resAccountTypes.ok ? resAccountTypes.json() : Promise.resolve([]),
       ]);
       setBankAccounts(dataBa);
       setCompanies(dataCo);
       setBanks(Array.isArray(dataBanks) ? dataBanks : []);
+      setAccountTypes(Array.isArray(dataAccountTypes) ? dataAccountTypes : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -531,6 +626,8 @@ function AccountsPageContent() {
         setEditName(account.name);
         setEditCompanyId(account.company_id);
         setEditBankId(account.bank_id ?? "");
+        setEditAccountTypeId(account.account_type_id ?? "");
+        setEditAccountStatus((account.account_status as AccountStatus) ?? "Ouvert");
         setEditTelegramChatId(String(account.telegram_chat_id ?? ""));
         setEditIbans(account.ibans ?? []);
         setError(null);
@@ -543,6 +640,8 @@ function AccountsPageContent() {
     setEditName(ba.name);
     setEditCompanyId(ba.company_id);
     setEditBankId(ba.bank_id ?? "");
+    setEditAccountTypeId(ba.account_type_id ?? "");
+    setEditAccountStatus((ba.account_status as AccountStatus) ?? "Ouvert");
     setEditTelegramChatId(String(ba.telegram_chat_id ?? ""));
     setEditIbans(ba.ibans ?? []);
     setError(null);
@@ -578,6 +677,8 @@ function AccountsPageContent() {
     setCreateName("");
     setCreateCompanyId(companies[0]?.id ?? "");
     setCreateBankId("");
+    setCreateAccountTypeId("");
+    setCreateAccountStatus("Ouvert");
     setCreateIbans([]);
     setCreateLinkExistingGroupId("");
     setError(null);
@@ -602,12 +703,14 @@ function AccountsPageContent() {
           bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
         }))
         .filter((v) => v.iban.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[]; telegram_chat_id?: string } = {
+      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; ibans: IbanItem[]; telegram_chat_id?: string } = {
         name,
         company_id: createCompanyId,
         ibans: ibansToSend,
       };
       if (createBankId) body.bank_id = createBankId;
+      if (createAccountTypeId) body.account_type_id = createAccountTypeId;
+      body.account_status = createAccountStatus;
       const linkId = createLinkExistingGroupId.trim();
       if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
       const res = await fetch("/api/bank-accounts", {
@@ -652,11 +755,13 @@ function AccountsPageContent() {
     setSaving(true);
     setError(null);
     try {
-      const body: { name: string; company_id: string; bank_id?: string | null; telegram_chat_id?: number; ibans?: IbanItem[] } = {
+      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status?: AccountStatus; telegram_chat_id?: number; ibans?: IbanItem[] } = {
         name,
         company_id: editCompanyId,
       };
       body.bank_id = editBankId || null;
+      body.account_type_id = editAccountTypeId || null;
+      body.account_status = editAccountStatus;
       const tid = editTelegramChatId.trim();
       if (tid) {
         const num = parseInt(tid, 10);
@@ -689,6 +794,9 @@ function AccountsPageContent() {
                 company_name: companies.find((c) => c.id === updated.company_id)?.name ?? ba.company_name,
                 bank_id: updated.bank_id ?? undefined,
                 bank_name: updated.bank_name ?? undefined,
+                account_type_id: updated.account_type_id ?? undefined,
+                account_type_name: updated.account_type_name ?? undefined,
+                account_status: updated.account_status ?? "Ouvert",
                 telegram_chat_id: updated.telegram_chat_id,
                 ibans: updated.ibans ?? ba.ibans,
               }
@@ -705,7 +813,10 @@ function AccountsPageContent() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <main className="flex-1 overflow-auto p-6">
+      <div className="flex flex-1 overflow-hidden">
+        <main
+          className={`min-w-0 flex-1 overflow-auto p-6 ${bankAccounts.length > 0 && banksWithCounts.length > 1 ? "lg:mr-56" : ""}`}
+        >
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
@@ -718,14 +829,33 @@ function AccountsPageContent() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {bankAccounts.length > 0 && (
-              <input
-                type="search"
-                placeholder="Rechercher par nom de compte ou société…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
-                aria-label="Rechercher par nom de compte ou société"
-              />
+              <>
+                <input
+                  type="search"
+                  placeholder="Rechercher par nom de compte ou société…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+                  aria-label="Rechercher par nom de compte ou société"
+                />
+                {banksWithCounts.length > 1 && (
+                  <select
+                    value={selectedBankId ?? "__all__"}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSelectedBankId(v === "__all__" ? null : v);
+                    }}
+                    className="lg:hidden rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                    aria-label="Filtrer par banque"
+                  >
+                    {banksWithCounts.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.count})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
             )}
             {companies.length > 0 && (
               <button
@@ -768,16 +898,64 @@ function AccountsPageContent() {
             ))}
           </div>
         )}
-      </main>
+        </main>
+
+        {bankAccounts.length > 0 && banksWithCounts.length > 1 && (
+          <aside className="scrollbar-hide fixed right-0 top-0 z-30 hidden h-screen w-56 overflow-y-auto border-l border-[var(--border)] bg-[var(--muted)]/30 lg:block">
+            <div className="sticky top-0 p-4">
+              <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">Filtrer par banque</h2>
+              <nav className="space-y-1">
+                {banksWithCounts.map((item) => {
+                  const isActive =
+                    item.id === "__all__"
+                      ? selectedBankId === null
+                      : item.id === ""
+                        ? selectedBankId === ""
+                        : selectedBankId === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedBankId(item.id === "__all__" ? null : item.id)}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                        isActive
+                          ? "bg-[var(--primary-muted)] text-[var(--primary)] font-medium"
+                          : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                      }`}
+                    >
+                      {item.id !== "__all__" && item.id !== "" && item.hasLogo ? (
+                        <img
+                          src={`/api/banks/${item.id}/files/logo`}
+                          alt=""
+                          className="h-6 w-6 shrink-0 rounded object-contain"
+                        />
+                      ) : (
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--muted)] text-xs font-medium text-[var(--muted-foreground)]">
+                          {item.id === "__all__" ? "⊕" : item.id === "" ? "—" : item.name.slice(0, 1)}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                      <span className="shrink-0 text-xs tabular-nums opacity-70">{item.count}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          </aside>
+        )}
+      </div>
 
       {editingAccount && (
         <EditBankAccountModal
           bankAccount={editingAccount}
           companies={companies}
           banks={banks}
+          accountTypes={accountTypes}
           name={editName}
           companyId={editCompanyId}
           bankId={editBankId}
+          accountTypeId={editAccountTypeId}
+          accountStatus={editAccountStatus}
           telegramChatId={editTelegramChatId}
           ibans={editIbans}
           onNameChange={(v) => {
@@ -790,6 +968,14 @@ function AccountsPageContent() {
           }}
           onBankIdChange={(v) => {
             setEditBankId(v);
+            setError(null);
+          }}
+          onAccountTypeIdChange={(v) => {
+            setEditAccountTypeId(v);
+            setError(null);
+          }}
+          onAccountStatusChange={(v) => {
+            setEditAccountStatus(v);
             setError(null);
           }}
           onTelegramChatIdChange={(v) => {
@@ -810,9 +996,12 @@ function AccountsPageContent() {
         <CreateBankAccountModal
           companies={companies}
           banks={banks}
+          accountTypes={accountTypes}
           name={createName}
           companyId={createCompanyId}
           bankId={createBankId}
+          accountTypeId={createAccountTypeId}
+          accountStatus={createAccountStatus}
           ibans={createIbans}
           onNameChange={(v) => {
             setCreateName(v);
@@ -824,6 +1013,14 @@ function AccountsPageContent() {
           }}
           onBankIdChange={(v) => {
             setCreateBankId(v);
+            setError(null);
+          }}
+          onAccountTypeIdChange={(v) => {
+            setCreateAccountTypeId(v);
+            setError(null);
+          }}
+          onAccountStatusChange={(v) => {
+            setCreateAccountStatus(v);
             setError(null);
           }}
           onIbansChange={(v) => {

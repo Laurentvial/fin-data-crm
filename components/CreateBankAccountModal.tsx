@@ -1,18 +1,23 @@
 "use client";
 
 import { BankSelect } from "@/components/BankSelect";
-import type { Bank, Company, IbanItem } from "@/lib/types";
+import type { AccountStatus, AccountType, Bank, Company, IbanItem } from "@/lib/types";
 
 export interface CreateBankAccountModalProps {
   companies: Company[];
   banks: Bank[];
+  accountTypes: AccountType[];
   name: string;
   companyId: string;
   bankId: string;
+  accountTypeId: string;
+  accountStatus: AccountStatus;
   ibans: IbanItem[];
   onNameChange: (v: string) => void;
   onCompanyIdChange: (v: string) => void;
   onBankIdChange: (v: string) => void;
+  onAccountTypeIdChange: (v: string) => void;
+  onAccountStatusChange: (v: AccountStatus) => void;
   onIbansChange: (v: IbanItem[]) => void;
   onSubmit: () => void;
   onClose: () => void;
@@ -29,13 +34,18 @@ export interface CreateBankAccountModalProps {
 export function CreateBankAccountModal({
   companies,
   banks,
+  accountTypes,
   name,
   companyId,
   bankId,
+  accountTypeId,
+  accountStatus = "Ouvert",
   ibans,
   onNameChange,
   onCompanyIdChange,
   onBankIdChange,
+  onAccountTypeIdChange,
+  onAccountStatusChange,
   onIbansChange,
   onSubmit,
   onClose,
@@ -142,6 +152,35 @@ export function CreateBankAccountModal({
               banks={banks}
               placeholder="Aucune banque"
             />
+          </div>
+          {accountTypes.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type de compte</label>
+              <select
+                value={accountTypeId}
+                onChange={(e) => onAccountTypeIdChange(e.target.value)}
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              >
+                <option value="">Aucun type</option>
+                {accountTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
+            <select
+              value={accountStatus}
+              onChange={(e) => onAccountStatusChange(e.target.value as AccountStatus)}
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            >
+              <option value="Ouvert">Ouvert</option>
+              <option value="Fermé">Fermé</option>
+              <option value="Problème">Problème</option>
+            </select>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between">

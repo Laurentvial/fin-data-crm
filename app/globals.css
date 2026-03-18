@@ -87,6 +87,15 @@ body {
   color: var(--primary);
 }
 
+/* Hide scrollbar while keeping scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Subtle layered background for main content area */
 .main-content-bg {
   background: linear-gradient(

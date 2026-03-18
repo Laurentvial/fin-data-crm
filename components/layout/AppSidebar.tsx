@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
+import { getCachedSession, invalidateSessionCache } from "@/lib/auth/session-cache";
 
 const navMain = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboardIcon },
@@ -93,7 +94,7 @@ export function AppSidebar() {
   const [isPending, setIsPending] = useState(true);
 
   const fetchSession = useCallback(async () => {
-    const { data } = await authClient.getSession();
+    const data = await getCachedSession();
     setSession(data);
     setIsPending(false);
   }, []);
@@ -122,13 +123,14 @@ export function AppSidebar() {
     : "?";
 
   const handleSignOut = async () => {
+    invalidateSessionCache();
     await authClient.signOut();
     router.push("/auth/sign-in");
     router.refresh();
   };
 
   return (
-    <aside className="flex w-60 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)]">
+    <aside className="sticky top-0 z-40 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] scrollbar-hide">
       <nav className="flex flex-1 flex-col gap-1 p-3 pt-4">
         {navMain.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));

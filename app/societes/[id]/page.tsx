@@ -6,6 +6,8 @@ import { useParams } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import type {
+  AccountStatus,
+  AccountType,
   Bank,
   Company,
   CompanyEmail,
@@ -68,9 +70,12 @@ export default function SocieteDetailPage() {
   const [newPhone, setNewPhone] = useState("");
   const [addingPhone, setAddingPhone] = useState(false);
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
   const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
   const [createAccountName, setCreateAccountName] = useState("");
   const [createAccountBankId, setCreateAccountBankId] = useState("");
+  const [createAccountTypeId, setCreateAccountTypeId] = useState("");
+  const [createAccountStatus, setCreateAccountStatus] = useState<AccountStatus>("Ouvert");
   const [createAccountIbans, setCreateAccountIbans] = useState<IbanItem[]>([]);
   const [createAccountLinkExistingGroupId, setCreateAccountLinkExistingGroupId] = useState("");
   const [addingBankAccount, setAddingBankAccount] = useState(false);
@@ -88,12 +93,13 @@ export default function SocieteDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [resCompany, resEmails, resPhones, resBank, resBanks, resLogo, resKbis, resTemplates] = await Promise.all([
+      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resLogo, resKbis, resTemplates] = await Promise.all([
         fetch(`/api/accounts/${id}`),
         fetch(`/api/accounts/${id}/emails`),
         fetch(`/api/accounts/${id}/phones`),
         fetch(`/api/accounts/${id}/bank-accounts`),
         fetch("/api/banks"),
+        fetch("/api/account-types"),
         fetch(`/api/accounts/${id}/files/logo`).then((r) => (r.ok ? r : null)),
         fetch(`/api/accounts/${id}/files/kbis`).then((r) => (r.ok ? r : null)),
         fetch("/api/templates"),
@@ -137,6 +143,11 @@ export default function SocieteDetailPage() {
       if (resBanks.ok) {
         const banksData = await resBanks.json();
         setBanks(Array.isArray(banksData) ? banksData : []);
+      }
+
+      if (resAccountTypes?.ok) {
+        const accountTypesData = await resAccountTypes.json();
+        setAccountTypes(Array.isArray(accountTypesData) ? accountTypesData : []);
       }
 
       setHasLogo(resLogo?.ok ?? false);
@@ -349,6 +360,8 @@ export default function SocieteDetailPage() {
     setCreateAccountModalOpen(true);
     setCreateAccountName("");
     setCreateAccountBankId("");
+    setCreateAccountTypeId("");
+    setCreateAccountStatus("Ouvert");
     setCreateAccountIbans([]);
     setCreateAccountLinkExistingGroupId("");
     setBankAccountError(null);
@@ -396,12 +409,14 @@ export default function SocieteDetailPage() {
           bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
         }))
         .filter((v) => v.iban.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; ibans: IbanItem[]; telegram_chat_id?: string } = {
+      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; telegram_chat_id?: string } = {
         name,
         company_id: id,
         ibans: ibansToSend,
       };
       if (createAccountBankId) body.bank_id = createAccountBankId;
+      if (createAccountTypeId) body.account_type_id = createAccountTypeId;
+      body.account_status = createAccountStatus;
       const linkId = createAccountLinkExistingGroupId.trim();
       if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
       const res = await fetch("/api/bank-accounts", {
@@ -841,9 +856,12 @@ export default function SocieteDetailPage() {
         <CreateBankAccountModal
           companies={[company]}
           banks={banks}
+          accountTypes={accountTypes}
           name={createAccountName}
           companyId={id}
           bankId={createAccountBankId}
+          accountTypeId={createAccountTypeId}
+          accountStatus={createAccountStatus}
           ibans={createAccountIbans}
           onNameChange={(v) => {
             setCreateAccountName(v);
@@ -852,6 +870,14 @@ export default function SocieteDetailPage() {
           onCompanyIdChange={() => {}}
           onBankIdChange={(v) => {
             setCreateAccountBankId(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          onAccountTypeIdChange={(v) => {
+            setCreateAccountTypeId(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          onAccountStatusChange={(v) => {
+            setCreateAccountStatus(v);
             if (bankAccountError) setBankAccountError(null);
           }}
           onIbansChange={(v) => {

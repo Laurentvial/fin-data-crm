@@ -24,7 +24,10 @@ export async function GET() {
         ba.name,
         ba.telegram_chat_id,
         ba.bank_id,
+        ba.account_type_id,
+        ba.account_status,
         b.name AS bank_name,
+        at.name AS account_type_name,
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
@@ -39,8 +42,9 @@ export async function GET() {
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id
+      LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, b.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, b.name, at.name, ba.created_at, ba.updated_at, c.name
       ORDER BY c.name, ba.name
     `;
     return NextResponse.json(rows);
@@ -61,6 +65,12 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     const company_id = typeof body?.company_id === "string" ? body.company_id.trim() : "";
     const bank_id = typeof body?.bank_id === "string" ? body.bank_id.trim() : null;
+    const account_type_id = typeof body?.account_type_id === "string" ? body.account_type_id.trim() || null : null;
+    const accountStatusRaw = body?.account_status;
+    const validStatuses = ["Ouvert", "Fermé", "Problème"] as const;
+    const account_status = typeof accountStatusRaw === "string" && validStatuses.includes(accountStatusRaw as (typeof validStatuses)[number])
+      ? (accountStatusRaw as (typeof validStatuses)[number])
+      : "Ouvert";
     const ibansRaw = body?.ibans;
     const telegramChatIdRaw = body?.telegram_chat_id;
     const existingTelegramChatId =
@@ -148,7 +158,7 @@ export async function POST(request: Request) {
       WHERE company_id = ${company_id}::uuid AND file_type = 'kbis'
       LIMIT 1
     `;
-    const title = company.name !== name ? `${company.name} – ${name}` : name;
+    const title = company.name !== name ? `${name} / ${company.name}` : name;
 
     const ibanStr =
       ibanItems.length > 0
@@ -281,9 +291,9 @@ BANQUE : ${bankName ?? "—"}`;
       }
     }
     const rows = await sql`
-      INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id)
-      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null})
-      RETURNING id, company_id, name, telegram_chat_id, bank_id, created_at, updated_at
+      INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status)
+      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null}, ${account_type_id}, ${account_status})
+      RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
@@ -305,7 +315,10 @@ BANQUE : ${bankName ?? "—"}`;
         ba.name,
         ba.telegram_chat_id,
         ba.bank_id,
+        ba.account_type_id,
+        ba.account_status,
         b.name AS bank_name,
+        at.name AS account_type_name,
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
@@ -319,6 +332,7 @@ BANQUE : ${bankName ?? "—"}`;
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id
+      LEFT JOIN account_types at ON at.id = ba.account_type_id
       WHERE ba.id = ${row.id}
     `;
     const result = full ?? row;
