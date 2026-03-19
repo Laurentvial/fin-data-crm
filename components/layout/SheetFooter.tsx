@@ -52,7 +52,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
           : "Toutes les modifications sont enregistrées";
 
   return (
-    <footer className="flex h-9 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--header-bg)] px-4 text-xs text-[var(--muted-foreground)]">
+    <footer className="flex min-h-12 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--header-bg)] px-4 text-xs text-[var(--muted-foreground)]">
       <div className="flex flex-wrap items-center gap-3 min-w-0">
         <button
           type="button"
@@ -62,9 +62,9 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
         >
           <MenuIcon className="h-4 w-4" />
         </button>
-        <span>Total des transactions : {totalCount.toLocaleString("fr-FR")}</span>
+        <span className="text-xl font-medium">Total des transactions : {totalCount.toLocaleString("fr-FR")}</span>
         {selectedSum != null && (
-          <span className="shrink-0 font-medium text-[var(--foreground)] whitespace-nowrap">
+          <span className="shrink-0 text-xl font-medium text-[var(--foreground)] whitespace-nowrap">
             Somme sélectionnée :{" "}
             {new Intl.NumberFormat("fr-FR", {
               minimumFractionDigits: 2,
@@ -74,7 +74,7 @@ export function SheetFooter({ totalCount, saveStatus = "idle", saveMessage, sele
           </span>
         )}
         {totalBalance != null && (
-          <span className="shrink-0 font-medium text-[var(--foreground)] whitespace-nowrap">
+          <span className="shrink-0 text-xl font-medium text-[var(--foreground)] whitespace-nowrap">
             Solde total :{" "}
             {new Intl.NumberFormat("fr-FR", {
               minimumFractionDigits: 2,

@@ -132,6 +132,8 @@ export interface Transaction {
   extracted_data_json: unknown;
   created_at: string;
   processed_by_user_id: string | null;
+  /** Name of user who added/processed the transaction (from GET /api/transactions) */
+  processed_by_user_name?: string | null;
   /** Present when an invoice exists for this transaction (from GET /api/transactions) */
   invoice_id?: string | null;
   invoice_pdf_url?: string | null;

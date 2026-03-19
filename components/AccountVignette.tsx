@@ -1,8 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import type { BankAccount, Transaction } from "@/lib/types";
+
+function MoreVerticalIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="6" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="18" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
 
 function ListIcon({ className }: { className?: string }) {
   return (
@@ -49,58 +60,171 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
+function ExternalLinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+function ChartIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
 export function AccountVignette({
   bankAccount,
   transactions,
   hideCompanyName,
+  onEdit,
   onDelete,
   deleting,
 }: {
   bankAccount: BankAccount;
   transactions: Transaction[];
   hideCompanyName?: boolean;
+  onEdit?: (ba: BankAccount) => void;
   onDelete?: (ba: BankAccount) => void;
   deleting?: boolean;
 }) {
   const balance = bankAccount.balance ?? 0;
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="relative flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)]">
-      {onDelete && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDelete(bankAccount);
-          }}
-          disabled={deleting}
-          className="absolute right-3 top-3 rounded p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-red-600 disabled:opacity-50 dark:hover:text-red-400"
-          aria-label="Supprimer le compte"
-          title="Supprimer le compte"
-        >
-          <TrashIcon />
-        </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenuOpen((prev) => !prev);
+        }}
+        className="absolute right-3 top-3 rounded p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+        aria-label="Menu"
+        aria-expanded={menuOpen}
+      >
+        <MoreVerticalIcon />
+      </button>
+      {menuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenuOpen(false);
+            }}
+            aria-hidden="true"
+          />
+          <div
+            className="absolute right-3 top-10 z-50 min-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Link
+              href={`/accounts/${bankAccount.id}`}
+              onClick={() => setMenuOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+            >
+              <ExternalLinkIcon className="h-4 w-4" />
+              Voir les informations du compte
+            </Link>
+            <Link
+              href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
+              onClick={() => setMenuOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+            >
+              <ListIcon className="h-4 w-4" />
+              Voir les transactions
+            </Link>
+            <Link
+              href={`/reporting?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
+              onClick={() => setMenuOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+            >
+              <ChartIcon className="h-4 w-4" />
+              Rapports
+            </Link>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  onEdit(bankAccount);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+              >
+                <PencilIcon className="h-4 w-4" />
+                Modifier
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  onDelete(bankAccount);
+                }}
+                disabled={deleting}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-[var(--muted)] disabled:opacity-50 dark:text-red-400"
+              >
+                <TrashIcon className="h-4 w-4" />
+                {deleting ? "Suppression…" : "Supprimer"}
+              </button>
+            )}
+          </div>
+        </>
       )}
-      <h3 className="subsection-header flex items-center gap-2 font-semibold pr-8">
-        {bankAccount.bank_id && (
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-            {bankAccount.has_logo ? (
-              <img
-                src={`/api/banks/${bankAccount.bank_id}/files/logo`}
-                alt=""
-                className="h-full w-full object-contain"
-              />
-            ) : null}
-          </span>
+      <div className="flex items-start justify-between gap-2 pr-8">
+        <h3 className="subsection-header flex min-w-0 flex-1 items-center gap-2 font-semibold">
+          {bankAccount.bank_id && (
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
+              {bankAccount.has_logo ? (
+                <img
+                  src={`/api/banks/${bankAccount.bank_id}/files/logo`}
+                  alt=""
+                  className="h-full w-full object-contain"
+                />
+              ) : null}
+            </span>
+          )}
+          <span className="truncate">{bankAccount.name}</span>
+        </h3>
+        {!hideCompanyName && bankAccount.company_name && (
+          bankAccount.company_id ? (
+            <Link
+              href={`/societes/${bankAccount.company_id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 text-right text-base font-semibold text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors"
+            >
+              {bankAccount.company_name}
+            </Link>
+          ) : (
+            <p className="shrink-0 text-right text-base font-semibold text-[var(--foreground)]">
+              {bankAccount.company_name}
+            </p>
+          )
         )}
-        {bankAccount.name}
-      </h3>
-      {!hideCompanyName && bankAccount.company_name && (
-        <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">
-          {bankAccount.company_name}
-        </p>
-      )}
+      </div>
       <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
         {bankAccount.account_type_name && (
           <span className="text-[var(--muted-foreground)]">{bankAccount.account_type_name}</span>

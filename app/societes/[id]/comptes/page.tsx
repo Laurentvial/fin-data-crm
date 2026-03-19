@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
+import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import type { BankAccount, Company, Transaction } from "@/lib/types";
 
 function ChevronLeftIcon({ className }: { className?: string }) {
@@ -16,6 +17,7 @@ function ChevronLeftIcon({ className }: { className?: string }) {
 
 export default function CompanyAccountsPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [company, setCompany] = useState<Company | null>(null);
@@ -26,6 +28,7 @@ export default function CompanyAccountsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
+  const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -72,7 +75,6 @@ export default function CompanyAccountsPage() {
   }, [fetchData]);
 
   const handleDeleteBankAccount = async (ba: BankAccount) => {
-    if (!confirm(`Supprimer le compte « ${ba.name} » ? Cette action est irréversible.`)) return;
     setDeletingBankAccountId(ba.id);
     setError(null);
     try {
@@ -89,6 +91,7 @@ export default function CompanyAccountsPage() {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
+      throw e;
     } finally {
       setDeletingBankAccountId(null);
     }
@@ -164,13 +167,28 @@ export default function CompanyAccountsPage() {
                 bankAccount={ba}
                 transactions={transactionsByAccount[ba.id] ?? []}
                 hideCompanyName
-                onDelete={handleDeleteBankAccount}
+                onEdit={(ba) => router.push(`/accounts?edit=${ba.id}`)}
+                onDelete={(ba) => setBankAccountToDelete(ba)}
                 deleting={deletingBankAccountId === ba.id}
               />
             ))}
           </div>
         )}
       </main>
+
+      {bankAccountToDelete && (
+        <DeleteConfirmationModal
+          title="Supprimer le compte bancaire"
+          expectedText={`supprimer ${bankAccountToDelete.name} - ${bankAccountToDelete.company_name ?? company?.name ?? ""}`}
+          message="Cette action est irréversible."
+          onConfirm={async () => {
+            await handleDeleteBankAccount(bankAccountToDelete);
+            setBankAccountToDelete(null);
+          }}
+          onClose={() => setBankAccountToDelete(null)}
+          deleting={deletingBankAccountId === bankAccountToDelete.id}
+        />
+      )}
     </div>
   );
 }

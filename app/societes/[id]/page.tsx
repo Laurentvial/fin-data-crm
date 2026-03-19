@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
+import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import type {
   AccountStatus,
   AccountType,
@@ -84,6 +85,7 @@ export default function SocieteDetailPage() {
   const [bankAccountError, setBankAccountError] = useState<string | null>(null);
   const [bankAccountInviteWarning, setBankAccountInviteWarning] = useState<string | null>(null);
   const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
+  const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingKbis, setUploadingKbis] = useState(false);
   const [uploadingStatut, setUploadingStatut] = useState(false);
@@ -388,7 +390,6 @@ export default function SocieteDetailPage() {
   };
 
   const handleDeleteBankAccount = async (ba: BankAccount) => {
-    if (!confirm(`Supprimer le compte « ${ba.name} » ? Cette action est irréversible.`)) return;
     setDeletingBankAccountId(ba.id);
     setError(null);
     try {
@@ -405,6 +406,7 @@ export default function SocieteDetailPage() {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
+      throw e;
     } finally {
       setDeletingBankAccountId(null);
     }
@@ -894,7 +896,8 @@ export default function SocieteDetailPage() {
                     bankAccount={ba}
                     transactions={transactionsByAccount[ba.id] ?? []}
                     hideCompanyName
-                    onDelete={handleDeleteBankAccount}
+                    onEdit={(ba) => router.push(`/accounts?edit=${ba.id}`)}
+                    onDelete={(ba) => setBankAccountToDelete(ba)}
                     deleting={deletingBankAccountId === ba.id}
                   />
                 ))}
@@ -903,6 +906,20 @@ export default function SocieteDetailPage() {
           </section>
         </div>
       </main>
+
+      {bankAccountToDelete && (
+        <DeleteConfirmationModal
+          title="Supprimer le compte bancaire"
+          expectedText={`supprimer ${bankAccountToDelete.name} - ${bankAccountToDelete.company_name ?? company?.name ?? ""}`}
+          message="Cette action est irréversible."
+          onConfirm={async () => {
+            await handleDeleteBankAccount(bankAccountToDelete);
+            setBankAccountToDelete(null);
+          }}
+          onClose={() => setBankAccountToDelete(null)}
+          deleting={deletingBankAccountId === bankAccountToDelete.id}
+        />
+      )}
 
       {createAccountModalOpen && company && (
         <CreateBankAccountModal

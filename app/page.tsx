@@ -59,8 +59,11 @@ function HomeContent() {
   const sortedTransactions = useMemo(() => {
     const effective = sortState ?? { column: "transaction_date", direction: "desc" as const };
     const dir = effective.direction === "asc" ? 1 : -1;
-    const parseDate = (d: string | undefined): number =>
-      d ? new Date(d).getTime() : 0;
+    const parseDate = (d: string | undefined | null): number => {
+      if (d == null || (typeof d === "string" && d.trim() === "")) return 0;
+      const t = new Date(d).getTime();
+      return Number.isNaN(t) ? 0 : t;
+    };
     return [...transactions].sort((a, b) => {
       let cmp = 0;
       switch (effective.column) {
@@ -92,7 +95,7 @@ function HomeContent() {
           cmp = (a.description ?? "").localeCompare(b.description ?? "");
           break;
         case "created_at":
-          cmp = new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
+          cmp = parseDate(a.created_at) - parseDate(b.created_at);
           break;
         default:
           return 0;

@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { BankSelect } from "@/components/BankSelect";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
+import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import type { AccountStatus, AccountType, Bank, BankAccount, Company, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -234,7 +235,7 @@ function AccountCardMenu({
         aria-hidden="true"
       />
       <div
-        className="absolute right-2 top-12 z-50 min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg"
+        className="absolute right-2 top-12 z-50 min-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <Link
@@ -243,7 +244,7 @@ function AccountCardMenu({
           className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
         >
           <ExternalLinkIcon className="h-4 w-4" />
-          Voir informations
+          Voir les informations du compte
         </Link>
         <Link
           href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
@@ -535,6 +536,7 @@ function AccountsPageContent() {
   const [creating, setCreating] = useState(false);
   const [createInviteWarning, setCreateInviteWarning] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [search, setSearch] = useState("");
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
 
@@ -655,7 +657,6 @@ function AccountsPageContent() {
   };
 
   const handleDelete = async (ba: BankAccount) => {
-    if (!confirm(`Supprimer le compte « ${displayName(ba)} » ? Cette action est irréversible.`)) return;
     setDeletingId(ba.id);
     setError(null);
     try {
@@ -667,6 +668,7 @@ function AccountsPageContent() {
       setBankAccounts((prev) => prev.filter((b) => b.id !== ba.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
+      throw e;
     } finally {
       setDeletingId(null);
     }
@@ -891,7 +893,10 @@ function AccountsPageContent() {
                 menuOpen={menuOpenId === ba.id}
                 onMenuToggle={() => setMenuOpenId((prev) => (prev === ba.id ? null : ba.id))}
                 onEdit={openEdit}
-                onDelete={handleDelete}
+                onDelete={(account) => {
+                  setBankAccountToDelete(account);
+                  setMenuOpenId(null);
+                }}
                 onCardClick={(account) => router.push(`/?bank_account_id=${encodeURIComponent(account.id)}`)}
                 deleting={deletingId === ba.id}
               />
@@ -944,6 +949,20 @@ function AccountsPageContent() {
           </aside>
         )}
       </div>
+
+      {bankAccountToDelete && (
+        <DeleteConfirmationModal
+          title="Supprimer le compte bancaire"
+          expectedText={`supprimer ${bankAccountToDelete.name} - ${bankAccountToDelete.company_name ?? ""}`}
+          message="Cette action est irréversible."
+          onConfirm={async () => {
+            await handleDelete(bankAccountToDelete);
+            setBankAccountToDelete(null);
+          }}
+          onClose={() => setBankAccountToDelete(null)}
+          deleting={deletingId === bankAccountToDelete.id}
+        />
+      )}
 
       {editingAccount && (
         <EditBankAccountModal

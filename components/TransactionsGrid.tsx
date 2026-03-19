@@ -5,6 +5,7 @@ import {
   DataEditor,
   GridCellKind,
   getDefaultTheme,
+  drawTextCell,
   type GridColumn,
   type GridCell,
   type Item,
@@ -12,6 +13,9 @@ import {
   type EditableGridCell,
   CompactSelection,
   type Theme,
+  type CustomCell,
+  type CustomRenderer,
+  type DrawArgs,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
 import type { Transaction, TransactionType } from "@/lib/types";
@@ -96,6 +100,162 @@ interface TransactionsGridProps {
   sortState?: { column: string; direction: "asc" | "desc" };
 }
 
+interface DateCellData {
+  type: "date";
+  value: string; // YYYY-MM-DD
+}
+
+function formatDateDisplay(value: string): string {
+  if (!value) return "";
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return `${d}/${m}/${y}`;
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** Convert to YYYY-MM-DD for API/storage */
+function parseDateToApiFormat(val: string): string {
+  const trimmed = val.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (match) {
+    const [, d, m, y] = match;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const date = new Date(trimmed);
+  if (!Number.isNaN(date.getTime())) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  return trimmed;
+}
+
+const dateCellRenderer: CustomRenderer<CustomCell<DateCellData>> = {
+  kind: GridCellKind.Custom,
+  isMatch: (cell): cell is CustomCell<DateCellData> =>
+    cell.kind === GridCellKind.Custom &&
+    (cell as CustomCell<DateCellData>).data?.type === "date",
+  draw: (args: DrawArgs<CustomCell<DateCellData>>, cell) => {
+    const display = formatDateDisplay(cell.data.value);
+    drawTextCell({ rect: args.rect, ctx: args.ctx, theme: args.theme }, display);
+  },
+  provideEditor: () => (p) => {
+    const rawValue = p.value.data.value || "";
+    const apiFormat = /^\d{4}-\d{2}-\d{2}$/.test(rawValue) ? rawValue : parseDateToApiFormat(rawValue);
+    const theme = p.theme;
+    const textRef = React.useRef<HTMLInputElement>(null);
+    const dateRef = React.useRef<HTMLInputElement>(null);
+    const [displayValue, setDisplayValue] = React.useState(() => formatDateDisplay(apiFormat));
+    const finish = (val?: string) => {
+      const toSave = val ?? (parseDateToApiFormat(textRef.current?.value ?? "") || p.value.data.value);
+      const next = { ...p.value, data: { type: "date" as const, value: toSave } };
+      p.onChange(next);
+      p.onFinishedEditing(next);
+    };
+    const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setDisplayValue(val);
+      const parsed = parseDateToApiFormat(val);
+      if (parsed) p.onChange({ ...p.value, data: { type: "date", value: parsed } });
+    };
+    const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setDisplayValue(formatDateDisplay(val));
+      const next = { ...p.value, data: { type: "date", value: val } };
+      p.onChange(next);
+      p.onFinishedEditing(next);
+    };
+    const inputStyle = {
+      height: 36,
+      padding: "6px 8px" as const,
+      border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+      borderRadius: 6,
+      fontSize: 14,
+      fontFamily: "inherit" as const,
+      background: theme.bgCell ?? "#fff",
+      color: theme.textDark ?? "#171717",
+    };
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 160 }}>
+        <input
+          ref={textRef}
+          type="text"
+          value={displayValue}
+          onChange={handleTextChange}
+          placeholder="jj/mm/aaaa"
+          onBlur={(e) => {
+            if (!e.relatedTarget || !e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) {
+              finish();
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              finish();
+            }
+            if (e.key === "Escape") p.onFinishedEditing(undefined);
+          }}
+          autoFocus
+          className="focus:outline-none focus:border-[var(--muted)]"
+          style={{ ...inputStyle, flex: 1, minWidth: 100 }}
+        />
+        <div style={{ position: "relative" }}>
+          <input
+            ref={dateRef}
+            type="date"
+            value={apiFormat}
+            onChange={handleDateChange}
+            style={{
+              ...inputStyle,
+              position: "absolute",
+              inset: 0,
+              opacity: 0,
+              cursor: "pointer",
+              width: "100%",
+              height: "100%",
+            }}
+            title="Ouvrir le calendrier"
+          />
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={() => dateRef.current?.showPicker?.()}
+            onKeyDown={(e) => e.key === "Enter" && dateRef.current?.showPicker?.()}
+            className="focus:outline-none focus:border-[var(--muted)]"
+            style={{
+              ...inputStyle,
+              width: 36,
+              minWidth: 36,
+              padding: 4,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            title="Calendrier"
+          >
+            📅
+          </span>
+        </div>
+      </div>
+    );
+  },
+  getAccessibilityString: (cell) => formatDateDisplay(cell.data.value),
+  onPaste: (val) => {
+    const parsed = parseDateToApiFormat(String(val).trim());
+    if (parsed) return { type: "date" as const, value: parsed };
+    return undefined;
+  },
+};
+
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
@@ -105,6 +265,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "type",
   "description",
   "created_at",
+  "processed_by_user_name",
   "invoice",
   "delete",
 ];
@@ -139,6 +300,7 @@ export function TransactionsGrid({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
   });
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
 
   const columns = useMemo<GridColumn[]>(() => {
     const sortIndicator = (id: string) => {
@@ -148,12 +310,13 @@ export function TransactionsGrid({
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(62 * scale), id: "rowNum" },
       { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(100 * scale), id: "id" },
-      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(100 * scale), id: "transaction_date" },
+      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(130 * scale), id: "transaction_date" },
       { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(200 * scale), id: "bank_account_name" },
       { title: `Montant${sortIndicator("amount")}`, width: Math.round(135 * scale), id: "amount" },
       { title: `Type${sortIndicator("type")}`, width: Math.round(80 * scale), id: "type" },
       { title: `Description${sortIndicator("description")}`, width: 220, grow: 1, id: "description" },
       { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(120 * scale), id: "created_at" },
+      { title: "Ajouté par", width: Math.round(140 * scale), id: "processed_by_user_name" },
     ];
     if (onGenerateInvoice) {
       cols.push({ title: "Facture", width: Math.round(155 * scale), id: "invoice" });
@@ -166,11 +329,11 @@ export function TransactionsGrid({
 
   const onHeaderClicked = useCallback(
     (colIndex: number) => {
-      const field = COL_FIELDS[colIndex];
+      const field = columns[colIndex]?.id ?? COL_FIELDS[colIndex];
       if (!field || !SORTABLE_FIELDS.has(field) || !onSortChange) return;
       onSortChange(field);
     },
-    [onSortChange]
+    [onSortChange, columns]
   );
 
   const getCellContent = useCallback(
@@ -201,17 +364,10 @@ export function TransactionsGrid({
         };
       }
       if (field === "transaction_date") {
-        const val = txn.transaction_date
-          ? new Date(txn.transaction_date).toLocaleDateString("fr-FR", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-            })
-          : "";
         return {
-          kind: GridCellKind.Text,
-          data: txn.transaction_date ?? "",
-          displayData: val,
+          kind: GridCellKind.Custom,
+          data: { type: "date", value: txn.transaction_date ?? "" },
+          copyData: txn.transaction_date ?? "",
           allowOverlay: true,
         };
       }
@@ -227,6 +383,9 @@ export function TransactionsGrid({
       }
       if (field === "amount") {
         const display = formatAmount(txn.amount, txn.type);
+        const num = Number(txn.amount);
+        const signed = txn.type === "DEBIT" ? -num : num;
+        const isNegative = signed < 0;
         return {
           kind: GridCellKind.Number,
           data: txn.amount != null ? Number(txn.amount) : undefined,
@@ -234,6 +393,9 @@ export function TransactionsGrid({
           allowOverlay: true,
           allowNegative: true,
           fixedDecimals: 2,
+          ...(isNegative && {
+            themeOverride: { textDark: "#dc2626" },
+          }),
         };
       }
       if (field === "type") {
@@ -260,6 +422,16 @@ export function TransactionsGrid({
               timeStyle: "short",
             })
           : "";
+        return {
+          kind: GridCellKind.Text,
+          data: val,
+          displayData: val,
+          allowOverlay: false,
+          readonly: true,
+        };
+      }
+      if (field === "processed_by_user_name") {
+        const val = txn.processed_by_user_name ?? "";
         return {
           kind: GridCellKind.Text,
           data: val,
@@ -317,15 +489,19 @@ export function TransactionsGrid({
         return;
       }
 
-      if (field === "rowNum" || field === "id" || field === "bank_account_name" || field === "created_at") return;
+      if (field === "rowNum" || field === "id" || field === "bank_account_name" || field === "created_at" || field === "processed_by_user_name") return;
 
       let value: unknown;
-      if (newValue.kind === GridCellKind.Number) {
+      if (field === "transaction_date") {
+        if (newValue.kind === GridCellKind.Custom) {
+          const data = (newValue as CustomCell<DateCellData>).data;
+          value = data?.type === "date" ? data.value : undefined;
+        }
+        if (value === undefined) return;
+      } else if (newValue.kind === GridCellKind.Number) {
         value = newValue.data;
       } else if (newValue.kind === GridCellKind.Text) {
-        if (field === "transaction_date") {
-          value = newValue.data;
-        } else if (field === "type") {
+        if (field === "type") {
           const raw = (newValue.data as string).toUpperCase();
           value = raw === "DEBIT" || raw === "DÉBIT" ? "DEBIT" : raw === "CREDIT" || raw === "CRÉDIT" ? "CREDIT" : raw;
         } else {
@@ -415,6 +591,22 @@ export function TransactionsGrid({
     [resolvedTheme]
   );
 
+  const onItemHovered = useCallback((args: { location?: Item } | undefined) => {
+    const loc = args?.location;
+    const row = Array.isArray(loc) ? loc[1] : undefined;
+    setHoveredRow(typeof row === "number" ? row : null);
+  }, []);
+
+  const getRowThemeOverride = useCallback(
+    (row: number): Partial<Theme> | undefined => {
+      if (hoveredRow === row && resolvedTheme.bgCellMedium) {
+        return { bgCell: resolvedTheme.bgCellMedium };
+      }
+      return undefined;
+    },
+    [hoveredRow, resolvedTheme.bgCellMedium]
+  );
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
       <div className="h-full min-h-[400px] w-full overflow-hidden rounded-md border border-[var(--border)]">
@@ -429,6 +621,9 @@ export function TransactionsGrid({
             columns={columns}
             rows={transactions.length}
             getCellContent={getCellContent}
+            getRowThemeOverride={getRowThemeOverride}
+            onItemHovered={onItemHovered}
+            customRenderers={[dateCellRenderer]}
             onCellEdited={onCellValueChanged ? onCellEdited : undefined}
             onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
             onHeaderClicked={onSortChange ? onHeaderClicked : undefined}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import type { Bank, Company } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -480,6 +481,8 @@ function SocietesPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const [companyDeleting, setCompanyDeleting] = useState(false);
   const [isAddModal, setIsAddModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
@@ -704,7 +707,6 @@ function SocietesPageContent() {
   };
 
   const handleDelete = async (company: Company) => {
-    if (!confirm(`Supprimer la société "${company.name}" ?`)) return;
     setError(null);
     try {
       const res = await fetch(`/api/accounts/${company.id}`, { method: "DELETE" });
@@ -715,6 +717,7 @@ function SocietesPageContent() {
       setCompanies((prev) => prev.filter((c) => c.id !== company.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
+      throw e;
     }
   };
 
@@ -810,7 +813,10 @@ function SocietesPageContent() {
                             menuOpen={menuOpenId === c.id}
                             onMenuToggle={() => setMenuOpenId((prev) => (prev === c.id ? null : c.id))}
                             onEdit={openEdit}
-                            onDelete={handleDelete}
+                            onDelete={(company) => {
+                              setCompanyToDelete(company);
+                              setMenuOpenId(null);
+                            }}
                             onCardClick={(companyId) => router.push(`/societes/${companyId}/comptes`)}
                           />
                         ))}
@@ -823,6 +829,25 @@ function SocietesPageContent() {
           </div>
         )}
       </main>
+
+      {companyToDelete && (
+        <DeleteConfirmationModal
+          title="Supprimer la société"
+          expectedText={`supprimer ${companyToDelete.name}`}
+          message="Cette action est irréversible."
+          onConfirm={async () => {
+            setCompanyDeleting(true);
+            try {
+              await handleDelete(companyToDelete);
+              setCompanyToDelete(null);
+            } finally {
+              setCompanyDeleting(false);
+            }
+          }}
+          onClose={() => setCompanyToDelete(null)}
+          deleting={companyDeleting}
+        />
+      )}
 
       {showModal && (
         <CompanyModal

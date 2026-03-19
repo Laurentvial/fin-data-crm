@@ -22,8 +22,13 @@ function isValidDate(s: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
   try {
     const body = await request.json();
     const bank_account_id = body.bank_account_id ?? body.company_id;
@@ -46,9 +51,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "type invalide (DEBIT ou CREDIT)" }, { status: 400 });
     }
 
+    const [telegramRow] = await sql`
+      SELECT telegram_id FROM user_telegram WHERE user_id = ${session.user.id}::uuid LIMIT 1
+    `;
+    const telegramId = (telegramRow as { telegram_id?: number } | undefined)?.telegram_id ?? null;
+
     const rows = await sql`
-      INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type)
-      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype)
+      INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id)
+      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${telegramId ?? null})
       RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
@@ -59,11 +69,14 @@ export async function POST(request: NextRequest) {
     const withAccount = await sql`
       SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
         t.raw_image_path, t.extracted_data_json, t.created_at, t.processed_by_user_id,
+        COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
         ba.name AS bank_account_name,
         c.name AS company_name
       FROM transactions t
       LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
       LEFT JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
+      LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
       WHERE t.id = ${row.id}::uuid
     `;
     const full = Array.isArray(withAccount) ? withAccount[0] : withAccount;
@@ -109,6 +122,7 @@ export async function GET(request: NextRequest) {
           t.extracted_data_json,
           t.created_at,
           t.processed_by_user_id,
+          COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
           ba.name AS bank_account_name,
           ba.company_id,
           c.name AS company_name,
@@ -117,6 +131,8 @@ export async function GET(request: NextRequest) {
         FROM transactions t
         LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
         LEFT JOIN companies c ON c.id = ba.company_id
+        LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
+        LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
         LEFT JOIN LATERAL (
           SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
           FROM invoices
