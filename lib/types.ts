@@ -98,6 +98,12 @@ export interface IbanItem {
   bic?: string | null;
 }
 
+export interface CardItem {
+  numero: string;
+  date_expiration?: string | null;
+  cvv?: string | null;
+}
+
 export type AccountStatus = "Ouvert" | "Fermé" | "Problème";
 
 export interface BankAccount {
@@ -113,6 +119,16 @@ export interface BankAccount {
   account_status?: AccountStatus;
   has_logo?: boolean;
   ibans?: IbanItem[];
+  /** Identifiants: login, mot de passe, code PIN */
+  login?: string | null;
+  password?: string | null;
+  pin_code?: string | null;
+  /** Plafond / limite (champ texte court) */
+  plafond_limit?: string | null;
+  /** Cartes bleues (numéro, date expiration, CVV) */
+  cards?: CardItem[];
+  /** RIB: présence du document */
+  has_rib?: boolean;
   balance?: number;
   created_at: string;
   updated_at: string;

@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { BankSelect } from "@/components/BankSelect";
+import { Select } from "@/components/Select";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
-import type { AccountStatus, AccountType, Bank, BankAccount, Company, IbanItem } from "@/lib/types";
+import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -38,6 +39,22 @@ function ListIcon({ className }: { className?: string }) {
       <line x1="3" y1="6" x2="3.01" y2="6" />
       <line x1="3" y1="12" x2="3.01" y2="12" />
       <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m9 6 6 6-6 6" />
     </svg>
   );
 }
@@ -302,6 +319,12 @@ function EditBankAccountModal({
   accountStatus,
   telegramChatId,
   ibans,
+  login,
+  password,
+  pinCode,
+  plafondLimit,
+  cards,
+  hasRib,
   onNameChange,
   onCompanyIdChange,
   onBankIdChange,
@@ -309,6 +332,12 @@ function EditBankAccountModal({
   onAccountStatusChange,
   onTelegramChatIdChange,
   onIbansChange,
+  onLoginChange,
+  onPasswordChange,
+  onPinCodeChange,
+  onPlafondLimitChange,
+  onCardsChange,
+  onRibUploaded,
   onSave,
   onClose,
   saving,
@@ -325,6 +354,12 @@ function EditBankAccountModal({
   accountStatus: AccountStatus;
   telegramChatId: string;
   ibans: IbanItem[];
+  login: string;
+  password: string;
+  pinCode: string;
+  plafondLimit: string;
+  cards: CardItem[];
+  hasRib: boolean;
   onNameChange: (v: string) => void;
   onCompanyIdChange: (v: string) => void;
   onBankIdChange: (v: string) => void;
@@ -332,11 +367,48 @@ function EditBankAccountModal({
   onAccountStatusChange: (v: AccountStatus) => void;
   onTelegramChatIdChange: (v: string) => void;
   onIbansChange: (v: IbanItem[]) => void;
+  onLoginChange: (v: string) => void;
+  onPasswordChange: (v: string) => void;
+  onPinCodeChange: (v: string) => void;
+  onPlafondLimitChange: (v: string) => void;
+  onCardsChange: (v: CardItem[]) => void;
+  onRibUploaded: () => void;
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
   error?: string | null;
 }) {
+  const [uploadingRib, setUploadingRib] = useState(false);
+  const [ibanExpanded, setIbanExpanded] = useState(false);
+  const [cardsExpanded, setCardsExpanded] = useState(false);
+  const [ibanLookupLoading, setIbanLookupLoading] = useState<number | null>(null);
+  const [ibanValidation, setIbanValidation] = useState<Record<string, boolean>>({});
+
+  const lookupIbanBic = async (index: number) => {
+    const item = ibans[index];
+    const raw = (item?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+    if (raw.length < 15) return;
+    setIbanLookupLoading(index);
+    try {
+      const res = await fetch(`/api/iban/validate?iban=${encodeURIComponent(raw)}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const data = (await res.json()) as { valid?: boolean; swift_code?: string | null };
+      if (!res.ok) return;
+      const valid = !!data?.valid;
+      setIbanValidation((prev) => ({ ...prev, [raw]: valid }));
+      const swiftCode = typeof data?.swift_code === "string" ? data.swift_code.trim() : "";
+      if (valid && swiftCode) {
+        const next = [...ibans];
+        next[index] = { ...next[index], bic: swiftCode };
+        onIbansChange(next);
+      }
+    } finally {
+      setIbanLookupLoading(null);
+    }
+  };
+
   const addIban = () => onIbansChange([...ibans, { iban: "", bic: undefined }]);
   const removeIban = (i: number) => onIbansChange(ibans.filter((_, idx) => idx !== i));
   const setIban = (i: number, iban: string) => {
@@ -349,13 +421,43 @@ function EditBankAccountModal({
     next[i] = { ...next[i], bic: bic || undefined };
     onIbansChange(next);
   };
+  const addCard = () => onCardsChange([...cards, { numero: "", date_expiration: undefined, cvv: undefined }]);
+  const removeCard = (i: number) => onCardsChange(cards.filter((_, idx) => idx !== i));
+  const setCard = (i: number, field: "numero" | "date_expiration" | "cvv", value: string) => {
+    const next = [...cards];
+    next[i] = { ...next[i], [field]: value || undefined };
+    onCardsChange(next);
+  };
+  const handleRibUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingRib(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "rib");
+      const res = await fetch(`/api/bank-accounts/${bankAccount.id}/files`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de l'upload");
+      }
+      onRibUploaded();
+    } finally {
+      setUploadingRib(false);
+      e.target.value = "";
+    }
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="subsection-header mb-4 text-lg font-medium">
+        <div className="shrink-0 p-6 pb-0">
+        <h3 className="subsection-header text-lg font-medium">
           Modifier {displayName(bankAccount)}
         </h3>
         {error && (
@@ -363,7 +465,9 @@ function EditBankAccountModal({
             {error}
           </div>
         )}
-        <div className="space-y-4">
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+        <div className="grid grid-cols-3 gap-x-4 gap-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
             <input
@@ -377,17 +481,16 @@ function EditBankAccountModal({
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Société</label>
-            <select
+            <Select
               value={companyId}
               onChange={(e) => onCompanyIdChange(e.target.value)}
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             >
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Banque</label>
@@ -401,10 +504,9 @@ function EditBankAccountModal({
           {accountTypes.length > 0 && (
             <div>
               <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type de compte</label>
-              <select
+              <Select
                 value={accountTypeId}
                 onChange={(e) => onAccountTypeIdChange(e.target.value)}
-                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               >
                 <option value="">Aucun type</option>
                 {accountTypes.map((t) => (
@@ -412,20 +514,19 @@ function EditBankAccountModal({
                     {t.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
-            <select
+            <Select
               value={accountStatus}
               onChange={(e) => onAccountStatusChange(e.target.value as AccountStatus)}
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             >
               <option value="Ouvert">Ouvert</option>
               <option value="Fermé">Fermé</option>
               <option value="Problème">Problème</option>
-            </select>
+            </Select>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Telegram Chat ID</label>
@@ -437,53 +538,237 @@ function EditBankAccountModal({
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <label className="block text-sm font-medium text-[var(--foreground)]">IBAN</label>
+          <div className="col-span-3 grid grid-cols-2 gap-4">
+            <div className="rounded-lg border border-[var(--border)]">
               <button
                 type="button"
-                onClick={addIban}
-                className="text-xs text-[var(--primary)] hover:underline"
+                onClick={() => setIbanExpanded((e) => !e)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--muted)]/50"
               >
-                + Ajouter un IBAN
+                <span className="text-sm font-medium text-[var(--foreground)]">
+                  IBAN {ibans.length > 0 && <span className="text-[var(--muted-foreground)]">({ibans.length})</span>}
+                </span>
+                <span className="text-[var(--muted-foreground)]">
+                  {ibanExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                </span>
               </button>
-            </div>
-            {ibans.length === 0 ? (
-              <p className="text-xs text-[var(--muted-foreground)]">Aucun IBAN.</p>
-            ) : (
-              <div className="space-y-2">
-                {ibans.map((item, i) => (
-                  <div key={i} className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-2">
-                    <div className="flex gap-2">
+              {ibanExpanded && (
+              <div className="border-t border-[var(--border)] p-3">
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={addIban}
+                  className="text-xs text-[var(--primary)] hover:underline"
+                >
+                  + Ajouter un IBAN
+                </button>
+              </div>
+              {ibans.length === 0 ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Aucun IBAN.</p>
+              ) : (
+                <div className="space-y-2">
+                  {ibans.map((item, i) => (
+                    <div key={i} className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={item.iban}
+                          onChange={(e) => setIban(i, e.target.value)}
+                          onBlur={() => lookupIbanBic(i)}
+                          placeholder="IBAN (ex. FR76 1234 5678 9012 3456 7890 123)"
+                          className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => lookupIbanBic(i)}
+                          disabled={ibanLookupLoading !== null || (item?.iban ?? "").trim().replace(/\s/g, "").length < 15}
+                          className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {ibanLookupLoading === i ? "…" : "Vérifier"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeIban(i)}
+                          className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                        >
+                          ×
+                        </button>
+                      </div>
                       <input
                         type="text"
-                        value={item.iban}
-                        onChange={(e) => setIban(i, e.target.value)}
-                        placeholder="IBAN (ex. FR76 1234 5678 9012 3456 7890 123)"
-                        className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                        value={item.bic ?? ""}
+                        onChange={(e) => setBic(i, e.target.value)}
+                        placeholder="BIC (optionnel, auto-rempli si IBAN valide)"
+                        className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
                       />
-                      <button
-                        type="button"
-                        onClick={() => removeIban(i)}
-                        className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                      >
-                        ×
-                      </button>
+                      {ibanLookupLoading === i ? (
+                        <span className="text-xs text-[var(--muted-foreground)]">Vérification…</span>
+                      ) : (() => {
+                        const raw = (item?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+                        const valid = raw.length >= 15 ? ibanValidation[raw] : undefined;
+                        if (valid === true) return <span className="text-xs text-[var(--success)]">IBAN correct</span>;
+                        if (valid === false) return <span className="text-xs text-[var(--destructive)]">IBAN incorrect</span>;
+                        return null;
+                      })()}
                     </div>
-                    <input
-                      type="text"
-                      value={item.bic ?? ""}
-                      onChange={(e) => setBic(i, e.target.value)}
-                      placeholder="BIC (optionnel)"
-                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
-                    />
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
               </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => setCardsExpanded((e) => !e)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--muted)]/50"
+              >
+                <span className="text-sm font-medium text-[var(--foreground)]">
+                  Cartes bleues {cards.length > 0 && <span className="text-[var(--muted-foreground)]">({cards.length})</span>}
+                </span>
+                <span className="text-[var(--muted-foreground)]">
+                  {cardsExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                </span>
+              </button>
+              {cardsExpanded && (
+              <div className="border-t border-[var(--border)] p-3">
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={addCard}
+                  className="text-xs text-[var(--primary)] hover:underline"
+                >
+                  + Ajouter une carte
+                </button>
+              </div>
+              {cards.length === 0 ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Aucune carte.</p>
+              ) : (
+                <div className="space-y-2">
+                  {cards.map((item, i) => (
+                    <div key={i} className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={item.numero}
+                          onChange={(e) => setCard(i, "numero", e.target.value)}
+                          placeholder="Numéro (ex. 1234 5678 9012 3456)"
+                          className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeCard(i)}
+                          className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={item.date_expiration ?? ""}
+                          onChange={(e) => setCard(i, "date_expiration", e.target.value)}
+                          placeholder="MM/AA"
+                          className="block w-24 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                        />
+                        <input
+                          type="text"
+                          value={item.cvv ?? ""}
+                          onChange={(e) => setCard(i, "cvv", e.target.value)}
+                          placeholder="CVV"
+                          className="block w-20 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              </div>
+              )}
+            </div>
+          </div>
+
+          <div className="col-span-3">
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Identifiants</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={login}
+                onChange={(e) => onLoginChange(e.target.value)}
+                placeholder="Login"
+                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => onPasswordChange(e.target.value)}
+                placeholder="Mot de passe"
+                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                value={pinCode}
+                onChange={(e) => onPinCodeChange(e.target.value)}
+                placeholder="Code PIN"
+                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="col-span-3">
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Plafond / limite</label>
+            <input
+              type="text"
+              value={plafondLimit}
+              onChange={(e) => onPlafondLimitChange(e.target.value)}
+              placeholder="Ex. 5000 €"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="col-span-3">
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">RIB (document)</label>
+            {hasRib ? (
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/bank-accounts/${bankAccount.id}/files/rib`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-[var(--primary)] hover:underline"
+                >
+                  Voir le RIB
+                </a>
+                <span className="text-xs text-[var(--muted-foreground)]">·</span>
+                <label className="cursor-pointer text-sm text-[var(--primary)] hover:underline">
+                  {uploadingRib ? "Upload…" : "Remplacer"}
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    className="hidden"
+                    disabled={uploadingRib}
+                    onChange={handleRibUpload}
+                  />
+                </label>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer flex-col items-start gap-2 rounded-lg border border-dashed border-[var(--border)] p-4 py-3">
+                <span className="text-sm text-[var(--muted-foreground)]">
+                  {uploadingRib ? "Upload…" : "Choisir un fichier (PDF ou image)"}
+                </span>
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  className="hidden"
+                  disabled={uploadingRib}
+                  onChange={handleRibUpload}
+                />
+              </label>
             )}
           </div>
         </div>
-        <div className="mt-6 flex justify-end gap-2">
+        </div>
+        <div className="shrink-0 border-t border-[var(--border)] p-6 pt-4">
+        <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
@@ -499,6 +784,7 @@ function EditBankAccountModal({
           >
             {saving ? "Enregistrement…" : "Enregistrer"}
           </button>
+        </div>
         </div>
       </div>
     </div>
@@ -524,6 +810,12 @@ function AccountsPageContent() {
   const [editAccountStatus, setEditAccountStatus] = useState<AccountStatus>("Ouvert");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
   const [editIbans, setEditIbans] = useState<IbanItem[]>([]);
+  const [editLogin, setEditLogin] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editPinCode, setEditPinCode] = useState("");
+  const [editPlafondLimit, setEditPlafondLimit] = useState("");
+  const [editCards, setEditCards] = useState<CardItem[]>([]);
+  const [editHasRib, setEditHasRib] = useState(false);
   const [saving, setSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -532,6 +824,11 @@ function AccountsPageContent() {
   const [createAccountTypeId, setCreateAccountTypeId] = useState("");
   const [createAccountStatus, setCreateAccountStatus] = useState<AccountStatus>("Ouvert");
   const [createIbans, setCreateIbans] = useState<IbanItem[]>([]);
+  const [createLogin, setCreateLogin] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createPinCode, setCreatePinCode] = useState("");
+  const [createPlafondLimit, setCreatePlafondLimit] = useState("");
+  const [createCards, setCreateCards] = useState<CardItem[]>([]);
   const [createLinkExistingGroupId, setCreateLinkExistingGroupId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createInviteWarning, setCreateInviteWarning] = useState<string | null>(null);
@@ -632,6 +929,12 @@ function AccountsPageContent() {
         setEditAccountStatus((account.account_status as AccountStatus) ?? "Ouvert");
         setEditTelegramChatId(String(account.telegram_chat_id ?? ""));
         setEditIbans(account.ibans ?? []);
+        setEditLogin(account.login ?? "");
+        setEditPassword(account.password ?? "");
+        setEditPinCode(account.pin_code ?? "");
+        setEditPlafondLimit(account.plafond_limit ?? "");
+        setEditCards(account.cards ?? []);
+        setEditHasRib(!!account.has_rib);
         setError(null);
       }
     }
@@ -646,6 +949,12 @@ function AccountsPageContent() {
     setEditAccountStatus((ba.account_status as AccountStatus) ?? "Ouvert");
     setEditTelegramChatId(String(ba.telegram_chat_id ?? ""));
     setEditIbans(ba.ibans ?? []);
+    setEditLogin(ba.login ?? "");
+    setEditPassword(ba.password ?? "");
+    setEditPinCode(ba.pin_code ?? "");
+    setEditPlafondLimit(ba.plafond_limit ?? "");
+    setEditCards(ba.cards ?? []);
+    setEditHasRib(!!ba.has_rib);
     setError(null);
   };
 
@@ -682,6 +991,11 @@ function AccountsPageContent() {
     setCreateAccountTypeId("");
     setCreateAccountStatus("Ouvert");
     setCreateIbans([]);
+    setCreateLogin("");
+    setCreatePassword("");
+    setCreatePinCode("");
+    setCreatePlafondLimit("");
+    setCreateCards([]);
     setCreateLinkExistingGroupId("");
     setError(null);
     setCreateInviteWarning(null);
@@ -705,6 +1019,13 @@ function AccountsPageContent() {
           bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
         }))
         .filter((v) => v.iban.length > 0);
+      const cardsToSend = createCards
+        .map((v) => ({
+          numero: v.numero.trim().replace(/\s/g, ""),
+          date_expiration: (v.date_expiration ?? "").trim() || undefined,
+          cvv: (v.cvv ?? "").trim() || undefined,
+        }))
+        .filter((v) => v.numero.length > 0);
       const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; telegram_chat_id?: string } = {
         name,
         company_id: createCompanyId,
@@ -713,6 +1034,11 @@ function AccountsPageContent() {
       if (createBankId) body.bank_id = createBankId;
       if (createAccountTypeId) body.account_type_id = createAccountTypeId;
       body.account_status = createAccountStatus;
+      if (createLogin.trim()) body.login = createLogin.trim();
+      if (createPassword.trim()) body.password = createPassword.trim();
+      if (createPinCode.trim()) body.pin_code = createPinCode.trim();
+      if (createPlafondLimit.trim()) body.plafond_limit = createPlafondLimit.trim();
+      if (cardsToSend.length > 0) body.cards = cardsToSend;
       const linkId = createLinkExistingGroupId.trim();
       if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
       const res = await fetch("/api/bank-accounts", {
@@ -757,7 +1083,7 @@ function AccountsPageContent() {
     setSaving(true);
     setError(null);
     try {
-      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status?: AccountStatus; telegram_chat_id?: number; ibans?: IbanItem[] } = {
+      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status?: AccountStatus; telegram_chat_id?: number; ibans?: IbanItem[]; login?: string | null; password?: string | null; pin_code?: string | null; plafond_limit?: string | null; cards?: CardItem[] } = {
         name,
         company_id: editCompanyId,
       };
@@ -776,6 +1102,22 @@ function AccountsPageContent() {
         }))
         .filter((v) => v.iban.length > 0);
       body.ibans = ibansToSend;
+      if (editLogin.trim()) body.login = editLogin.trim();
+      else body.login = null;
+      if (editPassword.trim()) body.password = editPassword.trim();
+      else body.password = null;
+      if (editPinCode.trim()) body.pin_code = editPinCode.trim();
+      else body.pin_code = null;
+      if (editPlafondLimit.trim()) body.plafond_limit = editPlafondLimit.trim();
+      else body.plafond_limit = null;
+      const cardsToSend = editCards
+        .map((v) => ({
+          numero: v.numero.trim().replace(/\s/g, ""),
+          date_expiration: (v.date_expiration ?? "").trim() || undefined,
+          cvv: (v.cvv ?? "").trim() || undefined,
+        }))
+        .filter((v) => v.numero.length > 0);
+      body.cards = cardsToSend;
       const res = await fetch(`/api/bank-accounts/${editingAccount.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -801,6 +1143,11 @@ function AccountsPageContent() {
                 account_status: updated.account_status ?? "Ouvert",
                 telegram_chat_id: updated.telegram_chat_id,
                 ibans: updated.ibans ?? ba.ibans,
+                login: updated.login ?? ba.login,
+                password: updated.password ?? ba.password,
+                pin_code: updated.pin_code ?? ba.pin_code,
+                plafond_limit: updated.plafond_limit ?? ba.plafond_limit,
+                cards: updated.cards ?? ba.cards,
               }
             : ba
         )
@@ -977,6 +1324,12 @@ function AccountsPageContent() {
           accountStatus={editAccountStatus}
           telegramChatId={editTelegramChatId}
           ibans={editIbans}
+          login={editLogin}
+          password={editPassword}
+          pinCode={editPinCode}
+          plafondLimit={editPlafondLimit}
+          cards={editCards}
+          hasRib={editHasRib}
           onNameChange={(v) => {
             setEditName(v);
             setError(null);
@@ -1005,6 +1358,27 @@ function AccountsPageContent() {
             setEditIbans(v);
             setError(null);
           }}
+          onLoginChange={(v) => {
+            setEditLogin(v);
+            setError(null);
+          }}
+          onPasswordChange={(v) => {
+            setEditPassword(v);
+            setError(null);
+          }}
+          onPinCodeChange={(v) => {
+            setEditPinCode(v);
+            setError(null);
+          }}
+          onPlafondLimitChange={(v) => {
+            setEditPlafondLimit(v);
+            setError(null);
+          }}
+          onCardsChange={(v) => {
+            setEditCards(v);
+            setError(null);
+          }}
+          onRibUploaded={() => setEditHasRib(true)}
           onSave={handleSave}
           onClose={closeModal}
           saving={saving}
@@ -1022,6 +1396,11 @@ function AccountsPageContent() {
           accountTypeId={createAccountTypeId}
           accountStatus={createAccountStatus}
           ibans={createIbans}
+          login={createLogin}
+          password={createPassword}
+          pinCode={createPinCode}
+          plafondLimit={createPlafondLimit}
+          cards={createCards}
           onNameChange={(v) => {
             setCreateName(v);
             setError(null);
@@ -1044,6 +1423,26 @@ function AccountsPageContent() {
           }}
           onIbansChange={(v) => {
             setCreateIbans(v);
+            setError(null);
+          }}
+          onLoginChange={(v) => {
+            setCreateLogin(v);
+            setError(null);
+          }}
+          onPasswordChange={(v) => {
+            setCreatePassword(v);
+            setError(null);
+          }}
+          onPinCodeChange={(v) => {
+            setCreatePinCode(v);
+            setError(null);
+          }}
+          onPlafondLimitChange={(v) => {
+            setCreatePlafondLimit(v);
+            setError(null);
+          }}
+          onCardsChange={(v) => {
+            setCreateCards(v);
             setError(null);
           }}
           linkExistingGroupId={createLinkExistingGroupId}

@@ -10,6 +10,7 @@ import type {
   AccountStatus,
   AccountType,
   Bank,
+  CardItem,
   Company,
   CompanyEmail,
   CompanyPhone,
@@ -80,6 +81,11 @@ export default function SocieteDetailPage() {
   const [createAccountTypeId, setCreateAccountTypeId] = useState("");
   const [createAccountStatus, setCreateAccountStatus] = useState<AccountStatus>("Ouvert");
   const [createAccountIbans, setCreateAccountIbans] = useState<IbanItem[]>([]);
+  const [createAccountLogin, setCreateAccountLogin] = useState("");
+  const [createAccountPassword, setCreateAccountPassword] = useState("");
+  const [createAccountPinCode, setCreateAccountPinCode] = useState("");
+  const [createAccountPlafondLimit, setCreateAccountPlafondLimit] = useState("");
+  const [createAccountCards, setCreateAccountCards] = useState<CardItem[]>([]);
   const [createAccountLinkExistingGroupId, setCreateAccountLinkExistingGroupId] = useState("");
   const [addingBankAccount, setAddingBankAccount] = useState(false);
   const [bankAccountError, setBankAccountError] = useState<string | null>(null);
@@ -378,6 +384,11 @@ export default function SocieteDetailPage() {
     setCreateAccountTypeId("");
     setCreateAccountStatus("Ouvert");
     setCreateAccountIbans([]);
+    setCreateAccountLogin("");
+    setCreateAccountPassword("");
+    setCreateAccountPinCode("");
+    setCreateAccountPlafondLimit("");
+    setCreateAccountCards([]);
     setCreateAccountLinkExistingGroupId("");
     setBankAccountError(null);
     setBankAccountInviteWarning(null);
@@ -424,7 +435,14 @@ export default function SocieteDetailPage() {
           bic: (v.bic ?? "").trim().replace(/\s/g, "").toUpperCase() || undefined,
         }))
         .filter((v) => v.iban.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; telegram_chat_id?: string } = {
+      const cardsToSend = createAccountCards
+        .map((v) => ({
+          numero: v.numero.trim().replace(/\s/g, ""),
+          date_expiration: (v.date_expiration ?? "").trim() || undefined,
+          cvv: (v.cvv ?? "").trim() || undefined,
+        }))
+        .filter((v) => v.numero.length > 0);
+      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
         name,
         company_id: id,
         ibans: ibansToSend,
@@ -432,6 +450,11 @@ export default function SocieteDetailPage() {
       if (createAccountBankId) body.bank_id = createAccountBankId;
       if (createAccountTypeId) body.account_type_id = createAccountTypeId;
       body.account_status = createAccountStatus;
+      if (createAccountLogin.trim()) body.login = createAccountLogin.trim();
+      if (createAccountPassword.trim()) body.password = createAccountPassword.trim();
+      if (createAccountPinCode.trim()) body.pin_code = createAccountPinCode.trim();
+      if (createAccountPlafondLimit.trim()) body.plafond_limit = createAccountPlafondLimit.trim();
+      if (cardsToSend.length > 0) body.cards = cardsToSend;
       const linkId = createAccountLinkExistingGroupId.trim();
       if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
       const res = await fetch("/api/bank-accounts", {
@@ -932,11 +955,36 @@ export default function SocieteDetailPage() {
           accountTypeId={createAccountTypeId}
           accountStatus={createAccountStatus}
           ibans={createAccountIbans}
+          login={createAccountLogin}
+          password={createAccountPassword}
+          pinCode={createAccountPinCode}
+          plafondLimit={createAccountPlafondLimit}
+          cards={createAccountCards}
           onNameChange={(v) => {
             setCreateAccountName(v);
             if (bankAccountError) setBankAccountError(null);
           }}
           onCompanyIdChange={() => {}}
+          onLoginChange={(v) => {
+            setCreateAccountLogin(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          onPasswordChange={(v) => {
+            setCreateAccountPassword(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          onPinCodeChange={(v) => {
+            setCreateAccountPinCode(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          onPlafondLimitChange={(v) => {
+            setCreateAccountPlafondLimit(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          onCardsChange={(v) => {
+            setCreateAccountCards(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
           onBankIdChange={(v) => {
             setCreateAccountBankId(v);
             if (bankAccountError) setBankAccountError(null);

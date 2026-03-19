@@ -305,7 +305,7 @@ export function TransactionsGrid({
   const columns = useMemo<GridColumn[]>(() => {
     const sortIndicator = (id: string) => {
       if (!sortState || sortState.column !== id) return "";
-      return sortState.direction === "asc" ? " ▲" : " ▼";
+      return sortState.direction === "asc" ? " ⬆" : " ⬇";
     };
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(62 * scale), id: "rowNum" },

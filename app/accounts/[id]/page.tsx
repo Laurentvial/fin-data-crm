@@ -108,6 +108,7 @@ export default function AccountDetailPage() {
 
   const balance = bankAccount?.balance ?? 0;
   const ibans = bankAccount?.ibans ?? [];
+  const cards = bankAccount?.cards ?? [];
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -191,6 +192,42 @@ export default function AccountDetailPage() {
                 <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Telegram Chat ID</dt>
                 <dd className="text-sm font-mono">{bankAccount?.telegram_chat_id ?? "—"}</dd>
               </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Identifiants</dt>
+                <dd className="mt-1 space-y-1">
+                  <div>
+                    <span className="text-xs text-[var(--muted-foreground)]">Login : </span>
+                    <span className="text-sm">{bankAccount?.login ?? "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-[var(--muted-foreground)]">Mot de passe : </span>
+                    <span className="text-sm">{bankAccount?.password ?? "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-[var(--muted-foreground)]">Code PIN : </span>
+                    <span className="text-sm">{bankAccount?.pin_code ?? "—"}</span>
+                  </div>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Plafond / limite</dt>
+                <dd className="text-sm">{bankAccount?.plafond_limit ?? "—"}</dd>
+              </div>
+              {bankAccount?.has_rib && (
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">RIB</dt>
+                  <dd className="text-sm">
+                    <a
+                      href={`/api/bank-accounts/${id}/files/rib`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--primary)] hover:underline"
+                    >
+                      Voir le document RIB
+                    </a>
+                  </dd>
+                </div>
+              )}
               {ibans.length > 0 && (
                 <div className="sm:col-span-2">
                   <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">IBAN</dt>
@@ -203,6 +240,32 @@ export default function AccountDetailPage() {
                           {iban}
                           {bic && <span className="ml-2 text-[var(--muted-foreground)]">BIC: {bic}</span>}
                         </p>
+                      );
+                    })}
+                  </dd>
+                </div>
+              )}
+              {cards.length > 0 && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Cartes bleues</dt>
+                  <dd className="mt-1 space-y-2">
+                    {cards.map((item, i) => {
+                      const card = typeof item === "object" && item && "numero" in item
+                        ? item as { numero: string; date_expiration?: string | null; cvv?: string | null }
+                        : null;
+                      if (!card) return null;
+                      return (
+                        <div key={i} className="rounded-lg border border-[var(--border)] p-3">
+                          <p className="font-mono text-sm">
+                            {card.numero}
+                            {card.date_expiration && (
+                              <span className="ml-2 text-[var(--muted-foreground)]">Exp: {card.date_expiration}</span>
+                            )}
+                            {card.cvv && (
+                              <span className="ml-2 text-[var(--muted-foreground)]">CVV: {card.cvv}</span>
+                            )}
+                          </p>
+                        </div>
                       );
                     })}
                   </dd>

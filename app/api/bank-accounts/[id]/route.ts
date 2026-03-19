@@ -30,6 +30,10 @@ export async function GET(
         ba.bank_id,
         ba.account_type_id,
         ba.account_status,
+        ba.login,
+        ba.password,
+        ba.pin_code,
+        ba.plafond_limit,
         b.name AS bank_name,
         at.name AS account_type_name,
         ba.created_at,
@@ -37,19 +41,26 @@ export async function GET(
         c.name AS company_name,
         COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
         EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = ba.bank_id AND bf.file_type = 'logo') AS has_logo,
+        EXISTS(SELECT 1 FROM bank_account_files baf WHERE baf.bank_account_id = ba.id AND baf.file_type = 'rib') AS has_rib,
         COALESCE(
           (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)
            FROM bank_account_ibans bai
            WHERE bai.bank_account_id = ba.id),
           '[]'::json
-        ) AS ibans
+        ) AS ibans,
+        COALESCE(
+          (SELECT json_agg(json_build_object('numero', bac.numero, 'date_expiration', bac.date_expiration, 'cvv', bac.cvv) ORDER BY bac.created_at)
+           FROM bank_account_cards bac
+           WHERE bac.bank_account_id = ba.id),
+          '[]'::json
+        ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, b.name, at.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, ba.created_at, ba.updated_at, c.name
     `;
     if (!row) {
       return NextResponse.json(
@@ -98,6 +109,33 @@ export async function PATCH(
               ? parseInt(body.telegram_chat_id, 10)
               : undefined)
         : undefined;
+    const login = body?.login !== undefined
+      ? (typeof body.login === "string" ? body.login.trim() || null : null)
+      : undefined;
+    const password = body?.password !== undefined
+      ? (typeof body.password === "string" ? body.password.trim() || null : null)
+      : undefined;
+    const pin_code = body?.pin_code !== undefined
+      ? (typeof body.pin_code === "string" ? body.pin_code.trim() || null : null)
+      : undefined;
+    const plafond_limit = body?.plafond_limit !== undefined
+      ? (typeof body.plafond_limit === "string" ? body.plafond_limit.trim() || null : null)
+      : undefined;
+    const cardsRaw = body?.cards;
+    const cardItems: { numero: string; date_expiration?: string | null; cvv?: string | null }[] | undefined = Array.isArray(cardsRaw)
+      ? cardsRaw.flatMap((v: unknown) => {
+          if (v && typeof v === "object" && "numero" in v && typeof (v as { numero: unknown }).numero === "string") {
+            const obj = v as { numero: string; date_expiration?: string; cvv?: string };
+            const numero = obj.numero.trim().replace(/\s/g, "");
+            if (numero.length === 0) return [];
+            const date_expiration = typeof obj.date_expiration === "string" ? obj.date_expiration.trim() || null : null;
+            const cvv = typeof obj.cvv === "string" ? obj.cvv.trim().slice(0, 4) || null : null;
+            return [{ numero, date_expiration, cvv }];
+          }
+          return [];
+        })
+      : undefined;
+
     const ibansRaw = body?.ibans;
     const ibanItems: { iban: string; bic?: string | null }[] | undefined = Array.isArray(ibansRaw)
       ? ibansRaw.flatMap((v: unknown) => {
@@ -117,7 +155,7 @@ export async function PATCH(
         })
       : undefined;
 
-    if (!name && company_id === undefined && bank_id === undefined && account_type_id === undefined && account_status === undefined && telegram_chat_id === undefined && ibanItems === undefined) {
+    if (!name && company_id === undefined && bank_id === undefined && account_type_id === undefined && account_status === undefined && telegram_chat_id === undefined && ibanItems === undefined && login === undefined && password === undefined && pin_code === undefined && plafond_limit === undefined && cardItems === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -142,7 +180,7 @@ export async function PATCH(
     }
 
     const [existing] = await sql`
-      SELECT id, name, company_id, telegram_chat_id, bank_id, account_type_id, account_status FROM bank_accounts WHERE id = ${id}
+      SELECT id, name, company_id, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit FROM bank_accounts WHERE id = ${id}
     `;
     if (!existing) {
       return NextResponse.json(
@@ -158,6 +196,10 @@ export async function PATCH(
     const newAccountStatus = account_status !== undefined ? account_status : existing.account_status;
     const newTelegramChatId =
       telegram_chat_id !== undefined ? telegram_chat_id : existing.telegram_chat_id;
+    const newLogin = login !== undefined ? login : existing.login;
+    const newPassword = password !== undefined ? password : existing.password;
+    const newPinCode = pin_code !== undefined ? pin_code : existing.pin_code;
+    const newPlafondLimit = plafond_limit !== undefined ? plafond_limit : existing.plafond_limit;
 
     const rows = await sql`
       UPDATE bank_accounts
@@ -168,6 +210,10 @@ export async function PATCH(
         account_type_id = ${newAccountTypeId},
         account_status = ${newAccountStatus},
         telegram_chat_id = ${newTelegramChatId},
+        login = ${newLogin},
+        password = ${newPassword},
+        pin_code = ${newPinCode},
+        plafond_limit = ${newPlafondLimit},
         updated_at = NOW()
       WHERE id = ${id}
       RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, created_at, updated_at
@@ -188,6 +234,15 @@ export async function PATCH(
         `;
       }
     }
+    if (cardItems !== undefined) {
+      await sql`DELETE FROM bank_account_cards WHERE bank_account_id = ${id}`;
+      for (const item of cardItems) {
+        await sql`
+          INSERT INTO bank_account_cards (bank_account_id, numero, date_expiration, cvv)
+          VALUES (${id}, ${item.numero}, ${item.date_expiration ?? null}, ${item.cvv ?? null})
+        `;
+      }
+    }
     const [full] = await sql`
       SELECT
         ba.id,
@@ -197,17 +252,28 @@ export async function PATCH(
         ba.bank_id,
         ba.account_type_id,
         ba.account_status,
+        ba.login,
+        ba.password,
+        ba.pin_code,
+        ba.plafond_limit,
         b.name AS bank_name,
         at.name AS account_type_name,
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
+        EXISTS(SELECT 1 FROM bank_account_files baf WHERE baf.bank_account_id = ba.id AND baf.file_type = 'rib') AS has_rib,
         COALESCE(
           (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)
            FROM bank_account_ibans bai
            WHERE bai.bank_account_id = ba.id),
           '[]'::json
-        ) AS ibans
+        ) AS ibans,
+        COALESCE(
+          (SELECT json_agg(json_build_object('numero', bac.numero, 'date_expiration', bac.date_expiration, 'cvv', bac.cvv) ORDER BY bac.created_at)
+           FROM bank_account_cards bac
+           WHERE bac.bank_account_id = ba.id),
+          '[]'::json
+        ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id

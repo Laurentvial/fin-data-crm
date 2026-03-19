@@ -51,14 +51,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "type invalide (DEBIT ou CREDIT)" }, { status: 400 });
     }
 
-    const [telegramRow] = await sql`
-      SELECT telegram_id FROM user_telegram WHERE user_id = ${session.user.id}::uuid LIMIT 1
-    `;
-    const telegramId = (telegramRow as { telegram_id?: number } | undefined)?.telegram_id ?? null;
-
     const rows = await sql`
       INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id)
-      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${telegramId ?? null})
+      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${session.user.id}::uuid)
       RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
@@ -73,10 +68,10 @@ export async function POST(request: NextRequest) {
         ba.name AS bank_account_name,
         c.name AS company_name
       FROM transactions t
-      LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
-      LEFT JOIN companies c ON c.id = ba.company_id
-      LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
-      LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
+      LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+      LEFT JOIN companies c ON c.id::text = ba.company_id::text
+      LEFT JOIN neon_auth."user" pu ON pu.id::text = t.processed_by_user_id::text
+      LEFT JOIN user_telegram ut ON ut.user_id::text = t.processed_by_user_id::text
       WHERE t.id = ${row.id}::uuid
     `;
     const full = Array.isArray(withAccount) ? withAccount[0] : withAccount;
@@ -129,22 +124,22 @@ export async function GET(request: NextRequest) {
           i.invoice_id,
           i.invoice_pdf_url
         FROM transactions t
-        LEFT JOIN bank_accounts ba ON ba.id = t.bank_account_id
-        LEFT JOIN companies c ON c.id = ba.company_id
-        LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
-        LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
+        LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN companies c ON c.id::text = ba.company_id::text
+        LEFT JOIN neon_auth."user" pu ON pu.id::text = t.processed_by_user_id::text
+        LEFT JOIN user_telegram ut ON ut.user_id::text = t.processed_by_user_id::text
         LEFT JOIN LATERAL (
           SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
           FROM invoices
-          WHERE transaction_id = t.id
+          WHERE transaction_id::text = t.id::text
           ORDER BY created_at DESC
           LIMIT 1
         ) i ON true
         WHERE
-          (${bank_account_id}::uuid IS NULL OR t.bank_account_id = ${bank_account_id}::uuid)
-          AND (${date_from}::date IS NULL OR t.transaction_date >= ${date_from}::date)
-          AND (${date_to}::date IS NULL OR t.transaction_date <= ${date_to}::date)
-          AND (${type}::text IS NULL OR t.type::text = ${type})
+          ((${bank_account_id})::text IS NULL OR t.bank_account_id::text = (${bank_account_id})::text)
+          AND ((${date_from})::date IS NULL OR t.transaction_date >= (${date_from})::date)
+          AND ((${date_to})::date IS NULL OR t.transaction_date <= (${date_to})::date)
+          AND ((${type})::text IS NULL OR t.type::text = (${type})::text)
         ORDER BY t.transaction_date DESC, t.created_at DESC
         LIMIT ${limit}
         OFFSET ${offset}
@@ -155,10 +150,10 @@ export async function GET(request: NextRequest) {
         ), 0)::float AS total_balance
         FROM transactions t
         WHERE
-          (${bank_account_id}::uuid IS NULL OR t.bank_account_id = ${bank_account_id}::uuid)
-          AND (${date_from}::date IS NULL OR t.transaction_date >= ${date_from}::date)
-          AND (${date_to}::date IS NULL OR t.transaction_date <= ${date_to}::date)
-          AND (${type}::text IS NULL OR t.type::text = ${type})
+          ((${bank_account_id})::text IS NULL OR t.bank_account_id::text = (${bank_account_id})::text)
+          AND ((${date_from})::date IS NULL OR t.transaction_date >= (${date_from})::date)
+          AND ((${date_to})::date IS NULL OR t.transaction_date <= (${date_to})::date)
+          AND ((${type})::text IS NULL OR t.type::text = (${type})::text)
       `,
     ]);
 

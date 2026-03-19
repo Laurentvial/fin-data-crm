@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
-import type { BankAccount, Transaction } from "@/lib/types";
+import type { BankAccount, IbanItem, Transaction } from "@/lib/types";
+
+function getIbanCountryCodes(ibans: IbanItem[] | undefined): string[] {
+  if (!ibans?.length) return [];
+  const codes = ibans
+    .map((item) => item.iban.replace(/\s/g, "").slice(0, 2).toUpperCase())
+    .filter((c) => c.length === 2);
+  return [...new Set(codes)];
+}
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -104,6 +112,7 @@ export function AccountVignette({
   deleting?: boolean;
 }) {
   const balance = bankAccount.balance ?? 0;
+  const ibanCountryCodes = getIbanCountryCodes(bankAccount.ibans);
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -234,6 +243,11 @@ export function AccountVignette({
         )}
         <AccountStatusBadge status={bankAccount.account_status ?? "Ouvert"} />
       </p>
+      {ibanCountryCodes.length > 0 && (
+        <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">
+          {ibanCountryCodes.join(" / ")}
+        </p>
+      )}
       <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
         {new Intl.NumberFormat("fr-FR", {
           minimumFractionDigits: 2,
