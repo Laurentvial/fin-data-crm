@@ -19,6 +19,21 @@ import type {
   IbanItem,
 } from "@/lib/types";
 
+const COUNTRY_LABELS: Record<string, string> = {
+  FR: "France",
+  BE: "Belgique",
+  CH: "Suisse",
+  PT: "Portugal",
+  ES: "Espagne",
+};
+
+function formatDateDisplay(iso: string | null | undefined): string {
+  if (!iso?.trim()) return "—";
+  const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return iso;
+}
+
 function ChevronLeftIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -583,65 +598,216 @@ export default function SocieteDetailPage() {
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="section-header mb-4 text-lg font-medium">Informations</h2>
-              <dl className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-6 lg:grid-cols-4">
                 <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Nom</dt>
-                  <dd className="text-sm">{company?.name ?? "—"}</dd>
+                  <h2 className="section-header mb-4 text-lg font-medium">Informations générales</h2>
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Nom</dt>
+                      <dd className="text-sm">{company?.name ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">VPS</dt>
+                      <dd className="text-sm">{company?.vps ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Forme juridique</dt>
+                      <dd className="text-sm">{company?.forme_juridique ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Capital social</dt>
+                      <dd className="text-sm">{company?.capital_social ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Adresse</dt>
+                      <dd className="text-sm">{company?.address ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Code postal</dt>
+                      <dd className="text-sm">{company?.code_postal ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Ville</dt>
+                      <dd className="text-sm">{company?.ville ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
+                      <dd className="text-sm">{company?.country_code ? (COUNTRY_LABELS[company.country_code] ?? company.country_code) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Siret</dt>
+                      <dd className="text-sm">{company?.siret ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Activité</dt>
+                      <dd className="text-sm">{company?.activite ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Date d&apos;immatriculation</dt>
+                      <dd className="text-sm">{formatDateDisplay(company?.date_immatriculation)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Site web</dt>
+                      <dd className="text-sm">
+                        {company?.website ? (
+                          <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
+                            {company.website}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Adresse</dt>
-                  <dd className="text-sm">{company?.address ?? "—"}</dd>
+                  <h2 className="section-header mb-4 text-lg font-medium">Gérant</h2>
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Nom</dt>
+                      <dd className="text-sm">{company?.directeur ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Adresse personnelle</dt>
+                      <dd className="text-sm">{company?.gerant_adresse ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Code postal</dt>
+                      <dd className="text-sm">{company?.gerant_code_postal ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Ville</dt>
+                      <dd className="text-sm">{company?.gerant_ville ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
+                      <dd className="text-sm">{company?.gerant_pays ? (COUNTRY_LABELS[company.gerant_pays] ?? company.gerant_pays) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Date de naissance</dt>
+                      <dd className="text-sm">{formatDateDisplay(company?.gerant_date_naissance)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Ville de naissance</dt>
+                      <dd className="text-sm">{company?.gerant_ville_naissance ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Code postal de naissance</dt>
+                      <dd className="text-sm">{company?.gerant_code_postal_naissance ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays de naissance</dt>
+                      <dd className="text-sm">{company?.gerant_pays_naissance ? (COUNTRY_LABELS[company.gerant_pays_naissance] ?? company.gerant_pays_naissance) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° fiscal</dt>
+                      <dd className="text-sm">{company?.gerant_numero_fiscal ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° sécurité sociale</dt>
+                      <dd className="text-sm">{company?.gerant_numero_secu ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° pièce d&apos;identité</dt>
+                      <dd className="text-sm">{company?.gerant_numero_piece_identite ?? "—"}</dd>
+                    </div>
+                  </dl>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Siret</dt>
-                  <dd className="text-sm">{company?.siret ?? "—"}</dd>
+                  <h2 className="section-header mb-4 text-lg font-medium">Facturation</h2>
+                  <dl className="grid gap-3 sm:grid-cols-1">
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° TVA</dt>
+                      <dd className="text-sm">{company?.vat_number ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Taux TVA</dt>
+                      <dd className="text-sm">{company?.vat_rate != null ? `${company.vat_rate}%` : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Préfixe factures</dt>
+                      <dd className="text-sm">{company?.invoice_prefix ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Prochain numéro</dt>
+                      <dd className="text-sm">
+                        {company?.invoice_next_number != null
+                          ? `${company.invoice_prefix ?? "FAC-"}${new Date().getFullYear()}-${String(company.invoice_next_number).padStart(4, "0")}`
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Devise</dt>
+                      <dd className="text-sm">{company?.currency ?? "—"}</dd>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Fournisseur</dt>
+                      <dd className="text-sm">{company?.fournisseur ?? "—"}</dd>
+                    </div>
+                  </dl>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Directeur</dt>
-                  <dd className="text-sm">{company?.directeur ?? "—"}</dd>
+                  <h2 className="section-header mb-4 text-lg font-medium">Bloc-notes</h2>
+                  <textarea
+                    value={company?.bloc_notes ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCompany((prev) => (prev ? { ...prev, bloc_notes: v } : null));
+                    }}
+                    onBlur={async () => {
+                      if (!company?.id) return;
+                      try {
+                        const res = await fetch(`/api/accounts/${company.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            name: company.name,
+                            address: company.address ?? null,
+                            siret: company.siret ?? null,
+                            directeur: company.directeur ?? null,
+                            website: company.website ?? null,
+                            vps: company.vps ?? null,
+                            forme_juridique: company.forme_juridique ?? null,
+                            capital_social: company.capital_social ?? null,
+                            code_postal: company.code_postal ?? null,
+                            ville: company.ville ?? null,
+                            activite: company.activite ?? null,
+                            date_immatriculation: company.date_immatriculation ?? null,
+                            country_code: company.country_code ?? null,
+                            fournisseur: company.fournisseur ?? null,
+                            gerant_adresse: company.gerant_adresse ?? null,
+                            gerant_code_postal: company.gerant_code_postal ?? null,
+                            gerant_ville: company.gerant_ville ?? null,
+                            gerant_pays: company.gerant_pays ?? null,
+                            gerant_date_naissance: company.gerant_date_naissance ?? null,
+                            gerant_ville_naissance: company.gerant_ville_naissance ?? null,
+                            gerant_code_postal_naissance: company.gerant_code_postal_naissance ?? null,
+                            gerant_pays_naissance: company.gerant_pays_naissance ?? null,
+                            gerant_numero_fiscal: company.gerant_numero_fiscal ?? null,
+                            gerant_numero_secu: company.gerant_numero_secu ?? null,
+                            gerant_numero_piece_identite: company.gerant_numero_piece_identite ?? null,
+                            vat_number: company.vat_number ?? null,
+                            vat_rate: company.vat_rate,
+                            invoice_prefix: company.invoice_prefix ?? null,
+                            invoice_next_number: company.invoice_next_number,
+                            currency: company.currency ?? null,
+                            invoice_template_id: company.invoice_template_id ?? null,
+                            bloc_notes: (company.bloc_notes ?? "").trim() || null,
+                          }),
+                        });
+                        if (res.ok) return;
+                        const data = await res.json();
+                        setError(data.error ?? "Échec de l'enregistrement");
+                      } catch {
+                        setError("Échec de l'enregistrement");
+                      }
+                    }}
+                    placeholder="Saisir des notes libres…"
+                    rows={12}
+                    className="block w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm min-h-[200px]"
+                  />
                 </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Site web</dt>
-                  <dd className="text-sm">
-                    {company?.website ? (
-                      <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
-                        {company.website}
-                      </a>
-                    ) : (
-                      "—"
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
-                  <dd className="text-sm">{company?.country_code ?? "FR"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° TVA</dt>
-                  <dd className="text-sm">{company?.vat_number ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Taux TVA</dt>
-                  <dd className="text-sm">{company?.vat_rate != null ? `${company.vat_rate}%` : "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Préfixe factures</dt>
-                  <dd className="text-sm">{company?.invoice_prefix ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Prochain numéro</dt>
-                  <dd className="text-sm">
-                    {company?.invoice_next_number != null
-                      ? `${company.invoice_prefix ?? "FAC-"}${new Date().getFullYear()}-${String(company.invoice_next_number).padStart(4, "0")}`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Devise</dt>
-                  <dd className="text-sm">{company?.currency ?? "—"}</dd>
-                </div>
-              </dl>
+              </div>
               <div className="mt-4 flex flex-wrap gap-4">
                 <Link
                   href={`/societes?edit=${id}`}

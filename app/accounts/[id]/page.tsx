@@ -177,6 +177,21 @@ export default function AccountDetailPage() {
                 <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Banque</dt>
                 <dd className="text-sm">{bankAccount?.bank_name ?? "—"}</dd>
               </div>
+              {bankAccount?.bank_url && (
+                <div>
+                  <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Lien de la banque</dt>
+                  <dd className="text-sm">
+                    <a
+                      href={bankAccount.bank_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--primary)] hover:underline"
+                    >
+                      {bankAccount.bank_url}
+                    </a>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Solde</dt>
                 <dd className="text-sm font-medium tabular-nums">

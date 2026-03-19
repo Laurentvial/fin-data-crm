@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "migrate:017": "node scripts/run-migration.js",
-    "migrate:018": "node scripts/run-migration-018.js"
+    "migrate:018": "node scripts/run-migration-018.js",
+    "migrate:019": "node scripts/run-migration-019.js",
+    "migrate:020": "node scripts/run-migration-020.js",
+    "migrate:021": "node scripts/run-migration-021.js",
+    "migrate:022": "node scripts/run-migration-022.js"
   },
   "dependencies": {
     "@glideapps/glide-data-grid": "^6.0.3",

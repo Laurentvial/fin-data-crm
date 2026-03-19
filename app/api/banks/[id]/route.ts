@@ -22,7 +22,7 @@ export async function GET(
   const { id } = await params;
   try {
     const [row] = await sql`
-      SELECT id, name, created_at, updated_at
+      SELECT id, name, url, created_at, updated_at
       FROM banks
       WHERE id = ${id}::uuid
     `;
@@ -58,11 +58,12 @@ export async function PATCH(
         { status: 400 }
       );
     }
+    const url = typeof body?.url === "string" ? body.url.trim() || null : null;
     const rows = await sql`
       UPDATE banks
-      SET name = ${name}, updated_at = NOW()
+      SET name = ${name}, url = ${url}, updated_at = NOW()
       WHERE id = ${id}::uuid
-      RETURNING id, name, created_at, updated_at
+      RETURNING id, name, url, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

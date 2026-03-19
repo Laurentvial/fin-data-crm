@@ -554,10 +554,12 @@ function BanksSection() {
   const [error, setError] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createUrl, setCreateUrl] = useState("");
   const [createLogoFile, setCreateLogoFile] = useState<File | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [editingBank, setEditingBank] = useState<Bank | null>(null);
   const [editName, setEditName] = useState("");
+  const [editUrl, setEditUrl] = useState("");
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editPending, setEditPending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -591,7 +593,7 @@ function BanksSection() {
       const res = await fetch("/api/banks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, url: createUrl.trim() || null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -613,6 +615,7 @@ function BanksSection() {
       }
       setBanks((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setCreateName("");
+      setCreateUrl("");
       setCreateLogoFile(null);
       setCreateModalOpen(false);
     } catch (e) {
@@ -625,6 +628,7 @@ function BanksSection() {
   const openCreateModal = () => {
     setCreateModalOpen(true);
     setCreateName("");
+    setCreateUrl("");
     setCreateLogoFile(null);
     setError(null);
   };
@@ -639,7 +643,7 @@ function BanksSection() {
       const res = await fetch(`/api/banks/${editingBank.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, url: editUrl.trim() || null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -664,6 +668,7 @@ function BanksSection() {
       );
       setEditingBank(null);
       setEditName("");
+      setEditUrl("");
       setEditLogoFile(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -693,6 +698,7 @@ function BanksSection() {
   const openEdit = (bank: Bank) => {
     setEditingBank(bank);
     setEditName(bank.name);
+    setEditUrl(bank.url ?? "");
     setEditLogoFile(null);
     setError(null);
   };
@@ -737,13 +743,14 @@ function BanksSection() {
               <tr>
                 <th className="table-header px-4 py-2 text-left font-medium">Logo</th>
                 <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
+                <th className="table-header px-4 py-2 text-left font-medium">URL</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {banks.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={4} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
                     Aucune banque
                   </td>
                 </tr>
@@ -762,6 +769,20 @@ function BanksSection() {
                       </div>
                     </td>
                     <td className="px-4 py-2 text-[var(--foreground)]">{b.name}</td>
+                    <td className="px-4 py-2">
+                      {b.url ? (
+                        <a
+                          href={b.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[var(--primary)] hover:underline truncate max-w-[200px] block"
+                        >
+                          {b.url}
+                        </a>
+                      ) : (
+                        <span className="text-[var(--muted-foreground)]">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
                         <button
@@ -814,6 +835,16 @@ function BanksSection() {
                 />
               </div>
               <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">URL de la banque</label>
+                <input
+                  type="url"
+                  value={createUrl}
+                  onChange={(e) => setCreateUrl(e.target.value)}
+                  placeholder="https://www.banque.fr"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Logo</label>
                 <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-[var(--border)] px-4 py-3 hover:border-[var(--primary)]">
                   <UploadIcon className="h-5 w-5 text-[var(--muted-foreground)]" />
@@ -863,6 +894,16 @@ function BanksSection() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">URL de la banque</label>
+                <input
+                  type="url"
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  placeholder="https://www.banque.fr"
                   className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
               </div>

@@ -32,6 +32,7 @@ export async function GET() {
         c.ville,
         c.activite,
         c.date_immatriculation,
+        c.fournisseur,
         c.gerant_adresse,
         c.gerant_code_postal,
         c.gerant_ville,
@@ -49,6 +50,7 @@ export async function GET() {
         c.invoice_prefix,
         c.invoice_next_number,
         c.currency,
+        c.bloc_notes,
         c.created_at,
         c.updated_at,
         EXISTS(SELECT 1 FROM company_files WHERE company_id = c.id AND file_type = 'logo') AS has_logo,
@@ -107,6 +109,7 @@ export async function POST(request: Request) {
       : null;
     const countryCode =
       typeof body?.country_code === "string" ? body.country_code.trim().slice(0, 2).toUpperCase() || "FR" : "FR";
+    const fournisseur = typeof body?.fournisseur === "string" ? body.fournisseur.trim() || null : null;
     const gerantAdresse = typeof body?.gerant_adresse === "string" ? body.gerant_adresse.trim() || null : null;
     const gerantCodePostal = typeof body?.gerant_code_postal === "string" ? body.gerant_code_postal.trim() || null : null;
     const gerantVille = typeof body?.gerant_ville === "string" ? body.gerant_ville.trim() || null : null;
@@ -118,10 +121,29 @@ export async function POST(request: Request) {
     const gerantNumeroFiscal = typeof body?.gerant_numero_fiscal === "string" ? body.gerant_numero_fiscal.trim() || null : null;
     const gerantNumeroSecu = typeof body?.gerant_numero_secu === "string" ? body.gerant_numero_secu.trim() || null : null;
     const gerantNumeroPieceIdentite = typeof body?.gerant_numero_piece_identite === "string" ? body.gerant_numero_piece_identite.trim() || null : null;
+    const vatNumber = typeof body?.vat_number === "string" ? body.vat_number.trim() || null : null;
+    const vatRate =
+      typeof body?.vat_rate === "number"
+        ? body.vat_rate
+        : typeof body?.vat_rate === "string"
+          ? parseFloat(body.vat_rate)
+          : 20;
+    const invoicePrefix = typeof body?.invoice_prefix === "string" ? body.invoice_prefix.trim() || "FAC-" : "FAC-";
+    const invoiceNextNumber =
+      typeof body?.invoice_next_number === "number" && body.invoice_next_number >= 1
+        ? Math.floor(body.invoice_next_number)
+        : typeof body?.invoice_next_number === "string"
+          ? (() => {
+              const n = parseInt(body.invoice_next_number, 10);
+              return !Number.isNaN(n) && n >= 1 ? n : 1;
+            })()
+          : 1;
+    const currency = typeof body?.currency === "string" ? body.currency.trim().slice(0, 3).toUpperCase() || "EUR" : "EUR";
+    const blocNotes = typeof body?.bloc_notes === "string" ? body.bloc_notes.trim() || null : null;
     const rows = await sql`
-      INSERT INTO companies (name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite)
-      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite})
-      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, invoice_template_id, created_at, updated_at
+      INSERT INTO companies (name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, bloc_notes)
+      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${fournisseur}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite}, ${vatNumber}, ${vatRate}, ${invoicePrefix}, ${invoiceNextNumber}, ${currency}, ${blocNotes})
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, invoice_template_id, bloc_notes, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

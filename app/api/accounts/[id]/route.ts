@@ -23,12 +23,12 @@ export async function GET(
   try {
     const rows = await sql`
       SELECT id, name, address, siret, directeur, website,
-        vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation,
+        vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur,
         gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance,
         gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance,
         gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite,
         country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency,
-        invoice_template_id, created_at, updated_at
+        invoice_template_id, bloc_notes, created_at, updated_at
       FROM companies
       WHERE id = ${id}
     `;
@@ -81,6 +81,7 @@ export async function PATCH(
         : body?.date_immatriculation === null || body?.date_immatriculation === ""
           ? null
           : undefined;
+    const fournisseur = typeof body?.fournisseur === "string" ? body.fournisseur.trim() || null : body?.fournisseur === null || body?.fournisseur === "" ? null : undefined;
     const gerantAdresse = typeof body?.gerant_adresse === "string" ? body.gerant_adresse.trim() || null : undefined;
     const gerantCodePostal = typeof body?.gerant_code_postal === "string" ? body.gerant_code_postal.trim() || null : undefined;
     const gerantVille = typeof body?.gerant_ville === "string" ? body.gerant_ville.trim() || null : undefined;
@@ -124,6 +125,12 @@ export async function PATCH(
         : typeof body?.invoice_template_id === "string"
           ? body.invoice_template_id.trim() || null
           : undefined;
+    const blocNotes =
+      body?.bloc_notes === null || body?.bloc_notes === ""
+        ? null
+        : typeof body?.bloc_notes === "string"
+          ? body.bloc_notes.trim() || null
+          : undefined;
 
     const updates: string[] = [
       "name = $1",
@@ -162,6 +169,10 @@ export async function PATCH(
     if (dateImmatriculation !== undefined) {
       updates.push(`date_immatriculation = $${idx++}`);
       values.push(dateImmatriculation);
+    }
+    if (fournisseur !== undefined) {
+      updates.push(`fournisseur = $${idx++}`);
+      values.push(fournisseur);
     }
     if (gerantAdresse !== undefined) {
       updates.push(`gerant_adresse = $${idx++}`);
@@ -235,13 +246,17 @@ export async function PATCH(
       updates.push(`invoice_template_id = $${idx++}`);
       values.push(invoiceTemplateId);
     }
+    if (blocNotes !== undefined) {
+      updates.push(`bloc_notes = $${idx++}`);
+      values.push(blocNotes);
+    }
     values.push(id);
 
     const queryText = `
       UPDATE companies
       SET ${updates.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, bloc_notes, created_at, updated_at
     `;
     const result = await sql.query(queryText, values);
     const rows = Array.isArray(result) ? result : [result];

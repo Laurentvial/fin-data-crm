@@ -286,6 +286,7 @@ function CompanyModal({
   title,
   name,
   address,
+  fournisseur,
   siret,
   directeur,
   website,
@@ -315,6 +316,7 @@ function CompanyModal({
   currency,
   onNameChange,
   onAddressChange,
+  onFournisseurChange,
   onSiretChange,
   onDirecteurChange,
   onWebsiteChange,
@@ -350,6 +352,7 @@ function CompanyModal({
   title: string;
   name: string;
   address: string;
+  fournisseur: string;
   siret: string;
   directeur: string;
   website: string;
@@ -379,6 +382,7 @@ function CompanyModal({
   currency: string;
   onNameChange: (v: string) => void;
   onAddressChange: (v: string) => void;
+  onFournisseurChange: (v: string) => void;
   onSiretChange: (v: string) => void;
   onDirecteurChange: (v: string) => void;
   onWebsiteChange: (v: string) => void;
@@ -550,6 +554,16 @@ function CompanyModal({
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Fournisseur</label>
+            <input
+              type="text"
+              value={fournisseur}
+              onChange={(e) => onFournisseurChange(e.target.value)}
+              placeholder="Nom du fournisseur"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
           <div className="col-span-3 border-t border-[var(--border)] pt-4 mt-4">
             <h4 className="subsection-header mb-3 text-sm font-medium">Gérant</h4>
             <div className="grid grid-cols-3 gap-4">
@@ -682,10 +696,8 @@ function CompanyModal({
               </div>
             </div>
           </div>
-          {isEdit && (
-            <>
-              <div className="col-span-3 border-t border-[var(--border)] pt-4 mt-4">
-                <h4 className="subsection-header mb-3 text-sm font-medium">Facturation</h4>
+          <div className="col-span-3 border-t border-[var(--border)] pt-4 mt-4">
+            <h4 className="subsection-header mb-3 text-sm font-medium">Facturation</h4>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">N° TVA</label>
@@ -746,9 +758,7 @@ function CompanyModal({
                     />
                   </div>
                 </div>
-              </div>
-            </>
-          )}
+          </div>
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -787,6 +797,7 @@ function SocietesPageContent() {
   const [isAddModal, setIsAddModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
+  const [editFournisseur, setEditFournisseur] = useState(false);
   const [editSiret, setEditSiret] = useState("");
   const [editDirecteur, setEditDirecteur] = useState("");
   const [editWebsite, setEditWebsite] = useState("");
@@ -883,6 +894,7 @@ function SocietesPageContent() {
   const populateEditForm = useCallback((c: Company) => {
     setEditName(c.name);
     setEditAddress(c.address ?? "");
+    setEditFournisseur(c.fournisseur ?? "");
     setEditSiret(c.siret ?? "");
     setEditDirecteur(c.directeur ?? "");
     setEditWebsite(c.website ?? "");
@@ -937,6 +949,7 @@ function SocietesPageContent() {
     setIsAddModal(true);
     setEditName("");
     setEditAddress("");
+    setEditFournisseur("");
     setEditSiret("");
     setEditDirecteur("");
     setEditWebsite("");
@@ -990,6 +1003,7 @@ function SocietesPageContent() {
     setMenuOpenId(null);
     setEditName("");
     setEditAddress("");
+    setEditFournisseur("");
     setEditSiret("");
     setEditDirecteur("");
     setEditWebsite("");
@@ -1027,6 +1041,7 @@ function SocietesPageContent() {
     const payload: Record<string, unknown> = {
       name,
       address: editAddress.trim() || null,
+      fournisseur: editFournisseur.trim() || null,
       siret: editSiret.trim() || null,
       directeur: editDirecteur.trim() || null,
       website: editWebsite.trim() || null,
@@ -1049,18 +1064,15 @@ function SocietesPageContent() {
       gerant_numero_fiscal: editGerantNumeroFiscal.trim() || null,
       gerant_numero_secu: editGerantNumeroSecu.trim() || null,
       gerant_numero_piece_identite: editGerantNumeroPieceIdentite.trim() || null,
+      vat_number: editVatNumber.trim() || null,
+      vat_rate: parseFloat(editVatRate) || 20,
+      invoice_prefix: editInvoicePrefix.trim() || "FAC-",
+      invoice_next_number: (() => {
+        const nextNum = parseInt(editInvoiceNextNumber, 10);
+        return !Number.isNaN(nextNum) && nextNum >= 1 ? nextNum : 1;
+      })(),
+      currency: editCurrency.trim().slice(0, 3).toUpperCase() || "EUR",
     };
-    if (!isAddModal) {
-      payload.country_code = editCountryCode || "FR";
-      payload.vat_number = editVatNumber.trim() || null;
-      payload.vat_rate = parseFloat(editVatRate) || 20;
-      payload.invoice_prefix = editInvoicePrefix.trim() || "FAC-";
-      const nextNum = parseInt(editInvoiceNextNumber, 10);
-      if (!Number.isNaN(nextNum) && nextNum >= 1) {
-        payload.invoice_next_number = nextNum;
-      }
-      payload.currency = editCurrency.trim().slice(0, 3).toUpperCase() || "EUR";
-    }
     setSaving(true);
     setError(null);
     try {
@@ -1246,6 +1258,8 @@ function SocietesPageContent() {
           title={isAddModal ? "Nouvelle société" : "Modifier la société"}
           name={editName}
           address={editAddress}
+          fournisseur={editFournisseur}
+          onFournisseurChange={setEditFournisseur}
           siret={editSiret}
           directeur={editDirecteur}
           website={editWebsite}

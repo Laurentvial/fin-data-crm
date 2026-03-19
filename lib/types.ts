@@ -14,6 +14,7 @@ export interface Company {
   ville?: string | null;
   activite?: string | null;
   date_immatriculation?: string | null;
+  fournisseur?: string | null;
   gerant_adresse?: string | null;
   gerant_code_postal?: string | null;
   gerant_ville?: string | null;
@@ -36,6 +37,7 @@ export interface Company {
   invoice_next_number?: number;
   invoice_template_id?: string | null;
   currency?: string;
+  bloc_notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -98,6 +100,7 @@ export interface InvoiceTemplate {
 export interface Bank {
   id: string;
   name: string;
+  url?: string | null;
   has_logo?: boolean;
   created_at: string;
   updated_at: string;
@@ -132,6 +135,7 @@ export interface BankAccount {
   telegram_chat_id: number;
   bank_id?: string | null;
   bank_name?: string | null;
+  bank_url?: string | null;
   account_type_id?: string | null;
   account_type_name?: string | null;
   account_status?: AccountStatus;

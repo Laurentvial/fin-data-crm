@@ -35,6 +35,7 @@ export async function GET(
         ba.pin_code,
         ba.plafond_limit,
         b.name AS bank_name,
+        b.url AS bank_url,
         at.name AS account_type_name,
         ba.created_at,
         ba.updated_at,
@@ -60,7 +61,7 @@ export async function GET(
       LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, b.url, at.name, ba.created_at, ba.updated_at, c.name
     `;
     if (!row) {
       return NextResponse.json(
@@ -257,6 +258,7 @@ export async function PATCH(
         ba.pin_code,
         ba.plafond_limit,
         b.name AS bank_name,
+        b.url AS bank_url,
         at.name AS account_type_name,
         ba.created_at,
         ba.updated_at,
