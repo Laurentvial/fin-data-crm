@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { Select } from "@/components/Select";
 import type { Bank, Company } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -52,6 +53,35 @@ function ChevronDownIcon({ className }: { className?: string }) {
       <path d="M6 9l6 6 6-6" />
     </svg>
   );
+}
+
+/** Convert ISO date (yyyy-mm-dd) to display format (dd/mm/yyyy) */
+function formatDateToDisplay(iso: string): string {
+  if (!iso?.trim()) return "";
+  const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return iso; // already dd/mm/yyyy or invalid
+}
+
+/** Convert display format (dd/mm/yyyy) to ISO (yyyy-mm-dd) */
+function formatDateToIso(display: string): string {
+  if (!display?.trim()) return "";
+  const m = display.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [, d, mo, y] = m;
+    const day = d.padStart(2, "0");
+    const month = mo.padStart(2, "0");
+    return `${y}-${month}-${day}`;
+  }
+  return display;
+}
+
+/** Format date input as user types: dd/mm/yyyy */
+function formatDateInput(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
 }
 
 function getInitials(name: string): string {
@@ -259,7 +289,25 @@ function CompanyModal({
   siret,
   directeur,
   website,
+  vps,
+  formeJuridique,
+  capitalSocial,
+  codePostal,
+  ville,
+  activite,
+  dateImmatriculation,
   countryCode,
+  gerantAdresse,
+  gerantCodePostal,
+  gerantVille,
+  gerantPays,
+  gerantDateNaissance,
+  gerantVilleNaissance,
+  gerantCodePostalNaissance,
+  gerantPaysNaissance,
+  gerantNumeroFiscal,
+  gerantNumeroSecu,
+  gerantNumeroPieceIdentite,
   vatNumber,
   vatRate,
   invoicePrefix,
@@ -270,7 +318,25 @@ function CompanyModal({
   onSiretChange,
   onDirecteurChange,
   onWebsiteChange,
+  onVpsChange,
+  onFormeJuridiqueChange,
+  onCapitalSocialChange,
+  onCodePostalChange,
+  onVilleChange,
+  onActiviteChange,
+  onDateImmatriculationChange,
   onCountryCodeChange,
+  onGerantAdresseChange,
+  onGerantCodePostalChange,
+  onGerantVilleChange,
+  onGerantPaysChange,
+  onGerantDateNaissanceChange,
+  onGerantVilleNaissanceChange,
+  onGerantCodePostalNaissanceChange,
+  onGerantPaysNaissanceChange,
+  onGerantNumeroFiscalChange,
+  onGerantNumeroSecuChange,
+  onGerantNumeroPieceIdentiteChange,
   onVatNumberChange,
   onVatRateChange,
   onInvoicePrefixChange,
@@ -287,7 +353,25 @@ function CompanyModal({
   siret: string;
   directeur: string;
   website: string;
+  vps: string;
+  formeJuridique: string;
+  capitalSocial: string;
+  codePostal: string;
+  ville: string;
+  activite: string;
+  dateImmatriculation: string;
   countryCode: string;
+  gerantAdresse: string;
+  gerantCodePostal: string;
+  gerantVille: string;
+  gerantPays: string;
+  gerantDateNaissance: string;
+  gerantVilleNaissance: string;
+  gerantCodePostalNaissance: string;
+  gerantPaysNaissance: string;
+  gerantNumeroFiscal: string;
+  gerantNumeroSecu: string;
+  gerantNumeroPieceIdentite: string;
   vatNumber: string;
   vatRate: string;
   invoicePrefix: string;
@@ -298,7 +382,25 @@ function CompanyModal({
   onSiretChange: (v: string) => void;
   onDirecteurChange: (v: string) => void;
   onWebsiteChange: (v: string) => void;
+  onVpsChange: (v: string) => void;
+  onFormeJuridiqueChange: (v: string) => void;
+  onCapitalSocialChange: (v: string) => void;
+  onCodePostalChange: (v: string) => void;
+  onVilleChange: (v: string) => void;
+  onActiviteChange: (v: string) => void;
+  onDateImmatriculationChange: (v: string) => void;
   onCountryCodeChange?: (v: string) => void;
+  onGerantAdresseChange: (v: string) => void;
+  onGerantCodePostalChange: (v: string) => void;
+  onGerantVilleChange: (v: string) => void;
+  onGerantPaysChange: (v: string) => void;
+  onGerantDateNaissanceChange: (v: string) => void;
+  onGerantVilleNaissanceChange: (v: string) => void;
+  onGerantCodePostalNaissanceChange: (v: string) => void;
+  onGerantPaysNaissanceChange: (v: string) => void;
+  onGerantNumeroFiscalChange: (v: string) => void;
+  onGerantNumeroSecuChange: (v: string) => void;
+  onGerantNumeroPieceIdentiteChange: (v: string) => void;
   onVatNumberChange?: (v: string) => void;
   onVatRateChange?: (v: string) => void;
   onInvoicePrefixChange?: (v: string) => void;
@@ -310,14 +412,20 @@ function CompanyModal({
   isEdit: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
-        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className="relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+        role="dialog"
+        aria-modal="true"
       >
         <h3 className="subsection-header mb-4 text-lg font-medium">{title}</h3>
-        <div className="space-y-4">
-          <div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="col-span-3">
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
             <input
               type="text"
@@ -328,7 +436,7 @@ function CompanyModal({
               autoFocus
             />
           </div>
-          <div>
+          <div className="col-span-3">
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Adresse</label>
             <input
               type="text"
@@ -337,6 +445,38 @@ function CompanyModal({
               placeholder="Adresse"
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Code postal</label>
+            <input
+              type="text"
+              value={codePostal}
+              onChange={(e) => onCodePostalChange(e.target.value)}
+              placeholder="Code postal"
+              maxLength={10}
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Ville</label>
+            <input
+              type="text"
+              value={ville}
+              onChange={(e) => onVilleChange(e.target.value)}
+              placeholder="Ville"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Pays</label>
+            <Select
+              value={countryCode}
+              onChange={(e) => onCountryCodeChange?.(e.target.value)}
+            >
+              {INVOICE_COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </Select>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Siret</label>
@@ -350,12 +490,53 @@ function CompanyModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Directeur</label>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Forme juridique</label>
             <input
               type="text"
-              value={directeur}
-              onChange={(e) => onDirecteurChange(e.target.value)}
-              placeholder="Nom du directeur"
+              value={formeJuridique}
+              onChange={(e) => onFormeJuridiqueChange(e.target.value)}
+              placeholder="SARL, SAS, SA, etc."
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Capital social</label>
+            <input
+              type="text"
+              value={capitalSocial}
+              onChange={(e) => onCapitalSocialChange(e.target.value)}
+              placeholder="Ex: 1 000 €"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">VPS</label>
+            <input
+              type="text"
+              value={vps}
+              onChange={(e) => onVpsChange(e.target.value)}
+              placeholder="VPS"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Activité de la société</label>
+            <input
+              type="text"
+              value={activite}
+              onChange={(e) => onActiviteChange(e.target.value)}
+              placeholder="Activité principale"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Date d&apos;immatriculation</label>
+            <input
+              type="text"
+              value={dateImmatriculation}
+              onChange={(e) => onDateImmatriculationChange(formatDateInput(e.target.value))}
+              placeholder="jj/mm/aaaa"
+              maxLength={10}
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
@@ -369,23 +550,143 @@ function CompanyModal({
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
+          <div className="col-span-3 border-t border-[var(--border)] pt-4 mt-4">
+            <h4 className="subsection-header mb-3 text-sm font-medium">Gérant</h4>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-3">
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Nom du directeur</label>
+                <input
+                  type="text"
+                  value={directeur}
+                  onChange={(e) => onDirecteurChange(e.target.value)}
+                  placeholder="Nom du gérant"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="col-span-3">
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Adresse personnelle</label>
+                <input
+                  type="text"
+                  value={gerantAdresse}
+                  onChange={(e) => onGerantAdresseChange(e.target.value)}
+                  placeholder="Adresse personnelle"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Code postal</label>
+                <input
+                  type="text"
+                  value={gerantCodePostal}
+                  onChange={(e) => onGerantCodePostalChange(e.target.value)}
+                  placeholder="Code postal"
+                  maxLength={10}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Ville</label>
+                <input
+                  type="text"
+                  value={gerantVille}
+                  onChange={(e) => onGerantVilleChange(e.target.value)}
+                  placeholder="Ville"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Pays</label>
+                <Select
+                  value={gerantPays || ""}
+                  onChange={(e) => onGerantPaysChange(e.target.value || "")}
+                >
+                  <option value="">—</option>
+                  {INVOICE_COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Date de naissance</label>
+                <input
+                  type="text"
+                  value={gerantDateNaissance}
+                  onChange={(e) => onGerantDateNaissanceChange(formatDateInput(e.target.value))}
+                  placeholder="jj/mm/aaaa"
+                  maxLength={10}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Ville de naissance</label>
+                <input
+                  type="text"
+                  value={gerantVilleNaissance}
+                  onChange={(e) => onGerantVilleNaissanceChange(e.target.value)}
+                  placeholder="Ville de naissance"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Code postal de naissance</label>
+                <input
+                  type="text"
+                  value={gerantCodePostalNaissance}
+                  onChange={(e) => onGerantCodePostalNaissanceChange(e.target.value)}
+                  placeholder="Code postal"
+                  maxLength={10}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Pays de naissance</label>
+                <Select
+                  value={gerantPaysNaissance || ""}
+                  onChange={(e) => onGerantPaysNaissanceChange(e.target.value || "")}
+                >
+                  <option value="">—</option>
+                  {INVOICE_COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">N° fiscal</label>
+                <input
+                  type="text"
+                  value={gerantNumeroFiscal}
+                  onChange={(e) => onGerantNumeroFiscalChange(e.target.value)}
+                  placeholder="Numéro fiscal"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">N° sécurité sociale</label>
+                <input
+                  type="text"
+                  value={gerantNumeroSecu}
+                  onChange={(e) => onGerantNumeroSecuChange(e.target.value)}
+                  placeholder="1 XX XX XX XXX XX"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">N° pièce d&apos;identité</label>
+                <input
+                  type="text"
+                  value={gerantNumeroPieceIdentite}
+                  onChange={(e) => onGerantNumeroPieceIdentiteChange(e.target.value)}
+                  placeholder="Numéro pièce d'identité"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
           {isEdit && (
             <>
-              <div className="border-t border-[var(--border)] pt-4 mt-4">
+              <div className="col-span-3 border-t border-[var(--border)] pt-4 mt-4">
                 <h4 className="subsection-header mb-3 text-sm font-medium">Facturation</h4>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Pays</label>
-                    <select
-                      value={countryCode}
-                      onChange={(e) => onCountryCodeChange?.(e.target.value)}
-                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                    >
-                      {INVOICE_COUNTRIES.map((c) => (
-                        <option key={c.code} value={c.code}>{c.label}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">N° TVA</label>
                     <input
@@ -419,7 +720,7 @@ function CompanyModal({
                       className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                     />
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Prochain numéro de facture</label>
                     <input
                       type="number"
@@ -489,7 +790,25 @@ function SocietesPageContent() {
   const [editSiret, setEditSiret] = useState("");
   const [editDirecteur, setEditDirecteur] = useState("");
   const [editWebsite, setEditWebsite] = useState("");
+  const [editVps, setEditVps] = useState("");
+  const [editFormeJuridique, setEditFormeJuridique] = useState("");
+  const [editCapitalSocial, setEditCapitalSocial] = useState("");
+  const [editCodePostal, setEditCodePostal] = useState("");
+  const [editVille, setEditVille] = useState("");
+  const [editActivite, setEditActivite] = useState("");
+  const [editDateImmatriculation, setEditDateImmatriculation] = useState("");
   const [editCountryCode, setEditCountryCode] = useState("FR");
+  const [editGerantAdresse, setEditGerantAdresse] = useState("");
+  const [editGerantCodePostal, setEditGerantCodePostal] = useState("");
+  const [editGerantVille, setEditGerantVille] = useState("");
+  const [editGerantPays, setEditGerantPays] = useState("");
+  const [editGerantDateNaissance, setEditGerantDateNaissance] = useState("");
+  const [editGerantVilleNaissance, setEditGerantVilleNaissance] = useState("");
+  const [editGerantCodePostalNaissance, setEditGerantCodePostalNaissance] = useState("");
+  const [editGerantPaysNaissance, setEditGerantPaysNaissance] = useState("");
+  const [editGerantNumeroFiscal, setEditGerantNumeroFiscal] = useState("");
+  const [editGerantNumeroSecu, setEditGerantNumeroSecu] = useState("");
+  const [editGerantNumeroPieceIdentite, setEditGerantNumeroPieceIdentite] = useState("");
   const [editVatNumber, setEditVatNumber] = useState("");
   const [editVatRate, setEditVatRate] = useState("20");
   const [editInvoicePrefix, setEditInvoicePrefix] = useState("FAC-");
@@ -567,7 +886,25 @@ function SocietesPageContent() {
     setEditSiret(c.siret ?? "");
     setEditDirecteur(c.directeur ?? "");
     setEditWebsite(c.website ?? "");
+    setEditVps(c.vps ?? "");
+    setEditFormeJuridique(c.forme_juridique ?? "");
+    setEditCapitalSocial(c.capital_social ?? "");
+    setEditCodePostal(c.code_postal ?? "");
+    setEditVille(c.ville ?? "");
+    setEditActivite(c.activite ?? "");
+    setEditDateImmatriculation(formatDateToDisplay(c.date_immatriculation ?? ""));
     setEditCountryCode(c.country_code ?? "FR");
+    setEditGerantAdresse(c.gerant_adresse ?? "");
+    setEditGerantCodePostal(c.gerant_code_postal ?? "");
+    setEditGerantVille(c.gerant_ville ?? "");
+    setEditGerantPays(c.gerant_pays ?? "");
+    setEditGerantDateNaissance(formatDateToDisplay(c.gerant_date_naissance ?? ""));
+    setEditGerantVilleNaissance(c.gerant_ville_naissance ?? "");
+    setEditGerantCodePostalNaissance(c.gerant_code_postal_naissance ?? "");
+    setEditGerantPaysNaissance(c.gerant_pays_naissance ?? "");
+    setEditGerantNumeroFiscal(c.gerant_numero_fiscal ?? "");
+    setEditGerantNumeroSecu(c.gerant_numero_secu ?? "");
+    setEditGerantNumeroPieceIdentite(c.gerant_numero_piece_identite ?? "");
     setEditVatNumber(c.vat_number ?? "");
     setEditVatRate(String(c.vat_rate ?? 20));
     setEditInvoicePrefix(c.invoice_prefix ?? "FAC-");
@@ -603,7 +940,25 @@ function SocietesPageContent() {
     setEditSiret("");
     setEditDirecteur("");
     setEditWebsite("");
+    setEditVps("");
+    setEditFormeJuridique("");
+    setEditCapitalSocial("");
+    setEditCodePostal("");
+    setEditVille("");
+    setEditActivite("");
+    setEditDateImmatriculation("");
     setEditCountryCode("FR");
+    setEditGerantAdresse("");
+    setEditGerantCodePostal("");
+    setEditGerantVille("");
+    setEditGerantPays("");
+    setEditGerantDateNaissance("");
+    setEditGerantVilleNaissance("");
+    setEditGerantCodePostalNaissance("");
+    setEditGerantPaysNaissance("");
+    setEditGerantNumeroFiscal("");
+    setEditGerantNumeroSecu("");
+    setEditGerantNumeroPieceIdentite("");
     setEditVatNumber("");
     setEditVatRate("20");
     setEditInvoicePrefix("FAC-");
@@ -638,7 +993,25 @@ function SocietesPageContent() {
     setEditSiret("");
     setEditDirecteur("");
     setEditWebsite("");
+    setEditVps("");
+    setEditFormeJuridique("");
+    setEditCapitalSocial("");
+    setEditCodePostal("");
+    setEditVille("");
+    setEditActivite("");
+    setEditDateImmatriculation("");
     setEditCountryCode("FR");
+    setEditGerantAdresse("");
+    setEditGerantCodePostal("");
+    setEditGerantVille("");
+    setEditGerantPays("");
+    setEditGerantDateNaissance("");
+    setEditGerantVilleNaissance("");
+    setEditGerantCodePostalNaissance("");
+    setEditGerantPaysNaissance("");
+    setEditGerantNumeroFiscal("");
+    setEditGerantNumeroSecu("");
+    setEditGerantNumeroPieceIdentite("");
     setEditVatNumber("");
     setEditVatRate("20");
     setEditInvoicePrefix("FAC-");
@@ -657,6 +1030,25 @@ function SocietesPageContent() {
       siret: editSiret.trim() || null,
       directeur: editDirecteur.trim() || null,
       website: editWebsite.trim() || null,
+      vps: editVps.trim() || null,
+      forme_juridique: editFormeJuridique.trim() || null,
+      capital_social: editCapitalSocial.trim() || null,
+      code_postal: editCodePostal.trim() || null,
+      ville: editVille.trim() || null,
+      activite: editActivite.trim() || null,
+      date_immatriculation: formatDateToIso(editDateImmatriculation) || null,
+      country_code: editCountryCode || "FR",
+      gerant_adresse: editGerantAdresse.trim() || null,
+      gerant_code_postal: editGerantCodePostal.trim() || null,
+      gerant_ville: editGerantVille.trim() || null,
+      gerant_pays: editGerantPays.trim() || null,
+      gerant_date_naissance: formatDateToIso(editGerantDateNaissance) || null,
+      gerant_ville_naissance: editGerantVilleNaissance.trim() || null,
+      gerant_code_postal_naissance: editGerantCodePostalNaissance.trim() || null,
+      gerant_pays_naissance: editGerantPaysNaissance.trim() || null,
+      gerant_numero_fiscal: editGerantNumeroFiscal.trim() || null,
+      gerant_numero_secu: editGerantNumeroSecu.trim() || null,
+      gerant_numero_piece_identite: editGerantNumeroPieceIdentite.trim() || null,
     };
     if (!isAddModal) {
       payload.country_code = editCountryCode || "FR";
@@ -676,7 +1068,7 @@ function SocietesPageContent() {
         const res = await fetch("/api/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: payload.name, address: payload.address, siret: payload.siret, directeur: payload.directeur, website: payload.website }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Échec de la création");
@@ -857,8 +1249,44 @@ function SocietesPageContent() {
           siret={editSiret}
           directeur={editDirecteur}
           website={editWebsite}
+          vps={editVps}
+          formeJuridique={editFormeJuridique}
+          capitalSocial={editCapitalSocial}
+          codePostal={editCodePostal}
+          ville={editVille}
+          activite={editActivite}
+          dateImmatriculation={editDateImmatriculation}
           onWebsiteChange={setEditWebsite}
+          onVpsChange={setEditVps}
+          onFormeJuridiqueChange={setEditFormeJuridique}
+          onCapitalSocialChange={setEditCapitalSocial}
+          onCodePostalChange={setEditCodePostal}
+          onVilleChange={setEditVille}
+          onActiviteChange={setEditActivite}
+          onDateImmatriculationChange={setEditDateImmatriculation}
           countryCode={editCountryCode}
+          gerantAdresse={editGerantAdresse}
+          gerantCodePostal={editGerantCodePostal}
+          gerantVille={editGerantVille}
+          gerantPays={editGerantPays}
+          gerantDateNaissance={editGerantDateNaissance}
+          gerantVilleNaissance={editGerantVilleNaissance}
+          gerantCodePostalNaissance={editGerantCodePostalNaissance}
+          gerantPaysNaissance={editGerantPaysNaissance}
+          gerantNumeroFiscal={editGerantNumeroFiscal}
+          gerantNumeroSecu={editGerantNumeroSecu}
+          gerantNumeroPieceIdentite={editGerantNumeroPieceIdentite}
+          onGerantAdresseChange={setEditGerantAdresse}
+          onGerantCodePostalChange={setEditGerantCodePostal}
+          onGerantVilleChange={setEditGerantVille}
+          onGerantPaysChange={setEditGerantPays}
+          onGerantDateNaissanceChange={setEditGerantDateNaissance}
+          onGerantVilleNaissanceChange={setEditGerantVilleNaissance}
+          onGerantCodePostalNaissanceChange={setEditGerantCodePostalNaissance}
+          onGerantPaysNaissanceChange={setEditGerantPaysNaissance}
+          onGerantNumeroFiscalChange={setEditGerantNumeroFiscal}
+          onGerantNumeroSecuChange={setEditGerantNumeroSecu}
+          onGerantNumeroPieceIdentiteChange={setEditGerantNumeroPieceIdentite}
           vatNumber={editVatNumber}
           vatRate={editVatRate}
           invoicePrefix={editInvoicePrefix}

@@ -25,6 +25,24 @@ export async function GET() {
         c.siret,
         c.directeur,
         c.website,
+        c.vps,
+        c.forme_juridique,
+        c.capital_social,
+        c.code_postal,
+        c.ville,
+        c.activite,
+        c.date_immatriculation,
+        c.gerant_adresse,
+        c.gerant_code_postal,
+        c.gerant_ville,
+        c.gerant_pays,
+        c.gerant_date_naissance,
+        c.gerant_ville_naissance,
+        c.gerant_code_postal_naissance,
+        c.gerant_pays_naissance,
+        c.gerant_numero_fiscal,
+        c.gerant_numero_secu,
+        c.gerant_numero_piece_identite,
         c.country_code,
         c.vat_number,
         c.vat_rate,
@@ -78,10 +96,32 @@ export async function POST(request: Request) {
     const siret = typeof body?.siret === "string" ? body.siret.trim() || null : null;
     const directeur = typeof body?.directeur === "string" ? body.directeur.trim() || null : null;
     const website = typeof body?.website === "string" ? body.website.trim() || null : null;
+    const vps = typeof body?.vps === "string" ? body.vps.trim() || null : null;
+    const formeJuridique = typeof body?.forme_juridique === "string" ? body.forme_juridique.trim() || null : null;
+    const capitalSocial = typeof body?.capital_social === "string" ? body.capital_social.trim() || null : null;
+    const codePostal = typeof body?.code_postal === "string" ? body.code_postal.trim() || null : null;
+    const ville = typeof body?.ville === "string" ? body.ville.trim() || null : null;
+    const activite = typeof body?.activite === "string" ? body.activite.trim() || null : null;
+    const dateImmatriculation = typeof body?.date_immatriculation === "string" && body.date_immatriculation.trim()
+      ? body.date_immatriculation.trim()
+      : null;
+    const countryCode =
+      typeof body?.country_code === "string" ? body.country_code.trim().slice(0, 2).toUpperCase() || "FR" : "FR";
+    const gerantAdresse = typeof body?.gerant_adresse === "string" ? body.gerant_adresse.trim() || null : null;
+    const gerantCodePostal = typeof body?.gerant_code_postal === "string" ? body.gerant_code_postal.trim() || null : null;
+    const gerantVille = typeof body?.gerant_ville === "string" ? body.gerant_ville.trim() || null : null;
+    const gerantPays = typeof body?.gerant_pays === "string" ? body.gerant_pays.trim().slice(0, 2).toUpperCase() || null : null;
+    const gerantDateNaissance = typeof body?.gerant_date_naissance === "string" && body.gerant_date_naissance.trim() ? body.gerant_date_naissance.trim() : null;
+    const gerantVilleNaissance = typeof body?.gerant_ville_naissance === "string" ? body.gerant_ville_naissance.trim() || null : null;
+    const gerantCodePostalNaissance = typeof body?.gerant_code_postal_naissance === "string" ? body.gerant_code_postal_naissance.trim() || null : null;
+    const gerantPaysNaissance = typeof body?.gerant_pays_naissance === "string" ? body.gerant_pays_naissance.trim().slice(0, 2).toUpperCase() || null : null;
+    const gerantNumeroFiscal = typeof body?.gerant_numero_fiscal === "string" ? body.gerant_numero_fiscal.trim() || null : null;
+    const gerantNumeroSecu = typeof body?.gerant_numero_secu === "string" ? body.gerant_numero_secu.trim() || null : null;
+    const gerantNumeroPieceIdentite = typeof body?.gerant_numero_piece_identite === "string" ? body.gerant_numero_piece_identite.trim() || null : null;
     const rows = await sql`
-      INSERT INTO companies (name, address, siret, directeur, website)
-      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website})
-      RETURNING id, name, address, siret, directeur, website, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, invoice_template_id, created_at, updated_at
+      INSERT INTO companies (name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite)
+      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite})
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, invoice_template_id, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

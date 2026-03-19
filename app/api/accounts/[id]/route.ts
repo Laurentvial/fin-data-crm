@@ -23,6 +23,10 @@ export async function GET(
   try {
     const rows = await sql`
       SELECT id, name, address, siret, directeur, website,
+        vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation,
+        gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance,
+        gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance,
+        gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite,
         country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency,
         invoice_template_id, created_at, updated_at
       FROM companies
@@ -65,6 +69,32 @@ export async function PATCH(
     const siret = typeof body?.siret === "string" ? body.siret.trim() || null : null;
     const directeur = typeof body?.directeur === "string" ? body.directeur.trim() || null : null;
     const website = typeof body?.website === "string" ? body.website.trim() || null : null;
+    const vps = typeof body?.vps === "string" ? body.vps.trim() || null : undefined;
+    const formeJuridique = typeof body?.forme_juridique === "string" ? body.forme_juridique.trim() || null : undefined;
+    const capitalSocial = typeof body?.capital_social === "string" ? body.capital_social.trim() || null : undefined;
+    const codePostal = typeof body?.code_postal === "string" ? body.code_postal.trim() || null : undefined;
+    const ville = typeof body?.ville === "string" ? body.ville.trim() || null : undefined;
+    const activite = typeof body?.activite === "string" ? body.activite.trim() || null : undefined;
+    const dateImmatriculation =
+      typeof body?.date_immatriculation === "string" && body.date_immatriculation.trim()
+        ? body.date_immatriculation.trim()
+        : body?.date_immatriculation === null || body?.date_immatriculation === ""
+          ? null
+          : undefined;
+    const gerantAdresse = typeof body?.gerant_adresse === "string" ? body.gerant_adresse.trim() || null : undefined;
+    const gerantCodePostal = typeof body?.gerant_code_postal === "string" ? body.gerant_code_postal.trim() || null : undefined;
+    const gerantVille = typeof body?.gerant_ville === "string" ? body.gerant_ville.trim() || null : undefined;
+    const gerantPays = typeof body?.gerant_pays === "string" ? body.gerant_pays.trim().slice(0, 2).toUpperCase() || null : undefined;
+    const gerantDateNaissance =
+      typeof body?.gerant_date_naissance === "string" && body.gerant_date_naissance.trim()
+        ? body.gerant_date_naissance.trim()
+        : body?.gerant_date_naissance === null || body?.gerant_date_naissance === "" ? null : undefined;
+    const gerantVilleNaissance = typeof body?.gerant_ville_naissance === "string" ? body.gerant_ville_naissance.trim() || null : undefined;
+    const gerantCodePostalNaissance = typeof body?.gerant_code_postal_naissance === "string" ? body.gerant_code_postal_naissance.trim() || null : undefined;
+    const gerantPaysNaissance = typeof body?.gerant_pays_naissance === "string" ? body.gerant_pays_naissance.trim().slice(0, 2).toUpperCase() || null : undefined;
+    const gerantNumeroFiscal = typeof body?.gerant_numero_fiscal === "string" ? body.gerant_numero_fiscal.trim() || null : undefined;
+    const gerantNumeroSecu = typeof body?.gerant_numero_secu === "string" ? body.gerant_numero_secu.trim() || null : undefined;
+    const gerantNumeroPieceIdentite = typeof body?.gerant_numero_piece_identite === "string" ? body.gerant_numero_piece_identite.trim() || null : undefined;
     const countryCode =
       typeof body?.country_code === "string" ? body.country_code.trim().slice(0, 2).toUpperCase() || null : undefined;
     const vatNumber =
@@ -105,6 +135,78 @@ export async function PATCH(
     ];
     const values: unknown[] = [name, address, siret, directeur, website];
     let idx = 6;
+    if (vps !== undefined) {
+      updates.push(`vps = $${idx++}`);
+      values.push(vps);
+    }
+    if (formeJuridique !== undefined) {
+      updates.push(`forme_juridique = $${idx++}`);
+      values.push(formeJuridique);
+    }
+    if (capitalSocial !== undefined) {
+      updates.push(`capital_social = $${idx++}`);
+      values.push(capitalSocial);
+    }
+    if (codePostal !== undefined) {
+      updates.push(`code_postal = $${idx++}`);
+      values.push(codePostal);
+    }
+    if (ville !== undefined) {
+      updates.push(`ville = $${idx++}`);
+      values.push(ville);
+    }
+    if (activite !== undefined) {
+      updates.push(`activite = $${idx++}`);
+      values.push(activite);
+    }
+    if (dateImmatriculation !== undefined) {
+      updates.push(`date_immatriculation = $${idx++}`);
+      values.push(dateImmatriculation);
+    }
+    if (gerantAdresse !== undefined) {
+      updates.push(`gerant_adresse = $${idx++}`);
+      values.push(gerantAdresse);
+    }
+    if (gerantCodePostal !== undefined) {
+      updates.push(`gerant_code_postal = $${idx++}`);
+      values.push(gerantCodePostal);
+    }
+    if (gerantVille !== undefined) {
+      updates.push(`gerant_ville = $${idx++}`);
+      values.push(gerantVille);
+    }
+    if (gerantPays !== undefined) {
+      updates.push(`gerant_pays = $${idx++}`);
+      values.push(gerantPays);
+    }
+    if (gerantDateNaissance !== undefined) {
+      updates.push(`gerant_date_naissance = $${idx++}`);
+      values.push(gerantDateNaissance);
+    }
+    if (gerantVilleNaissance !== undefined) {
+      updates.push(`gerant_ville_naissance = $${idx++}`);
+      values.push(gerantVilleNaissance);
+    }
+    if (gerantCodePostalNaissance !== undefined) {
+      updates.push(`gerant_code_postal_naissance = $${idx++}`);
+      values.push(gerantCodePostalNaissance);
+    }
+    if (gerantPaysNaissance !== undefined) {
+      updates.push(`gerant_pays_naissance = $${idx++}`);
+      values.push(gerantPaysNaissance);
+    }
+    if (gerantNumeroFiscal !== undefined) {
+      updates.push(`gerant_numero_fiscal = $${idx++}`);
+      values.push(gerantNumeroFiscal);
+    }
+    if (gerantNumeroSecu !== undefined) {
+      updates.push(`gerant_numero_secu = $${idx++}`);
+      values.push(gerantNumeroSecu);
+    }
+    if (gerantNumeroPieceIdentite !== undefined) {
+      updates.push(`gerant_numero_piece_identite = $${idx++}`);
+      values.push(gerantNumeroPieceIdentite);
+    }
     if (countryCode !== undefined) {
       updates.push(`country_code = $${idx++}`);
       values.push(countryCode);
@@ -139,7 +241,7 @@ export async function PATCH(
       UPDATE companies
       SET ${updates.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, name, address, siret, directeur, website, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, created_at, updated_at
     `;
     const result = await sql.query(queryText, values);
     const rows = Array.isArray(result) ? result : [result];

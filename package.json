@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:017": "node scripts/run-migration.js",
+    "migrate:018": "node scripts/run-migration-018.js"
   },
   "dependencies": {
     "@glideapps/glide-data-grid": "^6.0.3",
