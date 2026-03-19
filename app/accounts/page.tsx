@@ -1026,7 +1026,7 @@ function AccountsPageContent() {
           cvv: (v.cvv ?? "").trim() || undefined,
         }))
         .filter((v) => v.numero.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; telegram_chat_id?: string } = {
+      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
         name,
         company_id: createCompanyId,
         ibans: ibansToSend,
