@@ -52,6 +52,7 @@ function PdfIcon({ className }: { className?: string }) {
 
 export default function SocieteDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [company, setCompany] = useState<Company | null>(null);
