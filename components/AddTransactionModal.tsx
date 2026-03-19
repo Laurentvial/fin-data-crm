@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
-  return ba.company_name !== ba.name ? `${ba.company_name} – ${ba.name}` : ba.name;
+  return ba.company_name !== ba.name ? `${ba.name} – ${ba.company_name}` : ba.name;
 }
 
 interface AddTransactionModalProps {

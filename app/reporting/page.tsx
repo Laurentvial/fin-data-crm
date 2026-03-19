@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import type { BankAccount } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
-  return ba.company_name !== ba.name ? `${ba.company_name} – ${ba.name}` : ba.name;
+  return ba.company_name !== ba.name ? `${ba.name} – ${ba.company_name}` : ba.name;
 }
 
 function ReportingContent() {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
 import type { AccountStatus, AccountType, Bank, CardItem, Company, IbanItem } from "@/lib/types";
@@ -190,12 +191,10 @@ export function CreateBankAccountModal({
           )}
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
-            <input
-              type="text"
+            <AccountNameField
               value={name}
-              onChange={(e) => onNameChange(e.target.value)}
+              onChange={onNameChange}
               placeholder="Ex. Compte courant"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               autoFocus
             />
           </div>

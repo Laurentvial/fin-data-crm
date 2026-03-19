@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
@@ -108,7 +109,7 @@ function TrashIcon({ className }: { className?: string }) {
 }
 
 function displayName(ba: BankAccount): string {
-  return ba.company_name !== ba.name ? `${ba.company_name} – ${ba.name}` : ba.name;
+  return ba.company_name !== ba.name ? `${ba.name} – ${ba.company_name}` : ba.name;
 }
 
 function getInitials(name: string): string {
@@ -177,7 +178,12 @@ function AccountCard({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="truncate font-semibold text-[var(--foreground)]">{displayName(bankAccount)}</h3>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate font-semibold text-[var(--foreground)]">{bankAccount.name}</h3>
+            {bankAccount.company_name && (
+              <p className="mt-0.5 truncate text-base font-medium text-[var(--muted-foreground)]">{bankAccount.company_name}</p>
+            )}
+          </div>
           <button
             type="button"
             onClick={(e) => {
@@ -470,12 +476,10 @@ function EditBankAccountModal({
         <div className="grid grid-cols-3 gap-x-4 gap-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
-            <input
-              type="text"
+            <AccountNameField
               value={name}
-              onChange={(e) => onNameChange(e.target.value)}
+              onChange={onNameChange}
               placeholder="Ex. Compte courant"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               autoFocus
             />
           </div>

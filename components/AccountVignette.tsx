@@ -203,36 +203,38 @@ export function AccountVignette({
           </div>
         </>
       )}
-      <div className="flex items-start justify-between gap-2 pr-8">
-        <h3 className="subsection-header flex min-w-0 flex-1 items-center gap-2 font-semibold">
-          {bankAccount.bank_id && (
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
-              {bankAccount.has_logo ? (
-                <img
-                  src={`/api/banks/${bankAccount.bank_id}/files/logo`}
-                  alt=""
-                  className="h-full w-full object-contain"
-                />
-              ) : null}
-            </span>
+      <div className="pr-8">
+        <div className="subsection-header flex min-w-0 flex-1 flex-col gap-0 font-semibold">
+          <div className="flex items-center gap-2">
+            {bankAccount.bank_id && (
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
+                {bankAccount.has_logo ? (
+                  <img
+                    src={`/api/banks/${bankAccount.bank_id}/files/logo`}
+                    alt=""
+                    className="h-full w-full object-contain"
+                  />
+                ) : null}
+              </span>
+            )}
+            <span className="truncate">{bankAccount.name}</span>
+          </div>
+          {!hideCompanyName && bankAccount.company_name && (
+            bankAccount.company_id ? (
+              <Link
+                href={`/societes/${bankAccount.company_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 block text-base font-medium text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors"
+              >
+                {bankAccount.company_name}
+              </Link>
+            ) : (
+              <span className="mt-0.5 block text-base font-medium text-[var(--foreground)]">
+                {bankAccount.company_name}
+              </span>
+            )
           )}
-          <span className="truncate">{bankAccount.name}</span>
-        </h3>
-        {!hideCompanyName && bankAccount.company_name && (
-          bankAccount.company_id ? (
-            <Link
-              href={`/societes/${bankAccount.company_id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="shrink-0 text-right text-base font-semibold text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors"
-            >
-              {bankAccount.company_name}
-            </Link>
-          ) : (
-            <p className="shrink-0 text-right text-base font-semibold text-[var(--foreground)]">
-              {bankAccount.company_name}
-            </p>
-          )
-        )}
+        </div>
       </div>
       <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
         {bankAccount.account_type_name && (

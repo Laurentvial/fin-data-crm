@@ -144,7 +144,7 @@ const dateCellRenderer: CustomRenderer<CustomCell<DateCellData>> = {
     (cell as CustomCell<DateCellData>).data?.type === "date",
   draw: (args: DrawArgs<CustomCell<DateCellData>>, cell) => {
     const display = formatDateDisplay(cell.data.value);
-    drawTextCell({ rect: args.rect, ctx: args.ctx, theme: args.theme }, display);
+    drawTextCell(args as Parameters<typeof drawTextCell>[0], display);
   },
   provideEditor: () => (p) => {
     const rawValue = p.value.data.value || "";
@@ -163,12 +163,12 @@ const dateCellRenderer: CustomRenderer<CustomCell<DateCellData>> = {
       const val = e.target.value;
       setDisplayValue(val);
       const parsed = parseDateToApiFormat(val);
-      if (parsed) p.onChange({ ...p.value, data: { type: "date", value: parsed } });
+      if (parsed) p.onChange({ ...p.value, data: { type: "date" as const, value: parsed } });
     };
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const val = e.target.value;
       setDisplayValue(formatDateDisplay(val));
-      const next = { ...p.value, data: { type: "date", value: val } };
+      const next = { ...p.value, data: { type: "date" as const, value: val } };
       p.onChange(next);
       p.onFinishedEditing(next);
     };
@@ -248,13 +248,13 @@ const dateCellRenderer: CustomRenderer<CustomCell<DateCellData>> = {
       </div>
     );
   },
-  getAccessibilityString: (cell) => formatDateDisplay(cell.data.value),
+  getAccessibilityString: (cell: CustomCell<DateCellData>) => formatDateDisplay(cell.data.value),
   onPaste: (val) => {
     const parsed = parseDateToApiFormat(String(val).trim());
     if (parsed) return { type: "date" as const, value: parsed };
     return undefined;
   },
-};
+} as CustomRenderer<CustomCell<DateCellData>>;
 
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",

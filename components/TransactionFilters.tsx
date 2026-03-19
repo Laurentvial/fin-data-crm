@@ -17,7 +17,7 @@ interface TransactionFiltersProps {
 }
 
 function displayName(ba: BankAccount): string {
-  return ba.company_name !== ba.name ? `${ba.company_name} – ${ba.name}` : ba.name;
+  return ba.company_name !== ba.name ? `${ba.name} – ${ba.company_name}` : ba.name;
 }
 
 export function TransactionFilters({
