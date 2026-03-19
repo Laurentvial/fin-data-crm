@@ -71,6 +71,7 @@ export async function PATCH(
     const body = await request.json();
     const email = typeof body?.email === "string" ? body.email.trim() : undefined;
     const password = typeof body?.password === "string" ? body.password : undefined;
+    const isDefault = typeof body?.is_default === "boolean" ? body.is_default : undefined;
 
     const existing = await sql`
       SELECT id FROM company_emails
@@ -95,7 +96,7 @@ export async function PATCH(
         UPDATE company_emails
         SET email = ${email}, password = ${encrypt(password)}, updated_at = NOW()
         WHERE id = ${emailId} AND company_id = ${id}
-        RETURNING id, company_id, email, created_at, updated_at
+        RETURNING id, company_id, email, is_default, created_at, updated_at
       `;
       const row = r[0];
       if (!row) {
@@ -108,7 +109,7 @@ export async function PATCH(
         UPDATE company_emails
         SET email = ${email}, updated_at = NOW()
         WHERE id = ${emailId} AND company_id = ${id}
-        RETURNING id, company_id, email, created_at, updated_at
+        RETURNING id, company_id, email, is_default, created_at, updated_at
       `;
       const row = r[0];
       if (!row) {
@@ -121,7 +122,21 @@ export async function PATCH(
         UPDATE company_emails
         SET password = ${encrypt(password)}, updated_at = NOW()
         WHERE id = ${emailId} AND company_id = ${id}
-        RETURNING id, company_id, email, created_at, updated_at
+        RETURNING id, company_id, email, is_default, created_at, updated_at
+      `;
+      const row = r[0];
+      if (!row) {
+        return NextResponse.json({ error: "Échec de la mise à jour." }, { status: 500 });
+      }
+      return NextResponse.json(row);
+    }
+    if (isDefault === true) {
+      await sql`UPDATE company_emails SET is_default = false WHERE company_id = ${id}`;
+      const r = await sql`
+        UPDATE company_emails
+        SET is_default = true, updated_at = NOW()
+        WHERE id = ${emailId} AND company_id = ${id}
+        RETURNING id, company_id, email, is_default, created_at, updated_at
       `;
       const row = r[0];
       if (!row) {
@@ -147,17 +162,28 @@ export async function DELETE(
   if (authError) return authError;
   const { id, emailId } = await params;
   try {
-    const rows = await sql`
-      DELETE FROM company_emails
+    const toDelete = await sql`
+      SELECT id, is_default FROM company_emails
       WHERE id = ${emailId} AND company_id = ${id}
-      RETURNING id
     `;
-    if (rows.length === 0) {
+    if (toDelete.length === 0) {
       return NextResponse.json(
         { error: "Email introuvable." },
         { status: 404 }
       );
     }
+    if (toDelete[0].is_default) {
+      const nextEmail = await sql`
+        SELECT id FROM company_emails
+        WHERE company_id = ${id} AND id != ${emailId}
+        ORDER BY created_at ASC
+        LIMIT 1
+      `;
+      if (nextEmail.length > 0) {
+        await sql`UPDATE company_emails SET is_default = true WHERE id = ${nextEmail[0].id}`;
+      }
+    }
+    await sql`DELETE FROM company_emails WHERE id = ${emailId} AND company_id = ${id}`;
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     console.error("DELETE /api/accounts/[id]/emails/[emailId] error:", error);

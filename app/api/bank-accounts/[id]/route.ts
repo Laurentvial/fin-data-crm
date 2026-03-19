@@ -34,6 +34,10 @@ export async function GET(
         ba.password,
         ba.pin_code,
         ba.plafond_limit,
+        ba.company_email_id,
+        ba.company_phone_id,
+        ce.email AS company_email,
+        cp.phone AS company_phone,
         b.name AS bank_name,
         b.url AS bank_url,
         at.name AS account_type_name,
@@ -57,11 +61,13 @@ export async function GET(
         ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN company_emails ce ON ce.id = ba.company_email_id
+      LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, b.url, at.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, ba.created_at, ba.updated_at, c.name
     `;
     if (!row) {
       return NextResponse.json(
@@ -122,6 +128,12 @@ export async function PATCH(
     const plafond_limit = body?.plafond_limit !== undefined
       ? (typeof body.plafond_limit === "string" ? body.plafond_limit.trim() || null : null)
       : undefined;
+    const company_email_id = body?.company_email_id !== undefined
+      ? (typeof body.company_email_id === "string" ? body.company_email_id.trim() || null : null)
+      : undefined;
+    const company_phone_id = body?.company_phone_id !== undefined
+      ? (typeof body.company_phone_id === "string" ? body.company_phone_id.trim() || null : null)
+      : undefined;
     const cardsRaw = body?.cards;
     const cardItems: { numero: string; date_expiration?: string | null; cvv?: string | null }[] | undefined = Array.isArray(cardsRaw)
       ? cardsRaw.flatMap((v: unknown) => {
@@ -156,7 +168,7 @@ export async function PATCH(
         })
       : undefined;
 
-    if (!name && company_id === undefined && bank_id === undefined && account_type_id === undefined && account_status === undefined && telegram_chat_id === undefined && ibanItems === undefined && login === undefined && password === undefined && pin_code === undefined && plafond_limit === undefined && cardItems === undefined) {
+    if (!name && company_id === undefined && bank_id === undefined && account_type_id === undefined && account_status === undefined && telegram_chat_id === undefined && ibanItems === undefined && login === undefined && password === undefined && pin_code === undefined && plafond_limit === undefined && company_email_id === undefined && company_phone_id === undefined && cardItems === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -181,7 +193,7 @@ export async function PATCH(
     }
 
     const [existing] = await sql`
-      SELECT id, name, company_id, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit FROM bank_accounts WHERE id = ${id}
+      SELECT id, name, company_id, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit, company_email_id, company_phone_id FROM bank_accounts WHERE id = ${id}
     `;
     if (!existing) {
       return NextResponse.json(
@@ -201,6 +213,31 @@ export async function PATCH(
     const newPassword = password !== undefined ? password : existing.password;
     const newPinCode = pin_code !== undefined ? pin_code : existing.pin_code;
     const newPlafondLimit = plafond_limit !== undefined ? plafond_limit : existing.plafond_limit;
+    const newCompanyEmailId = company_email_id !== undefined ? company_email_id : existing.company_email_id;
+    const newCompanyPhoneId = company_phone_id !== undefined ? company_phone_id : existing.company_phone_id;
+
+    if (newCompanyEmailId) {
+      const [emCheck] = await sql`
+        SELECT 1 FROM company_emails WHERE id = ${newCompanyEmailId}::uuid AND company_id = ${newCompanyId}::uuid LIMIT 1
+      `;
+      if (!emCheck) {
+        return NextResponse.json(
+          { error: "L'email sélectionné n'appartient pas à cette société." },
+          { status: 400 }
+        );
+      }
+    }
+    if (newCompanyPhoneId) {
+      const [phCheck] = await sql`
+        SELECT 1 FROM company_phones WHERE id = ${newCompanyPhoneId}::uuid AND company_id = ${newCompanyId}::uuid LIMIT 1
+      `;
+      if (!phCheck) {
+        return NextResponse.json(
+          { error: "Le téléphone sélectionné n'appartient pas à cette société." },
+          { status: 400 }
+        );
+      }
+    }
 
     const rows = await sql`
       UPDATE bank_accounts
@@ -215,6 +252,8 @@ export async function PATCH(
         password = ${newPassword},
         pin_code = ${newPinCode},
         plafond_limit = ${newPlafondLimit},
+        company_email_id = ${newCompanyEmailId},
+        company_phone_id = ${newCompanyPhoneId},
         updated_at = NOW()
       WHERE id = ${id}
       RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, created_at, updated_at
@@ -257,6 +296,10 @@ export async function PATCH(
         ba.password,
         ba.pin_code,
         ba.plafond_limit,
+        ba.company_email_id,
+        ba.company_phone_id,
+        ce.email AS company_email,
+        cp.phone AS company_phone,
         b.name AS bank_name,
         b.url AS bank_url,
         at.name AS account_type_name,
@@ -278,6 +321,8 @@ export async function PATCH(
         ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN company_emails ce ON ce.id = ba.company_email_id
+      LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
       WHERE ba.id = ${id}

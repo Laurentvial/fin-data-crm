@@ -31,10 +31,10 @@ export async function GET(
       );
     }
     const rows = await sql`
-      SELECT id, company_id, phone, created_at, updated_at
+      SELECT id, company_id, phone, is_default, created_at, updated_at
       FROM company_phones
       WHERE company_id = ${id}
-      ORDER BY phone
+      ORDER BY is_default DESC, phone
     `;
     return NextResponse.json(rows);
   } catch (error) {
@@ -71,10 +71,12 @@ export async function POST(
         { status: 400 }
       );
     }
+    const existingCount = await sql`SELECT 1 FROM company_phones WHERE company_id = ${id}`;
+    const isFirst = existingCount.length === 0;
     const rows = await sql`
-      INSERT INTO company_phones (company_id, phone)
-      VALUES (${id}, ${phone})
-      RETURNING id, company_id, phone, created_at, updated_at
+      INSERT INTO company_phones (company_id, phone, is_default)
+      VALUES (${id}, ${phone}, ${isFirst})
+      RETURNING id, company_id, phone, is_default, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

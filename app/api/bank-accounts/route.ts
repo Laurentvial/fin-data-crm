@@ -30,6 +30,10 @@ export async function GET() {
         ba.password,
         ba.pin_code,
         ba.plafond_limit,
+        ba.company_email_id,
+        ba.company_phone_id,
+        ce.email AS company_email,
+        cp.phone AS company_phone,
         b.name AS bank_name,
         at.name AS account_type_name,
         ba.created_at,
@@ -52,10 +56,12 @@ export async function GET() {
         ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN company_emails ce ON ce.id = ba.company_email_id
+      LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, at.name, ba.created_at, ba.updated_at, c.name
       ORDER BY c.name, ba.name
     `;
     return NextResponse.json(rows);
@@ -114,6 +120,8 @@ export async function POST(request: Request) {
     const password = typeof body?.password === "string" ? body.password.trim() || null : null;
     const pin_code = typeof body?.pin_code === "string" ? body.pin_code.trim() || null : null;
     const plafond_limit = typeof body?.plafond_limit === "string" ? body.plafond_limit.trim() || null : null;
+    const company_email_id = typeof body?.company_email_id === "string" ? body.company_email_id.trim() || null : null;
+    const company_phone_id = typeof body?.company_phone_id === "string" ? body.company_phone_id.trim() || null : null;
     const cardsRaw = body?.cards;
     const cardItems: { numero: string; date_expiration?: string | null; cvv?: string | null }[] = Array.isArray(cardsRaw)
       ? cardsRaw.flatMap((v: unknown) => {
@@ -167,6 +175,28 @@ export async function POST(request: Request) {
         { status: 404 }
       );
     }
+    if (company_email_id) {
+      const [emCheck] = await sql`
+        SELECT 1 FROM company_emails WHERE id = ${company_email_id}::uuid AND company_id = ${company_id}::uuid LIMIT 1
+      `;
+      if (!emCheck) {
+        return NextResponse.json(
+          { error: "L'email sélectionné n'appartient pas à cette société." },
+          { status: 400 }
+        );
+      }
+    }
+    if (company_phone_id) {
+      const [phCheck] = await sql`
+        SELECT 1 FROM company_phones WHERE id = ${company_phone_id}::uuid AND company_id = ${company_id}::uuid LIMIT 1
+      `;
+      if (!phCheck) {
+        return NextResponse.json(
+          { error: "Le téléphone sélectionné n'appartient pas à cette société." },
+          { status: 400 }
+        );
+      }
+    }
     let bankName: string | null = null;
     if (bank_id) {
       const [bank] = await sql`SELECT id, name FROM banks WHERE id = ${bank_id}::uuid LIMIT 1`;
@@ -178,10 +208,18 @@ export async function POST(request: Request) {
       }
       bankName = (bank.name as string) ?? null;
     }
-    const emailRows = await sql`
-      SELECT email FROM company_emails WHERE company_id = ${company_id}::uuid ORDER BY email
-    `;
-    const emails = emailRows.map((r) => r.email as string);
+    let emailStr = "—";
+    if (company_email_id) {
+      const [emRow] = await sql`SELECT email FROM company_emails WHERE id = ${company_email_id}::uuid AND company_id = ${company_id}::uuid`;
+      if (emRow) emailStr = (emRow.email as string) ?? "—";
+    } else {
+      const [defEmail] = await sql`SELECT email FROM company_emails WHERE company_id = ${company_id}::uuid AND is_default = true LIMIT 1`;
+      if (defEmail) emailStr = (defEmail.email as string) ?? "—";
+      else {
+        const emailRows = await sql`SELECT email FROM company_emails WHERE company_id = ${company_id}::uuid ORDER BY email`;
+        emailStr = emailRows.length > 0 ? (emailRows.map((r) => r.email as string).join(", ")) : "—";
+      }
+    }
     const [kbisRow] = await sql`
       SELECT filename, content_type, data_base64
       FROM company_files
@@ -194,7 +232,6 @@ export async function POST(request: Request) {
       ibanItems.length > 0
         ? ibanItems.map((i) => (i.bic ? `${i.iban} (BIC: ${i.bic})` : i.iban)).join(", ")
         : "—";
-    const emailStr = emails.length > 0 ? emails.join(", ") : "—";
     const welcomeMessage = `NOM STE : ${company.name}
 ADRESSE : ${(company.address as string) ?? "—"}
 EMAIL : ${emailStr}
@@ -321,8 +358,8 @@ BANQUE : ${bankName ?? "—"}`;
       }
     }
     const rows = await sql`
-      INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit)
-      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null}, ${account_type_id}, ${account_status}, ${login}, ${password}, ${pin_code}, ${plafond_limit})
+      INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit, company_email_id, company_phone_id)
+      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null}, ${account_type_id}, ${account_status}, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
       RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, created_at, updated_at
     `;
     const row = rows[0];

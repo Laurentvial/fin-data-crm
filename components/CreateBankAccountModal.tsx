@@ -394,29 +394,29 @@ export function CreateBankAccountModal({
             </div>
           </div>
 
-          <div className="rounded-lg border border-[var(--border)] p-3">
-            <h4 className="mb-2 text-sm font-medium text-[var(--foreground)]">Identifiants</h4>
-            <div className="space-y-2">
+          <div className="col-span-3">
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Identifiants</label>
+            <div className="flex gap-2">
               <input
                 type="text"
                 value={login}
                 onChange={(e) => onLoginChange?.(e.target.value)}
                 placeholder="Login"
-                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => onPasswordChange?.(e.target.value)}
                 placeholder="Mot de passe"
-                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               />
               <input
                 type="text"
                 value={pinCode}
                 onChange={(e) => onPinCodeChange?.(e.target.value)}
                 placeholder="Code PIN"
-                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               />
             </div>
           </div>

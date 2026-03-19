@@ -32,10 +32,10 @@ export async function GET(
       );
     }
     const rows = await sql`
-      SELECT id, company_id, email, created_at, updated_at
+      SELECT id, company_id, email, is_default, created_at, updated_at
       FROM company_emails
       WHERE company_id = ${id}
-      ORDER BY email
+      ORDER BY is_default DESC, email
     `;
     return NextResponse.json(rows);
   } catch (error) {
@@ -74,10 +74,12 @@ export async function POST(
       );
     }
     const encryptedPassword = encrypt(password);
+    const existingCount = await sql`SELECT 1 FROM company_emails WHERE company_id = ${id}`;
+    const isFirst = existingCount.length === 0;
     const rows = await sql`
-      INSERT INTO company_emails (company_id, email, password)
-      VALUES (${id}, ${email}, ${encryptedPassword})
-      RETURNING id, company_id, email, created_at, updated_at
+      INSERT INTO company_emails (company_id, email, password, is_default)
+      VALUES (${id}, ${email}, ${encryptedPassword}, ${isFirst})
+      RETURNING id, company_id, email, is_default, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

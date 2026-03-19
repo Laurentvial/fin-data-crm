@@ -207,7 +207,7 @@ export function AccountVignette({
         <div className="subsection-header flex min-w-0 flex-1 flex-col gap-0 font-semibold">
           <div className="flex items-center gap-2">
             {bankAccount.bank_id && (
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
                 {bankAccount.has_logo ? (
                   <img
                     src={`/api/banks/${bankAccount.bank_id}/files/logo`}

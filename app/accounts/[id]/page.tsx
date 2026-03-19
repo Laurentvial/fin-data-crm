@@ -59,7 +59,7 @@ export default function AccountDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/bank-accounts/${id}`);
+      const res = await fetch(`/api/bank-accounts/${id}`, { cache: "no-store" });
       if (!res.ok) {
         if (res.status === 404) throw new Error("Compte introuvable");
         throw new Error("Échec du chargement");
@@ -206,6 +206,14 @@ export default function AccountDetailPage() {
               <div>
                 <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Telegram Chat ID</dt>
                 <dd className="text-sm font-mono">{bankAccount?.telegram_chat_id ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Email de la société</dt>
+                <dd className="text-sm">{bankAccount?.company_email ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Téléphone de la société</dt>
+                <dd className="text-sm">{bankAccount?.company_phone ?? "—"}</dd>
               </div>
               <div className="sm:col-span-2">
                 <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Identifiants</dt>

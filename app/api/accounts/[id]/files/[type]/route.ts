@@ -13,7 +13,16 @@ async function requireAuth() {
   return null;
 }
 
-const ALLOWED_TYPES = ["logo", "kbis", "statut", "pi_gerant"] as const;
+const FIXED_TYPES = ["logo", "kbis", "statut", "pi_gerant", "pi_recto", "pi_verso", "selfie"] as const;
+
+function isValidFileType(type: string): boolean {
+  if (FIXED_TYPES.includes(type as (typeof FIXED_TYPES)[number])) return true;
+  if (type.startsWith("autre_")) {
+    const slug = type.slice(6);
+    return /^[a-z0-9_]+$/.test(slug) && slug.length <= 40;
+  }
+  return false;
+}
 
 export async function GET(
   _request: Request,
@@ -23,7 +32,7 @@ export async function GET(
   if (authError) return authError;
   const { id, type } = await params;
 
-  if (!ALLOWED_TYPES.includes(type as (typeof ALLOWED_TYPES)[number])) {
+  if (!isValidFileType(type)) {
     return NextResponse.json(
       { error: "Type invalide." },
       { status: 400 }

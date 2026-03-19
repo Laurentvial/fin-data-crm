@@ -9,7 +9,7 @@ import { Select } from "@/components/Select";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
-import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, IbanItem } from "@/lib/types";
+import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, CompanyEmail, CompanyPhone, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -348,6 +348,12 @@ function EditBankAccountModal({
   onClose,
   saving,
   error,
+  companyEmails = [],
+  companyPhones = [],
+  companyEmailId = "",
+  companyPhoneId = "",
+  onCompanyEmailIdChange,
+  onCompanyPhoneIdChange,
 }: {
   bankAccount: BankAccount;
   companies: Company[];
@@ -383,6 +389,12 @@ function EditBankAccountModal({
   onClose: () => void;
   saving: boolean;
   error?: string | null;
+  companyEmails?: CompanyEmail[];
+  companyPhones?: CompanyPhone[];
+  companyEmailId?: string;
+  companyPhoneId?: string;
+  onCompanyEmailIdChange?: (v: string) => void;
+  onCompanyPhoneIdChange?: (v: string) => void;
 }) {
   const [uploadingRib, setUploadingRib] = useState(false);
   const [ibanExpanded, setIbanExpanded] = useState(false);
@@ -505,6 +517,38 @@ function EditBankAccountModal({
               placeholder="Aucune banque"
             />
           </div>
+          {companyEmails.length > 0 && onCompanyEmailIdChange && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Email de la société</label>
+              <Select
+                value={companyEmailId || (companyEmails.find((e) => e.is_default)?.id ?? companyEmails[0]?.id ?? "")}
+                onChange={(e) => onCompanyEmailIdChange(e.target.value)}
+              >
+                <option value="">Aucun</option>
+                {companyEmails.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.email}{e.is_default ? " ★" : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {companyPhones.length > 0 && onCompanyPhoneIdChange && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Téléphone de la société</label>
+              <Select
+                value={companyPhoneId || (companyPhones.find((p) => p.is_default)?.id ?? companyPhones[0]?.id ?? "")}
+                onChange={(e) => onCompanyPhoneIdChange(e.target.value)}
+              >
+                <option value="">Aucun</option>
+                {companyPhones.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.phone}{p.is_default ? " ★" : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           {accountTypes.length > 0 && (
             <div>
               <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type de compte</label>
@@ -820,6 +864,10 @@ function AccountsPageContent() {
   const [editPlafondLimit, setEditPlafondLimit] = useState("");
   const [editCards, setEditCards] = useState<CardItem[]>([]);
   const [editHasRib, setEditHasRib] = useState(false);
+  const [editCompanyEmailId, setEditCompanyEmailId] = useState("");
+  const [editCompanyPhoneId, setEditCompanyPhoneId] = useState("");
+  const [editCompanyEmails, setEditCompanyEmails] = useState<CompanyEmail[]>([]);
+  const [editCompanyPhones, setEditCompanyPhones] = useState<CompanyPhone[]>([]);
   const [saving, setSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -922,6 +970,50 @@ function AccountsPageContent() {
   }, [fetchBankAccounts]);
 
   useEffect(() => {
+    if (!editCompanyId && !editingAccount) return;
+    const cid = editCompanyId || editingAccount?.company_id;
+    if (!cid) return;
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/accounts/${cid}/emails`),
+      fetch(`/api/accounts/${cid}/phones`),
+    ]).then(async ([rEm, rPh]) => {
+      if (cancelled) return;
+      const parseEmails = async (): Promise<CompanyEmail[]> => {
+        if (!rEm.ok) return [];
+        try {
+          const data = await rEm.json();
+          return Array.isArray(data) ? data : [];
+        } catch {
+          return [];
+        }
+      };
+      const parsePhones = async (): Promise<CompanyPhone[]> => {
+        if (!rPh.ok) return [];
+        try {
+          const data = await rPh.json();
+          return Array.isArray(data) ? data : [];
+        } catch {
+          return [];
+        }
+      };
+      const [emails, phones] = await Promise.all([parseEmails(), parsePhones()]);
+      if (cancelled) return;
+      setEditCompanyEmails(emails);
+      setEditCompanyPhones(phones);
+      if (!editingAccount?.company_email_id && emails.length > 0) {
+        const def = emails.find((e) => e.is_default) ?? emails[0];
+        setEditCompanyEmailId(def?.id ?? "");
+      }
+      if (!editingAccount?.company_phone_id && phones.length > 0) {
+        const def = phones.find((p) => p.is_default) ?? phones[0];
+        setEditCompanyPhoneId(def?.id ?? "");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [editCompanyId, editingAccount?.company_id, editingAccount?.company_email_id, editingAccount?.company_phone_id]);
+
+  useEffect(() => {
     if (editIdFromUrl && bankAccounts.length > 0) {
       const account = bankAccounts.find((ba) => ba.id === editIdFromUrl);
       if (account) {
@@ -939,6 +1031,8 @@ function AccountsPageContent() {
         setEditPlafondLimit(account.plafond_limit ?? "");
         setEditCards(account.cards ?? []);
         setEditHasRib(!!account.has_rib);
+        setEditCompanyEmailId(account.company_email_id ?? "");
+        setEditCompanyPhoneId(account.company_phone_id ?? "");
         setError(null);
       }
     }
@@ -959,6 +1053,8 @@ function AccountsPageContent() {
     setEditPlafondLimit(ba.plafond_limit ?? "");
     setEditCards(ba.cards ?? []);
     setEditHasRib(!!ba.has_rib);
+    setEditCompanyEmailId(ba.company_email_id ?? "");
+    setEditCompanyPhoneId(ba.company_phone_id ?? "");
     setError(null);
   };
 
@@ -990,7 +1086,8 @@ function AccountsPageContent() {
   const openCreateModal = () => {
     setCreateModalOpen(true);
     setCreateName("");
-    setCreateCompanyId(companies[0]?.id ?? "");
+    const firstId = companies[0]?.id ?? "";
+    setCreateCompanyId(firstId);
     setCreateBankId("");
     setCreateAccountTypeId("");
     setCreateAccountStatus("Ouvert");
@@ -1087,7 +1184,7 @@ function AccountsPageContent() {
     setSaving(true);
     setError(null);
     try {
-      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status?: AccountStatus; telegram_chat_id?: number; ibans?: IbanItem[]; login?: string | null; password?: string | null; pin_code?: string | null; plafond_limit?: string | null; cards?: CardItem[] } = {
+      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status?: AccountStatus; telegram_chat_id?: number; ibans?: IbanItem[]; login?: string | null; password?: string | null; pin_code?: string | null; plafond_limit?: string | null; cards?: CardItem[]; company_email_id?: string | null; company_phone_id?: string | null } = {
         name,
         company_id: editCompanyId,
       };
@@ -1122,6 +1219,10 @@ function AccountsPageContent() {
         }))
         .filter((v) => v.numero.length > 0);
       body.cards = cardsToSend;
+      const effectiveEmailId = editCompanyEmailId.trim() || (editCompanyEmails.find((e) => e.is_default)?.id ?? editCompanyEmails[0]?.id ?? "");
+      const effectivePhoneId = editCompanyPhoneId.trim() || (editCompanyPhones.find((p) => p.is_default)?.id ?? editCompanyPhones[0]?.id ?? "");
+      body.company_email_id = effectiveEmailId || null;
+      body.company_phone_id = effectivePhoneId || null;
       const res = await fetch(`/api/bank-accounts/${editingAccount.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1152,6 +1253,10 @@ function AccountsPageContent() {
                 pin_code: updated.pin_code ?? ba.pin_code,
                 plafond_limit: updated.plafond_limit ?? ba.plafond_limit,
                 cards: updated.cards ?? ba.cards,
+                company_email_id: updated.company_email_id ?? undefined,
+                company_phone_id: updated.company_phone_id ?? undefined,
+                company_email: updated.company_email ?? undefined,
+                company_phone: updated.company_phone ?? undefined,
               }
             : ba
         )
@@ -1387,6 +1492,18 @@ function AccountsPageContent() {
           onClose={closeModal}
           saving={saving}
           error={error}
+          companyEmails={editCompanyEmails}
+          companyPhones={editCompanyPhones}
+          companyEmailId={editCompanyEmailId}
+          companyPhoneId={editCompanyPhoneId}
+          onCompanyEmailIdChange={(v) => {
+            setEditCompanyEmailId(v);
+            setError(null);
+          }}
+          onCompanyPhoneIdChange={(v) => {
+            setEditCompanyPhoneId(v);
+            setError(null);
+          }}
         />
       )}
       {createModalOpen && (

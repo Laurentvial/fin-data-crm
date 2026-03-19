@@ -13,8 +13,41 @@ async function requireAuth() {
   return null;
 }
 
-const ALLOWED_TYPES = ["logo", "kbis", "statut", "pi_gerant"] as const;
+const FIXED_DOC_TYPES = ["logo", "kbis", "statut", "pi_gerant", "pi_recto", "pi_verso", "selfie"] as const;
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
+function isValidDocType(type: string): boolean {
+  if (FIXED_DOC_TYPES.includes(type as (typeof FIXED_DOC_TYPES)[number])) return true;
+  if (type.startsWith("autre_")) {
+    const slug = type.slice(6);
+    return /^[a-z0-9_]+$/.test(slug) && slug.length <= 40;
+  }
+  return false;
+}
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+  const { id } = await params;
+  try {
+    const rows = await sql`
+      SELECT id, company_id, file_type, filename, content_type, created_at
+      FROM company_files
+      WHERE company_id = ${id} AND file_type != 'logo'
+      ORDER BY file_type
+    `;
+    return NextResponse.json(rows);
+  } catch (error) {
+    console.error("GET /api/accounts/[id]/files error:", error);
+    return NextResponse.json(
+      { error: "Échec du chargement." },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(
   request: Request,
@@ -45,9 +78,9 @@ export async function POST(
       );
     }
 
-    if (!ALLOWED_TYPES.includes(type as (typeof ALLOWED_TYPES)[number])) {
+    if (!isValidDocType(type)) {
       return NextResponse.json(
-        { error: "Type invalide. Utilisez logo, kbis, statut ou pi_gerant." },
+        { error: "Type invalide. Types: logo, kbis, statut, pi_gerant, pi_recto, pi_verso, selfie, autre_<nom>." },
         { status: 400 }
       );
     }

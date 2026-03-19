@@ -151,6 +151,11 @@ export interface BankAccount {
   cards?: CardItem[];
   /** RIB: présence du document */
   has_rib?: boolean;
+  /** Email et téléphone de la société associés à ce compte */
+  company_email_id?: string | null;
+  company_phone_id?: string | null;
+  company_email?: string | null;
+  company_phone?: string | null;
   balance?: number;
   created_at: string;
   updated_at: string;
@@ -189,6 +194,7 @@ export interface CompanyEmail {
   company_id: string;
   email: string;
   password?: string;
+  is_default?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +203,7 @@ export interface CompanyPhone {
   id: string;
   company_id: string;
   phone: string;
+  is_default?: boolean;
   created_at: string;
   updated_at: string;
 }

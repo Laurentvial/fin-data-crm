@@ -187,7 +187,7 @@ function CompanyCard({
               return (
                 <span
                   key={bankId}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]"
                   title="Banque"
                 >
                   <img
@@ -797,7 +797,7 @@ function SocietesPageContent() {
   const [isAddModal, setIsAddModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
-  const [editFournisseur, setEditFournisseur] = useState(false);
+  const [editFournisseur, setEditFournisseur] = useState("");
   const [editSiret, setEditSiret] = useState("");
   const [editDirecteur, setEditDirecteur] = useState("");
   const [editWebsite, setEditWebsite] = useState("");

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { Select } from "@/components/Select";
 import type {
   AccountStatus,
   AccountType,
@@ -52,15 +53,10 @@ function UploadIcon({ className }: { className?: string }) {
   );
 }
 
-function PdfIcon({ className }: { className?: string }) {
+function StarIcon({ filled, className }: { filled?: boolean; className?: string }) {
   return (
-    <svg
-      className={`h-28 w-28 text-red-600 dark:text-red-400 ${className ?? ""}`}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-label="PDF"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2 5 5h-5V4zM8 12h1v4H8v-4zm4 0h1v4h-1v-4zm-2 2h1v2h-1v-2zm4-2h1v4h-1v-4z" />
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
   );
 }
@@ -78,9 +74,11 @@ export default function SocieteDetailPage() {
     Record<string, Transaction[]>
   >({});
   const [hasLogo, setHasLogo] = useState(false);
-  const [hasKbis, setHasKbis] = useState(false);
-  const [hasStatut, setHasStatut] = useState(false);
-  const [hasPiGerant, setHasPiGerant] = useState(false);
+  const [documents, setDocuments] = useState<Array<{ file_type: string; filename: string | null }>>([]);
+  const [addDocModalOpen, setAddDocModalOpen] = useState(false);
+  const [addDocType, setAddDocType] = useState<string>("kbis");
+  const [addDocCustomName, setAddDocCustomName] = useState("");
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,44 +107,49 @@ export default function SocieteDetailPage() {
   const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
   const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [uploadingKbis, setUploadingKbis] = useState(false);
-  const [uploadingStatut, setUploadingStatut] = useState(false);
-  const [uploadingPiGerant, setUploadingPiGerant] = useState(false);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!id) return;
+    if (!id || typeof id !== "string" || !id.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resLogo, resKbis, resStatut, resPiGerant, resTemplates] = await Promise.all([
-        fetch(`/api/accounts/${id}`),
+      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resLogo, resDocs, resTemplates] = await Promise.all([
+        fetch(`/api/accounts/${id}`, { credentials: "same-origin" }),
         fetch(`/api/accounts/${id}/emails`),
         fetch(`/api/accounts/${id}/phones`),
         fetch(`/api/accounts/${id}/bank-accounts`),
         fetch("/api/banks"),
         fetch("/api/account-types"),
         fetch(`/api/accounts/${id}/files/logo`).then((r) => (r.ok ? r : null)),
-        fetch(`/api/accounts/${id}/files/kbis`).then((r) => (r.ok ? r : null)),
-        fetch(`/api/accounts/${id}/files/statut`).then((r) => (r.ok ? r : null)),
-        fetch(`/api/accounts/${id}/files/pi_gerant`).then((r) => (r.ok ? r : null)),
+        fetch(`/api/accounts/${id}/files`),
         fetch("/api/templates"),
       ]);
 
-      if (!resCompany.ok) throw new Error("Société introuvable");
+      if (!resCompany.ok) {
+        const errData = await resCompany.json().catch(() => ({}));
+        const msg = typeof errData?.error === "string" ? errData.error : "Société introuvable.";
+        throw new Error(msg);
+      }
       const companyData = await resCompany.json();
       setCompany(companyData);
 
       if (resEmails.ok) {
         const emailsData = await resEmails.json();
-        setEmails(emailsData);
+        const sorted = (Array.isArray(emailsData) ? emailsData : []).sort(
+          (a: CompanyEmail, b: CompanyEmail) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.email.localeCompare(b.email)
+        );
+        setEmails(sorted);
       }
 
       if (resPhones.ok) {
         const phonesData = await resPhones.json();
-        setPhones(phonesData);
+        const sorted = (Array.isArray(phonesData) ? phonesData : []).sort(
+          (a: CompanyPhone, b: CompanyPhone) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.phone.localeCompare(b.phone)
+        );
+        setPhones(sorted);
       }
 
       if (resBank.ok) {
@@ -181,9 +184,12 @@ export default function SocieteDetailPage() {
       }
 
       setHasLogo(resLogo?.ok ?? false);
-      setHasKbis(resKbis?.ok ?? false);
-      setHasStatut(resStatut?.ok ?? false);
-      setHasPiGerant(resPiGerant?.ok ?? false);
+      if (resDocs?.ok) {
+        const docsData = await resDocs.json();
+        setDocuments(Array.isArray(docsData) ? docsData : []);
+      } else {
+        setDocuments([]);
+      }
 
       if (resTemplates?.ok) {
         const templatesData = await resTemplates.json();
@@ -224,7 +230,7 @@ export default function SocieteDetailPage() {
         throw new Error(data.error ?? "Échec de l'ajout");
       }
       const added = await res.json();
-      setEmails((prev) => [...prev, added].sort((a, b) => a.email.localeCompare(b.email)));
+      setEmails((prev) => [...prev, added].sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.email.localeCompare(b.email)));
       setNewEmail("");
       setNewPassword("");
     } catch (e) {
@@ -250,12 +256,51 @@ export default function SocieteDetailPage() {
         throw new Error(data.error ?? "Échec de l'ajout");
       }
       const added = await res.json();
-      setPhones((prev) => [...prev, added].sort((a, b) => a.phone.localeCompare(b.phone)));
+      setPhones((prev) => [...prev, added].sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.phone.localeCompare(b.phone)));
       setNewPhone("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setAddingPhone(false);
+    }
+  };
+
+  const handleSetDefaultEmail = async (emailId: string) => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}/emails/${emailId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_default: true }),
+      });
+      if (!res.ok) throw new Error("Échec de la mise à jour");
+      const updated = await res.json();
+      setEmails((prev) =>
+        prev
+          .map((e) => (e.id === emailId ? { ...e, is_default: true } : { ...e, is_default: false }))
+          .sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.email.localeCompare(b.email))
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    }
+  };
+
+  const handleSetDefaultPhone = async (phoneId: string) => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}/phones/${phoneId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_default: true }),
+      });
+      if (!res.ok) throw new Error("Échec de la mise à jour");
+      setPhones((prev) =>
+        prev
+          .map((p) => (p.id === phoneId ? { ...p, is_default: true } : { ...p, is_default: false }))
+          .sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.phone.localeCompare(b.phone))
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
     }
   };
 
@@ -265,7 +310,7 @@ export default function SocieteDetailPage() {
     try {
       const res = await fetch(`/api/accounts/${id}/phones/${phoneId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Échec de la suppression");
-      setPhones((prev) => prev.filter((p) => p.id !== phoneId));
+      await fetchData();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     }
@@ -277,12 +322,12 @@ export default function SocieteDetailPage() {
     try {
       const res = await fetch(`/api/accounts/${id}/emails/${emailId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Échec de la suppression");
-      setEmails((prev) => prev.filter((e) => e.id !== emailId));
       setRevealedPasswords((p) => {
         const next = { ...p };
         delete next[emailId];
         return next;
       });
+      await fetchData();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     }
@@ -362,15 +407,34 @@ export default function SocieteDetailPage() {
     }
   };
 
+  const DOC_TYPE_LABELS: Record<string, string> = {
+    kbis: "Kbis",
+    statut: "Statut de la société",
+    pi_gerant: "Pièce d'identité du gérant",
+    pi_recto: "Pièce d'identité recto",
+    pi_verso: "Pièce d'identité verso",
+    selfie: "Selfie",
+  };
+
+  function getDocLabel(fileType: string): string {
+    if (DOC_TYPE_LABELS[fileType]) return DOC_TYPE_LABELS[fileType];
+    if (fileType.startsWith("autre_")) {
+      const slug = fileType.slice(6);
+      return slug
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
+    }
+    return fileType;
+  }
+
   const handleUploadDoc = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "kbis" | "statut" | "pi_gerant",
-    setUploading: (v: boolean) => void,
-    setHas: (v: boolean) => void
+    type: string
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
+    setUploadingDocType(type);
     setError(null);
     try {
       const formData = new FormData();
@@ -384,13 +448,62 @@ export default function SocieteDetailPage() {
         const data = await res.json();
         throw new Error(data.error ?? "Échec de l'upload");
       }
-      setHas(true);
+      const row = await res.json();
+      setDocuments((prev) => {
+        const filtered = prev.filter((d) => d.file_type !== type);
+        return [...filtered, { file_type: row.file_type, filename: row.filename }];
+      });
+      setAddDocModalOpen(false);
+      setAddDocType("kbis");
+      setAddDocCustomName("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
-      setUploading(false);
+      setUploadingDocType(null);
       e.target.value = "";
     }
+  };
+
+  const handleAddDocSubmit = (file: File) => {
+    let type = addDocType;
+    if (type === "autre") {
+      const slug = addDocCustomName
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "");
+      if (!slug) return;
+      type = `autre_${slug}`;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("type", type);
+    setUploadingDocType(type);
+    setError(null);
+    fetch(`/api/accounts/${id}/files`, {
+      method: "POST",
+      body: formData,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error ?? "Échec de l'upload");
+        }
+        return res.json();
+      })
+      .then((row) => {
+        setDocuments((prev) => {
+          const filtered = prev.filter((d) => d.file_type !== type);
+          return [...filtered, { file_type: row.file_type, filename: row.filename }];
+        });
+        setAddDocModalOpen(false);
+        setAddDocType("kbis");
+        setAddDocCustomName("");
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Erreur inconnue"))
+      .finally(() => {
+        setUploadingDocType(null);
+      });
   };
 
   const openCreateAccountModal = () => {
@@ -560,13 +673,14 @@ export default function SocieteDetailPage() {
         )}
 
         <div className="space-y-8">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,200px)_1fr]">
-            <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-              <h2 className="section-header mb-4 text-lg font-medium">Logo</h2>
-              <label className="group flex cursor-pointer flex-col items-start gap-2 rounded-lg py-2 min-h-[120px] w-full">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+            <div className="flex flex-col gap-6">
+            <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
+              <h2 className="section-header mb-2 text-base font-medium">Logo</h2>
+              <label className="group flex cursor-pointer flex-col items-start gap-2 rounded-lg py-2 min-h-[80px] w-full">
                 {hasLogo ? (
-                  <div className="relative w-full min-h-[80px] flex-1">
-                    <div className="w-full h-full min-h-[80px] overflow-hidden rounded-lg bg-[var(--muted)]">
+                  <div className="relative w-full h-[64px] flex-1">
+                    <div className="w-full h-full overflow-hidden rounded-lg bg-[var(--muted)]">
                       <img
                         src={`/api/accounts/${id}/files/logo?t=${Date.now()}`}
                         alt="Logo"
@@ -598,57 +712,105 @@ export default function SocieteDetailPage() {
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+              <h2 className="section-header mb-4 text-lg font-medium">Documents</h2>
+              <div className="grid grid-cols-1 gap-2">
+                {documents.map((doc) => (
+                  <label
+                    key={doc.file_type}
+                    className="group relative flex cursor-pointer flex-col items-center justify-center gap-0 rounded-lg border border-[var(--border)] bg-[var(--background)] py-2 min-h-[44px] w-full"
+                  >
+                    <p className="text-xs font-medium text-[var(--muted-foreground)]">{getDocLabel(doc.file_type)}</p>
+                    <div className="absolute inset-0 flex flex-row items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                          <a
+                            href={`/api/accounts/${id}/files/${encodeURIComponent(doc.file_type)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                          >
+                            Voir
+                          </a>
+                          <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
+                            {uploadingDocType === doc.file_type ? "Upload…" : "Remplacer"}
+                          </span>
+                    </div>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*"
+                      className="hidden"
+                      disabled={!!uploadingDocType}
+                      onChange={(e) => handleUploadDoc(e, doc.file_type)}
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddDocModalOpen(true);
+                  setAddDocType("kbis");
+                  setAddDocCustomName("");
+                  setError(null);
+                }}
+                className="mt-4 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+              >
+                Ajouter un document
+              </button>
+            </section>
+            </div>
+
+            <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
               <div className="grid gap-6 lg:grid-cols-4">
                 <div>
                   <h2 className="section-header mb-4 text-lg font-medium">Informations générales</h2>
-                  <dl className="grid gap-3 sm:grid-cols-2">
+                  <dl className="grid gap-5 sm:grid-cols-2">
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Nom</dt>
-                      <dd className="text-sm">{company?.name ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Nom</dt>
+                      <dd className="text-base">{company?.name ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">VPS</dt>
-                      <dd className="text-sm">{company?.vps ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">VPS</dt>
+                      <dd className="text-base">{company?.vps ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Forme juridique</dt>
-                      <dd className="text-sm">{company?.forme_juridique ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Forme juridique</dt>
+                      <dd className="text-base">{company?.forme_juridique ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Capital social</dt>
-                      <dd className="text-sm">{company?.capital_social ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Capital social</dt>
+                      <dd className="text-base">{company?.capital_social ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Adresse</dt>
-                      <dd className="text-sm">{company?.address ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Adresse</dt>
+                      <dd className="text-base">{company?.address ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Code postal</dt>
-                      <dd className="text-sm">{company?.code_postal ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Code postal</dt>
+                      <dd className="text-base">{company?.code_postal ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Ville</dt>
-                      <dd className="text-sm">{company?.ville ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Ville</dt>
+                      <dd className="text-base">{company?.ville ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
-                      <dd className="text-sm">{company?.country_code ? (COUNTRY_LABELS[company.country_code] ?? company.country_code) : "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays</dt>
+                      <dd className="text-base">{company?.country_code ? (COUNTRY_LABELS[company.country_code] ?? company.country_code) : "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Siret</dt>
-                      <dd className="text-sm">{company?.siret ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Siret</dt>
+                      <dd className="text-base">{company?.siret ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Activité</dt>
-                      <dd className="text-sm">{company?.activite ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Activité</dt>
+                      <dd className="text-base">{company?.activite ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Date d&apos;immatriculation</dt>
-                      <dd className="text-sm">{formatDateDisplay(company?.date_immatriculation)}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Date d&apos;immatriculation</dt>
+                      <dd className="text-base">{formatDateDisplay(company?.date_immatriculation)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Site web</dt>
-                      <dd className="text-sm">
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Site web</dt>
+                      <dd className="text-base">
                         {company?.website ? (
                           <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
                             {company.website}
@@ -662,87 +824,87 @@ export default function SocieteDetailPage() {
                 </div>
                 <div>
                   <h2 className="section-header mb-4 text-lg font-medium">Gérant</h2>
-                  <dl className="grid gap-3 sm:grid-cols-2">
+                  <dl className="grid gap-5 sm:grid-cols-2">
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Nom</dt>
-                      <dd className="text-sm">{company?.directeur ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Nom</dt>
+                      <dd className="text-base">{company?.directeur ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Adresse personnelle</dt>
-                      <dd className="text-sm">{company?.gerant_adresse ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Adresse personnelle</dt>
+                      <dd className="text-base">{company?.gerant_adresse ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Code postal</dt>
-                      <dd className="text-sm">{company?.gerant_code_postal ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Code postal</dt>
+                      <dd className="text-base">{company?.gerant_code_postal ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Ville</dt>
-                      <dd className="text-sm">{company?.gerant_ville ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Ville</dt>
+                      <dd className="text-base">{company?.gerant_ville ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays</dt>
-                      <dd className="text-sm">{company?.gerant_pays ? (COUNTRY_LABELS[company.gerant_pays] ?? company.gerant_pays) : "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays</dt>
+                      <dd className="text-base">{company?.gerant_pays ? (COUNTRY_LABELS[company.gerant_pays] ?? company.gerant_pays) : "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Date de naissance</dt>
-                      <dd className="text-sm">{formatDateDisplay(company?.gerant_date_naissance)}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Date de naissance</dt>
+                      <dd className="text-base">{formatDateDisplay(company?.gerant_date_naissance)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Ville de naissance</dt>
-                      <dd className="text-sm">{company?.gerant_ville_naissance ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Ville de naissance</dt>
+                      <dd className="text-base">{company?.gerant_ville_naissance ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Code postal de naissance</dt>
-                      <dd className="text-sm">{company?.gerant_code_postal_naissance ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Code postal de naissance</dt>
+                      <dd className="text-base">{company?.gerant_code_postal_naissance ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Pays de naissance</dt>
-                      <dd className="text-sm">{company?.gerant_pays_naissance ? (COUNTRY_LABELS[company.gerant_pays_naissance] ?? company.gerant_pays_naissance) : "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays de naissance</dt>
+                      <dd className="text-base">{company?.gerant_pays_naissance ? (COUNTRY_LABELS[company.gerant_pays_naissance] ?? company.gerant_pays_naissance) : "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° fiscal</dt>
-                      <dd className="text-sm">{company?.gerant_numero_fiscal ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° fiscal</dt>
+                      <dd className="text-base">{company?.gerant_numero_fiscal ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° sécurité sociale</dt>
-                      <dd className="text-sm">{company?.gerant_numero_secu ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° sécurité sociale</dt>
+                      <dd className="text-base">{company?.gerant_numero_secu ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° pièce d&apos;identité</dt>
-                      <dd className="text-sm">{company?.gerant_numero_piece_identite ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° pièce d&apos;identité</dt>
+                      <dd className="text-base">{company?.gerant_numero_piece_identite ?? "—"}</dd>
                     </div>
                   </dl>
                 </div>
                 <div>
                   <h2 className="section-header mb-4 text-lg font-medium">Facturation</h2>
-                  <dl className="grid gap-3 sm:grid-cols-1">
+                  <dl className="grid gap-5 sm:grid-cols-1">
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">N° TVA</dt>
-                      <dd className="text-sm">{company?.vat_number ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° TVA</dt>
+                      <dd className="text-base">{company?.vat_number ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Taux TVA</dt>
-                      <dd className="text-sm">{company?.vat_rate != null ? `${company.vat_rate}%` : "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Taux TVA</dt>
+                      <dd className="text-base">{company?.vat_rate != null ? `${company.vat_rate}%` : "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Préfixe factures</dt>
-                      <dd className="text-sm">{company?.invoice_prefix ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Préfixe factures</dt>
+                      <dd className="text-base">{company?.invoice_prefix ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Prochain numéro</dt>
-                      <dd className="text-sm">
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Prochain numéro</dt>
+                      <dd className="text-base">
                         {company?.invoice_next_number != null
                           ? `${company.invoice_prefix ?? "FAC-"}${new Date().getFullYear()}-${String(company.invoice_next_number).padStart(4, "0")}`
                           : "—"}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Devise</dt>
-                      <dd className="text-sm">{company?.currency ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Devise</dt>
+                      <dd className="text-base">{company?.currency ?? "—"}</dd>
                     </div>
                     <div className="mt-4 pt-4 border-t border-[var(--border)]">
-                      <dt className="text-xs font-medium uppercase text-[var(--muted-foreground)]">Fournisseur</dt>
-                      <dd className="text-sm">{company?.fournisseur ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Fournisseur</dt>
+                      <dd className="text-base">{company?.fournisseur ?? "—"}</dd>
                     </div>
                   </dl>
                 </div>
@@ -804,7 +966,7 @@ export default function SocieteDetailPage() {
                     }}
                     placeholder="Saisir des notes libres…"
                     rows={12}
-                    className="block w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm min-h-[200px]"
+                    className="block w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-base min-h-[200px]"
                   />
                 </div>
               </div>
@@ -825,80 +987,6 @@ export default function SocieteDetailPage() {
             </section>
 
           </div>
-
-          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-            <h2 className="section-header mb-4 text-lg font-medium">Documents</h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {(
-                [
-                  {
-                    key: "kbis",
-                    label: "Kbis",
-                    has: hasKbis,
-                    uploading: uploadingKbis,
-                    setUploading: setUploadingKbis,
-                    setHas: setHasKbis,
-                  },
-                  {
-                    key: "statut",
-                    label: "Statut de la société",
-                    has: hasStatut,
-                    uploading: uploadingStatut,
-                    setUploading: setUploadingStatut,
-                    setHas: setHasStatut,
-                  },
-                  {
-                    key: "pi_gerant",
-                    label: "Pièce d'identité du gérant",
-                    has: hasPiGerant,
-                    uploading: uploadingPiGerant,
-                    setUploading: setUploadingPiGerant,
-                    setHas: setHasPiGerant,
-                  },
-                ] as const
-              ).map(({ key, label, has, uploading, setUploading, setHas }) => (
-                <label
-                  key={key}
-                  className="group flex cursor-pointer flex-col items-center justify-center gap-0 rounded-lg border border-[var(--border)] bg-[var(--background)] py-6 min-h-[140px] w-full"
-                >
-                  {has ? (
-                    <div className="relative w-full min-h-[120px] flex-1 flex flex-col items-center justify-center p-0">
-                      <PdfIcon className="my-0 shrink-0" />
-                      <p className="text-xs font-medium text-[var(--muted-foreground)] mt-1">{label}</p>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                        <a
-                          href={`/api/accounts/${id}/files/${key}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-                        >
-                          Voir
-                        </a>
-                        <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
-                          {uploading ? "Upload…" : "Remplacer"}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <UploadIcon className="text-[var(--muted-foreground)]" />
-                      <span className="mt-2 text-sm text-[var(--muted-foreground)]">
-                        {uploading ? "Upload…" : label}
-                      </span>
-                    </>
-                  )}
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    className="hidden"
-                    disabled={uploading}
-                    onChange={(e) => handleUploadDoc(e, key, setUploading, setHas)}
-                  />
-                </label>
-              ))}
-            </div>
-          </section>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
@@ -934,6 +1022,7 @@ export default function SocieteDetailPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
+                        <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)] w-10">Défaut</th>
                         <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)]">Email</th>
                         <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)]">Mot de passe</th>
                         <th className="px-4 py-2 text-right font-medium text-[var(--muted-foreground)]">Actions</th>
@@ -942,6 +1031,16 @@ export default function SocieteDetailPage() {
                     <tbody>
                       {emails.map((em) => (
                         <tr key={em.id} className="border-t border-[var(--border)]">
+                          <td className="px-4 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSetDefaultEmail(em.id)}
+                              className={`rounded p-1 ${em.is_default ? "text-amber-500" : "text-[var(--muted-foreground)] hover:text-amber-500"}`}
+                              title={em.is_default ? "Email par défaut" : "Définir comme défaut"}
+                            >
+                              <StarIcon filled={!!em.is_default} />
+                            </button>
+                          </td>
                           <td className="px-4 py-2">{em.email}</td>
                           <td className="px-4 py-2 font-mono text-xs">
                             {revealedPasswords[em.id] !== undefined ? (
@@ -1000,6 +1099,7 @@ export default function SocieteDetailPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
+                        <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)] w-10">Défaut</th>
                         <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)]">Numéro</th>
                         <th className="px-4 py-2 text-right font-medium text-[var(--muted-foreground)]">Actions</th>
                       </tr>
@@ -1007,6 +1107,16 @@ export default function SocieteDetailPage() {
                     <tbody>
                       {phones.map((ph) => (
                         <tr key={ph.id} className="border-t border-[var(--border)]">
+                          <td className="px-4 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSetDefaultPhone(ph.id)}
+                              className={`rounded p-1 ${ph.is_default ? "text-amber-500" : "text-[var(--muted-foreground)] hover:text-amber-500"}`}
+                              title={ph.is_default ? "Numéro par défaut" : "Définir comme défaut"}
+                            >
+                              <StarIcon filled={!!ph.is_default} />
+                            </button>
+                          </td>
                           <td className="px-4 py-2">{ph.phone}</td>
                           <td className="px-4 py-2 text-right">
                             <button
@@ -1109,6 +1219,75 @@ export default function SocieteDetailPage() {
           onClose={() => setBankAccountToDelete(null)}
           deleting={deletingBankAccountId === bankAccountToDelete.id}
         />
+      )}
+
+      {addDocModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !uploadingDocType && setAddDocModalOpen(false)}>
+          <div
+            className="flex w-full max-w-md flex-col rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="subsection-header mb-4 text-lg font-medium">Ajouter un document</h3>
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                {error}
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type</label>
+              <Select
+                value={addDocType}
+                onChange={(e) => setAddDocType(e.target.value)}
+              >
+                <option value="kbis">Kbis</option>
+                <option value="statut">Statut de la société</option>
+                <option value="pi_recto">Pièce d&apos;identité recto</option>
+                <option value="pi_verso">Pièce d&apos;identité verso</option>
+                <option value="selfie">Selfie</option>
+                <option value="autre">Autre</option>
+              </Select>
+            </div>
+            {addDocType === "autre" && (
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du document</label>
+                <input
+                  type="text"
+                  value={addDocCustomName}
+                  onChange={(e) => setAddDocCustomName(e.target.value)}
+                  placeholder="Ex. Contrat de travail"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Fichier</label>
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                disabled={!!uploadingDocType}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (addDocType === "autre" && !addDocCustomName.trim()) {
+                    setError("Veuillez saisir un nom pour le document.");
+                    return;
+                  }
+                  handleAddDocSubmit(file);
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !uploadingDocType && setAddDocModalOpen(false)}
+                className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {createAccountModalOpen && company && (
