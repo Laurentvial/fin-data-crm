@@ -41,13 +41,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const lineItems: Array<{ description: string; quantity: number; unit_price_ttc: number }> = [];
+    const lineItems: Array<{ description: string; quantity: number; unit_price_ttc: number; vat_rate?: number }> = [];
     for (const item of lineItemsRaw) {
       const desc = typeof item?.description === "string" ? item.description.trim() : "";
       const qty = Number(item?.quantity);
       const unitPrice = Number(item?.unit_price_ttc);
+      const vatRateRaw =
+        typeof item?.vat_rate === "number" && !Number.isNaN(item.vat_rate)
+          ? item.vat_rate
+          : typeof item?.vat_rate === "string"
+            ? parseFloat(item.vat_rate)
+            : undefined;
+      const vatRate =
+        vatRateRaw != null &&
+        !Number.isNaN(vatRateRaw) &&
+        vatRateRaw >= 0 &&
+        vatRateRaw <= 100
+          ? vatRateRaw
+          : undefined;
       if (desc && qty > 0 && unitPrice > 0) {
-        lineItems.push({ description: desc, quantity: qty, unit_price_ttc: unitPrice });
+        lineItems.push({
+          description: desc,
+          quantity: qty,
+          unit_price_ttc: unitPrice,
+          vat_rate: vatRate,
+        });
       }
     }
     if (lineItems.length === 0) {

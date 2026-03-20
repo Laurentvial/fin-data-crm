@@ -3,12 +3,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Customer, Transaction } from "@/lib/types";
 import type { InvoiceLineItemInput } from "@/lib/types";
+import { Select } from "@/components/Select";
 
 interface LineItemRow {
   id: string;
   description: string;
   quantity: number;
   unit_price_ttc: number;
+  vat_rate: number;
 }
 
 interface GenerateInvoiceModalProps {
@@ -17,12 +19,13 @@ interface GenerateInvoiceModalProps {
   onSuccess: (invoiceId: string, pdfUrl: string, invoiceNumber: string) => void;
 }
 
-function createEmptyRow(): LineItemRow {
+function createEmptyRow(defaultVatRate: number): LineItemRow {
   return {
     id: crypto.randomUUID(),
     description: "",
     quantity: 1,
     unit_price_ttc: 0,
+    vat_rate: defaultVatRate,
   };
 }
 
@@ -35,18 +38,42 @@ export function GenerateInvoiceModal({
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerVat, setCustomerVat] = useState("");
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [
-    createEmptyRow(),
+    createEmptyRow(20),
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
+  const [horsTaxes, setHorsTaxes] = useState(false);
   const customerListRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const companyId = transaction.company_id;
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`/api/accounts/${companyId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((company) => {
+        const rates = Array.isArray(company?.vat_rates) && company.vat_rates.length > 0
+          ? company.vat_rates
+          : company?.vat_rate != null
+            ? [company.vat_rate]
+            : [20];
+        setCompanyVatRates(rates);
+        setLineItems((prev) =>
+          prev.map((row) =>
+            rates.includes(row.vat_rate) || row.vat_rate === 0
+              ? row
+              : { ...row, vat_rate: rates[0] ?? 20 }
+          )
+        );
+      })
+      .catch(() => {});
+  }, [companyId]);
 
   const fetchCustomers = useCallback(async (search?: string) => {
     if (!companyId) return;
@@ -126,14 +153,17 @@ export function GenerateInvoiceModal({
     );
   };
 
+  const defaultVatRate = horsTaxes ? 0 : (companyVatRates[0] ?? 20);
+  const vatRateOptions = [...new Set([0, ...companyVatRates])].sort((a, b) => a - b);
+
   const addLine = () => {
-    setLineItems((prev) => [...prev, createEmptyRow()]);
+    setLineItems((prev) => [...prev, createEmptyRow(defaultVatRate)]);
   };
 
   const removeLine = (id: string) => {
     setLineItems((prev) => {
       const next = prev.filter((r) => r.id !== id);
-      return next.length > 0 ? next : [createEmptyRow()];
+      return next.length > 0 ? next : [createEmptyRow(defaultVatRate)];
     });
   };
 
@@ -145,10 +175,11 @@ export function GenerateInvoiceModal({
           r.quantity > 0 &&
           r.unit_price_ttc > 0
       )
-      .map(({ description, quantity, unit_price_ttc }) => ({
+      .map(({ description, quantity, unit_price_ttc, vat_rate }) => ({
         description: description.trim(),
         quantity,
         unit_price_ttc,
+        vat_rate,
       }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -295,6 +326,21 @@ export function GenerateInvoiceModal({
             />
           </div>
 
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={horsTaxes}
+              onChange={(e) => {
+                const isHorsTaxes = e.target.checked;
+                setHorsTaxes(isHorsTaxes);
+                const newRate = isHorsTaxes ? 0 : (companyVatRates[0] ?? 20);
+                setLineItems((prev) => prev.map((row) => ({ ...row, vat_rate: newRate })));
+              }}
+              className="rounded border-[var(--border)]"
+            />
+            <span className="text-sm font-medium">Facture hors taxes</span>
+          </label>
+
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label className="text-sm font-medium text-[var(--foreground)]">
@@ -314,8 +360,11 @@ export function GenerateInvoiceModal({
                   <tr className="border-b border-[var(--border)] bg-[var(--muted)]/50">
                     <th className="px-3 py-2 text-left font-medium">Description</th>
                     <th className="w-20 px-3 py-2 text-right font-medium">Qté</th>
+                    {!horsTaxes && (
+                      <th className="w-24 px-3 py-2 text-right font-medium">TVA %</th>
+                    )}
                     <th className="w-32 px-3 py-2 text-right font-medium">
-                      Prix unit. TTC
+                      Prix unit. {horsTaxes ? "HT" : "TTC"}
                     </th>
                     <th className="w-10 px-2 py-2"></th>
                   </tr>
@@ -353,6 +402,27 @@ export function GenerateInvoiceModal({
                           className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-right text-sm"
                         />
                       </td>
+                      {!horsTaxes && (
+                        <td className="px-3 py-2">
+                          <Select
+                            value={String(row.vat_rate)}
+                            onChange={(e) =>
+                              updateLineItem(
+                                row.id,
+                                "vat_rate",
+                                Number(e.target.value)
+                              )
+                            }
+                            className="w-full py-1.5 text-sm"
+                          >
+                            {vatRateOptions.map((r) => (
+                              <option key={r} value={String(r)}>
+                                {r === 0 ? "0% (hors taxes)" : `${r}%`}
+                              </option>
+                            ))}
+                          </Select>
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"

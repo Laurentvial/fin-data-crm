@@ -57,6 +57,8 @@ export interface InvoiceLineItemInput {
   description: string;
   quantity: number;
   unit_price_ttc: number;
+  /** VAT rate (%) for this line. If omitted, company default is used. */
+  vat_rate?: number;
 }
 
 export interface Customer {

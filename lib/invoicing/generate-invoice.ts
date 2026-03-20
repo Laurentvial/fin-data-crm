@@ -49,16 +49,20 @@ export async function generateInvoice(
   const companyId = txn.company_id as string;
   const transactionAmount = Math.abs(Number(txn.amount));
   const vatRatesArr = txn.vat_rates as number[] | null | undefined;
-  const vatRatePct = Array.isArray(vatRatesArr) && vatRatesArr.length > 0
-    ? vatRatesArr[0]
-    : Number(txn.vat_rate ?? 20);
-  const vatRate = vatRatePct / 100;
+  const defaultVatRatePct =
+    Array.isArray(vatRatesArr) && vatRatesArr.length > 0
+      ? vatRatesArr[0]
+      : Number(txn.vat_rate ?? 20);
   const currency = (txn.currency as string) ?? "EUR";
   const countryCode = (txn.country_code as string) ?? "FR";
 
   const lineItems: InvoiceLineItem[] = lineItemsInput.map((li) => {
+    const vatRatePct =
+      li.vat_rate != null && !Number.isNaN(li.vat_rate) ? li.vat_rate : defaultVatRatePct;
+    const vatRate = vatRatePct / 100;
     const amount = Math.round(li.quantity * li.unit_price_ttc * 100) / 100;
-    const unitPriceHt = amount / (1 + vatRate) / li.quantity;
+    const unitPriceHt =
+      vatRate >= 0 ? amount / (1 + vatRate) / li.quantity : amount / li.quantity;
     return {
       description: li.description,
       quantity: li.quantity,
@@ -73,8 +77,16 @@ export async function generateInvoice(
     throw new Error("Le total des lignes ne correspond pas au montant de la transaction");
   }
 
-  const subtotal = Math.round(lineItems.reduce((s, li) => s + li.amount / (1 + vatRate), 0) * 100) / 100;
+  const subtotal = Math.round(
+    lineItems.reduce((s, li) => {
+      const rate = li.vat_rate / 100;
+      return s + li.amount / (1 + rate);
+    }, 0) * 100
+  ) / 100;
   const taxAmount = Math.round((total - subtotal) * 100) / 100;
+
+  const allLinesZeroVat = lineItems.length > 0 && lineItems.every((li) => li.vat_rate === 0);
+  const invoiceVatRate = allLinesZeroVat ? 0 : defaultVatRatePct;
 
   const invoicePrefix = (txn.invoice_prefix as string) ?? "FAC-";
   const nextNumRows = await sql`
@@ -169,7 +181,7 @@ export async function generateInvoice(
       taxAmount,
       total,
       currency,
-      vatRate: vatRatePct,
+      vatRate: invoiceVatRate,
       isEur: currency === "EUR",
     },
     lineItems,
