@@ -411,7 +411,7 @@ function CompanyModal({
   onGerantNumeroSecuChange: (v: string) => void;
   onGerantNumeroPieceIdentiteChange: (v: string) => void;
   onVatNumberChange?: (v: string) => void;
-  onVatRateChange?: (v: string) => void;
+  onVatRatesChange?: (v: number[]) => void;
   onInvoicePrefixChange?: (v: string) => void;
   onInvoiceNextNumberChange?: (v: string) => void;
   onCurrencyChange?: (v: string) => void;
