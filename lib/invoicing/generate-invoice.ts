@@ -34,7 +34,7 @@ export async function generateInvoice(
   const txnRows = await sql`
     SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
       ba.company_id, c.name AS company_name, c.address AS company_address, c.siret, c.directeur,
-      c.vat_number, c.vat_rate, c.invoice_prefix, c.invoice_next_number, c.currency, c.country_code,
+      c.vat_number, c.vat_rate, c.vat_rates, c.invoice_prefix, c.invoice_next_number, c.currency, c.country_code,
       c.invoice_template_id, c.website AS company_website
     FROM transactions t
     JOIN bank_accounts ba ON ba.id = t.bank_account_id
@@ -48,7 +48,10 @@ export async function generateInvoice(
 
   const companyId = txn.company_id as string;
   const transactionAmount = Math.abs(Number(txn.amount));
-  const vatRatePct = Number(txn.vat_rate ?? 20);
+  const vatRatesArr = txn.vat_rates as number[] | null | undefined;
+  const vatRatePct = Array.isArray(vatRatesArr) && vatRatesArr.length > 0
+    ? vatRatesArr[0]
+    : Number(txn.vat_rate ?? 20);
   const vatRate = vatRatePct / 100;
   const currency = (txn.currency as string) ?? "EUR";
   const countryCode = (txn.country_code as string) ?? "FR";

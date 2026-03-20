@@ -884,7 +884,13 @@ export default function SocieteDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Taux TVA</dt>
-                      <dd className="text-base">{company?.vat_rate != null ? `${company.vat_rate}%` : "—"}</dd>
+                      <dd className="text-base">
+                        {Array.isArray(company?.vat_rates) && company.vat_rates.length > 0
+                          ? company.vat_rates.map((r) => `${r}%`).join(", ")
+                          : company?.vat_rate != null
+                            ? `${company.vat_rate}%`
+                            : "—"}
+                      </dd>
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Préfixe factures</dt>
@@ -950,6 +956,7 @@ export default function SocieteDetailPage() {
                             gerant_numero_piece_identite: company.gerant_numero_piece_identite ?? null,
                             vat_number: company.vat_number ?? null,
                             vat_rate: company.vat_rate,
+                            vat_rates: company.vat_rates,
                             invoice_prefix: company.invoice_prefix ?? null,
                             invoice_next_number: company.invoice_next_number,
                             currency: company.currency ?? null,

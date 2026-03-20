@@ -38,6 +38,7 @@ function HomeContent() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [type, setType] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [invoiceModalTransaction, setInvoiceModalTransaction] = useState<Transaction | null>(null);
   const [zoom, setZoom] = useState(100);
@@ -75,8 +76,12 @@ function HomeContent() {
           if (cmp === 0) cmp = parseDate(a.created_at) - parseDate(b.created_at);
           break;
         case "bank_account_name": {
-          const na = a.bank_account_name ?? a.company_name ?? "";
-          const nb = b.bank_account_name ?? b.company_name ?? "";
+          const accountA = a.bank_account_name ?? "";
+          const companyA = a.company_name ?? "";
+          const na = accountA && companyA && accountA !== companyA ? `${accountA} – ${companyA}` : accountA || companyA || "";
+          const accountB = b.bank_account_name ?? "";
+          const companyB = b.company_name ?? "";
+          const nb = accountB && companyB && accountB !== companyB ? `${accountB} – ${companyB}` : accountB || companyB || "";
           cmp = na.localeCompare(nb);
           break;
         }
@@ -103,6 +108,21 @@ function HomeContent() {
       return cmp * dir;
     });
   }, [transactions, sortState]);
+
+  const filteredTransactions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sortedTransactions;
+    return sortedTransactions.filter((t) => {
+      const desc = (t.description ?? "").toLowerCase();
+      const amt = String(t.amount ?? "");
+      const signedAmt = t.type === "DEBIT" ? `-${amt}` : amt;
+      return desc.includes(q) || amt.includes(q) || signedAmt.includes(q);
+    });
+  }, [sortedTransactions, searchQuery]);
+
+  const filteredBalance = useMemo(() => {
+    return filteredTransactions.reduce((sum, t) => sum + signedAmount(t), 0);
+  }, [filteredTransactions]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoadingBankAccounts(true);
@@ -243,13 +263,16 @@ function HomeContent() {
 
   const handleExport = useCallback(() => {
     const headers = ["ID", "Date", "Compte", "Montant", "Type", "Description", "Créé le"];
-    const rows = sortedTransactions.map((t) => {
+    const rows = filteredTransactions.map((t) => {
       const num = Number(t.amount);
       const signed = t.type === "DEBIT" ? -num : num;
+      const account = t.bank_account_name ?? "";
+      const company = t.company_name ?? "";
+      const compte = account && company && account !== company ? `${account} – ${company}` : account || company || "";
       return [
         t.id,
         t.transaction_date,
-        t.bank_account_name ?? t.company_name ?? "",
+        compte,
         signed,
         t.type,
         t.description ?? "",
@@ -264,7 +287,7 @@ function HomeContent() {
     a.download = "transactions.csv";
     a.click();
     URL.revokeObjectURL(url);
-  }, [sortedTransactions]);
+  }, [filteredTransactions]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -298,9 +321,27 @@ function HomeContent() {
               />
             </div>
           )}
+          <div className="mb-3 flex shrink-0 items-center gap-2">
+            <label htmlFor="transaction-search" className="sr-only">
+              Rechercher par description ou montant
+            </label>
+            <input
+              id="transaction-search"
+              type="search"
+              placeholder="Rechercher par description ou montant…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="max-w-sm flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+            />
+            {searchQuery.trim() && (
+              <span className="text-xs text-[var(--muted-foreground)]">
+                {filteredTransactions.length} / {transactions.length}
+              </span>
+            )}
+          </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <TransactionsGrid
-              transactions={sortedTransactions}
+              transactions={filteredTransactions}
               loading={loadingTransactions}
               zoom={zoom}
               onCellValueChanged={handleCellValueChanged}
@@ -329,11 +370,11 @@ function HomeContent() {
         />
       )}
       <SheetFooter
-        totalCount={transactions.length}
+        totalCount={filteredTransactions.length}
         saveStatus={saveStatus}
         saveMessage={saveMessage}
         selectedSum={selectedSum}
-        totalBalance={totalBalance}
+        totalBalance={filteredBalance}
         zoom={zoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}

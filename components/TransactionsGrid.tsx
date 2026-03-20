@@ -311,7 +311,7 @@ export function TransactionsGrid({
       { title: "#", width: Math.round(62 * scale), id: "rowNum" },
       { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(100 * scale), id: "id" },
       { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(130 * scale), id: "transaction_date" },
-      { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(200 * scale), id: "bank_account_name" },
+      { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(280 * scale), id: "bank_account_name" },
       { title: `Montant${sortIndicator("amount")}`, width: Math.round(135 * scale), id: "amount" },
       { title: `Type${sortIndicator("type")}`, width: Math.round(80 * scale), id: "type" },
       { title: `Description${sortIndicator("description")}`, width: 220, grow: 1, id: "description" },
@@ -372,7 +372,12 @@ export function TransactionsGrid({
         };
       }
       if (field === "bank_account_name") {
-        const val = txn.bank_account_name ?? txn.company_name ?? "";
+        const account = txn.bank_account_name ?? "";
+        const company = txn.company_name ?? "";
+        const val =
+          account && company && account !== company
+            ? `${account} – ${company}`
+            : account || company || "";
         return {
           kind: GridCellKind.Text,
           data: val,

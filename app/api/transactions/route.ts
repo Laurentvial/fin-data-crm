@@ -51,9 +51,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "type invalide (DEBIT ou CREDIT)" }, { status: 400 });
     }
 
+    // processed_by_user_id is bigint (Telegram ID) - shared with Python service
+    const telegramRow = await sql`
+      SELECT telegram_id FROM user_telegram WHERE user_id = ${session.user.id}::uuid
+    `;
+    const telegramId = Array.isArray(telegramRow) ? telegramRow[0]?.telegram_id : (telegramRow as { telegram_id?: number })?.telegram_id;
+    const processedByUserId = telegramId != null ? Number(telegramId) : null;
+
     const rows = await sql`
       INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id)
-      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${session.user.id}::uuid)
+      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${processedByUserId})
       RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
@@ -70,8 +77,8 @@ export async function POST(request: NextRequest) {
       FROM transactions t
       LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
       LEFT JOIN companies c ON c.id::text = ba.company_id::text
-      LEFT JOIN neon_auth."user" pu ON pu.id::text = t.processed_by_user_id::text
-      LEFT JOIN user_telegram ut ON ut.user_id::text = t.processed_by_user_id::text
+      LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
+      LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
       WHERE t.id = ${row.id}::uuid
     `;
     const full = Array.isArray(withAccount) ? withAccount[0] : withAccount;
@@ -126,8 +133,8 @@ export async function GET(request: NextRequest) {
         FROM transactions t
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
         LEFT JOIN companies c ON c.id::text = ba.company_id::text
-        LEFT JOIN neon_auth."user" pu ON pu.id::text = t.processed_by_user_id::text
-        LEFT JOIN user_telegram ut ON ut.user_id::text = t.processed_by_user_id::text
+        LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
+        LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
         LEFT JOIN LATERAL (
           SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
           FROM invoices

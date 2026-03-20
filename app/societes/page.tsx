@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
 import type { Bank, Company } from "@/lib/types";
+import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -280,6 +281,10 @@ const INVOICE_COUNTRIES = [
   { code: "CH", label: "Suisse" },
   { code: "PT", label: "Portugal" },
   { code: "ES", label: "Espagne" },
+  { code: "US", label: "États-Unis" },
+  { code: "IT", label: "Italie" },
+  { code: "PL", label: "Pologne" },
+  { code: "RO", label: "Roumanie" },
 ];
 
 function CompanyModal({
@@ -310,7 +315,7 @@ function CompanyModal({
   gerantNumeroSecu,
   gerantNumeroPieceIdentite,
   vatNumber,
-  vatRate,
+  vatRates,
   invoicePrefix,
   invoiceNextNumber,
   currency,
@@ -340,7 +345,7 @@ function CompanyModal({
   onGerantNumeroSecuChange,
   onGerantNumeroPieceIdentiteChange,
   onVatNumberChange,
-  onVatRateChange,
+  onVatRatesChange,
   onInvoicePrefixChange,
   onInvoiceNextNumberChange,
   onCurrencyChange,
@@ -376,7 +381,7 @@ function CompanyModal({
   gerantNumeroSecu: string;
   gerantNumeroPieceIdentite: string;
   vatNumber: string;
-  vatRate: string;
+  vatRates: number[];
   invoicePrefix: string;
   invoiceNextNumber: string;
   currency: string;
@@ -709,18 +714,38 @@ function CompanyModal({
                       className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                     />
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Taux TVA (%)</label>
-                    <input
-                      type="number"
-                      value={vatRate}
-                      onChange={(e) => onVatRateChange?.(e.target.value)}
-                      placeholder="20"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                    />
+                    <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                      Taux disponibles selon le pays. Sélectionnez ceux que vous utilisez.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {getVatRatesForCountry(countryCode).map((rate) => {
+                        const isSelected = vatRates.includes(rate);
+                        return (
+                          <button
+                            key={rate}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected
+                                ? vatRates.filter((r) => r !== rate)
+                                : [...vatRates, rate].sort((a, b) => a - b);
+                              if (next.length > 0) onVatRatesChange?.(next);
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                              isSelected
+                                ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                                : "border border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)] hover:border-[var(--primary-muted-border)]"
+                            }`}
+                          >
+                            {rate}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {vatRates.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600">Sélectionnez au moins un taux.</p>
+                    )}
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Préfixe factures</label>
@@ -821,7 +846,7 @@ function SocietesPageContent() {
   const [editGerantNumeroSecu, setEditGerantNumeroSecu] = useState("");
   const [editGerantNumeroPieceIdentite, setEditGerantNumeroPieceIdentite] = useState("");
   const [editVatNumber, setEditVatNumber] = useState("");
-  const [editVatRate, setEditVatRate] = useState("20");
+  const [editVatRates, setEditVatRates] = useState<number[]>([20]);
   const [editInvoicePrefix, setEditInvoicePrefix] = useState("FAC-");
   const [editInvoiceNextNumber, setEditInvoiceNextNumber] = useState("1");
   const [editCurrency, setEditCurrency] = useState("EUR");
@@ -918,7 +943,13 @@ function SocietesPageContent() {
     setEditGerantNumeroSecu(c.gerant_numero_secu ?? "");
     setEditGerantNumeroPieceIdentite(c.gerant_numero_piece_identite ?? "");
     setEditVatNumber(c.vat_number ?? "");
-    setEditVatRate(String(c.vat_rate ?? 20));
+    setEditVatRates(
+      Array.isArray(c.vat_rates) && c.vat_rates.length > 0
+        ? c.vat_rates
+        : c.vat_rate != null
+          ? [c.vat_rate]
+          : [20]
+    );
     setEditInvoicePrefix(c.invoice_prefix ?? "FAC-");
     setEditInvoiceNextNumber(String(c.invoice_next_number ?? 1));
     setEditCurrency(c.currency ?? "EUR");
@@ -973,7 +1004,7 @@ function SocietesPageContent() {
     setEditGerantNumeroSecu("");
     setEditGerantNumeroPieceIdentite("");
     setEditVatNumber("");
-    setEditVatRate("20");
+    setEditVatRates([20]);
     setEditInvoicePrefix("FAC-");
     setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
@@ -1027,7 +1058,7 @@ function SocietesPageContent() {
     setEditGerantNumeroSecu("");
     setEditGerantNumeroPieceIdentite("");
     setEditVatNumber("");
-    setEditVatRate("20");
+    setEditVatRates([20]);
     setEditInvoicePrefix("FAC-");
     setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
@@ -1065,7 +1096,7 @@ function SocietesPageContent() {
       gerant_numero_secu: editGerantNumeroSecu.trim() || null,
       gerant_numero_piece_identite: editGerantNumeroPieceIdentite.trim() || null,
       vat_number: editVatNumber.trim() || null,
-      vat_rate: parseFloat(editVatRate) || 20,
+      vat_rates: editVatRates.length > 0 ? editVatRates : [getDefaultVatRateForCountry(editCountryCode || "FR")],
       invoice_prefix: editInvoicePrefix.trim() || "FAC-",
       invoice_next_number: (() => {
         const nextNum = parseInt(editInvoiceNextNumber, 10);
@@ -1302,7 +1333,7 @@ function SocietesPageContent() {
           onGerantNumeroSecuChange={setEditGerantNumeroSecu}
           onGerantNumeroPieceIdentiteChange={setEditGerantNumeroPieceIdentite}
           vatNumber={editVatNumber}
-          vatRate={editVatRate}
+          vatRates={editVatRates}
           invoicePrefix={editInvoicePrefix}
           invoiceNextNumber={editInvoiceNextNumber}
           currency={editCurrency}
@@ -1312,7 +1343,7 @@ function SocietesPageContent() {
           onDirecteurChange={setEditDirecteur}
           onCountryCodeChange={setEditCountryCode}
           onVatNumberChange={setEditVatNumber}
-          onVatRateChange={setEditVatRate}
+          onVatRatesChange={setEditVatRates}
           onInvoicePrefixChange={setEditInvoicePrefix}
           onInvoiceNextNumberChange={setEditInvoiceNextNumber}
           onCurrencyChange={setEditCurrency}

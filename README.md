@@ -17,8 +17,8 @@ L'application utilise un système d'authentification fermé :
    ```
 
 3. **Migration base de données** : exécuter les migrations dans l'ordre sur votre base Neon :
-   - `migrations/001_processed_by_user_id_to_uuid.sql`
-   - … jusqu'à `migrations/010_invoices.sql` (facturation)
+   - `migrations/002_companies_address_siret_directeur.sql` jusqu'à `migrations/010_invoices.sql` (facturation)
+   - Note : `001_processed_by_user_id_to_uuid.sql` ne doit pas être exécutée — la colonne reste en bigint (Telegram ID) pour compatibilité avec d'autres services.
 
 4. **Facturation** (optionnel) : pour générer des factures PDF, configurer Cloudinary :
    - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`

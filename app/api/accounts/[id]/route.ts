@@ -27,7 +27,7 @@ export async function GET(
         gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance,
         gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance,
         gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite,
-        country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency,
+        country_code, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency,
         invoice_template_id, bloc_notes, created_at, updated_at
       FROM companies
       WHERE id = ${id}
@@ -100,12 +100,12 @@ export async function PATCH(
       typeof body?.country_code === "string" ? body.country_code.trim().slice(0, 2).toUpperCase() || null : undefined;
     const vatNumber =
       typeof body?.vat_number === "string" ? body.vat_number.trim() || null : undefined;
-    const vatRate =
-      typeof body?.vat_rate === "number"
-        ? body.vat_rate
-        : typeof body?.vat_rate === "string"
-          ? parseFloat(body.vat_rate)
-          : undefined;
+    const vatRatesRaw = body?.vat_rates;
+    const vatRates: number[] | undefined = Array.isArray(vatRatesRaw)
+      ? vatRatesRaw
+          .map((v: unknown) => (typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN))
+          .filter((n: number) => !Number.isNaN(n) && n >= 0 && n <= 100)
+      : undefined;
     const invoicePrefix =
       typeof body?.invoice_prefix === "string" ? body.invoice_prefix.trim() || null : undefined;
     const invoiceNextNumber =
@@ -226,9 +226,11 @@ export async function PATCH(
       updates.push(`vat_number = $${idx++}`);
       values.push(vatNumber);
     }
-    if (vatRate !== undefined && !Number.isNaN(vatRate)) {
+    if (vatRates !== undefined && vatRates.length > 0) {
+      updates.push(`vat_rates = $${idx++}::jsonb`);
+      values.push(JSON.stringify(vatRates));
       updates.push(`vat_rate = $${idx++}`);
-      values.push(vatRate);
+      values.push(vatRates[0]);
     }
     if (invoicePrefix !== undefined) {
       updates.push(`invoice_prefix = $${idx++}`);
@@ -256,7 +258,7 @@ export async function PATCH(
       UPDATE companies
       SET ${updates.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, invoice_template_id, bloc_notes, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency, invoice_template_id, bloc_notes, created_at, updated_at
     `;
     const result = await sql.query(queryText, values);
     const rows = Array.isArray(result) ? result : [result];

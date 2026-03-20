@@ -32,7 +32,10 @@ export interface Company {
   phones?: string[];
   country_code?: string;
   vat_number?: string | null;
+  /** @deprecated Use vat_rates. Kept for backward compatibility. */
   vat_rate?: number;
+  /** VAT rates (%) this company uses (can vary by service). Suggested from country. */
+  vat_rates?: number[];
   invoice_prefix?: string;
   invoice_next_number?: number;
   invoice_template_id?: string | null;

@@ -47,6 +47,7 @@ export async function GET() {
         c.country_code,
         c.vat_number,
         c.vat_rate,
+        c.vat_rates,
         c.invoice_prefix,
         c.invoice_next_number,
         c.currency,
@@ -122,12 +123,13 @@ export async function POST(request: Request) {
     const gerantNumeroSecu = typeof body?.gerant_numero_secu === "string" ? body.gerant_numero_secu.trim() || null : null;
     const gerantNumeroPieceIdentite = typeof body?.gerant_numero_piece_identite === "string" ? body.gerant_numero_piece_identite.trim() || null : null;
     const vatNumber = typeof body?.vat_number === "string" ? body.vat_number.trim() || null : null;
-    const vatRate =
-      typeof body?.vat_rate === "number"
-        ? body.vat_rate
-        : typeof body?.vat_rate === "string"
-          ? parseFloat(body.vat_rate)
-          : 20;
+    const vatRatesRaw = body?.vat_rates;
+    let vatRates: number[] = Array.isArray(vatRatesRaw)
+      ? vatRatesRaw
+          .map((v: unknown) => (typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN))
+          .filter((n: number) => !Number.isNaN(n) && n >= 0 && n <= 100)
+      : [];
+    if (vatRates.length === 0) vatRates = [20];
     const invoicePrefix = typeof body?.invoice_prefix === "string" ? body.invoice_prefix.trim() || "FAC-" : "FAC-";
     const invoiceNextNumber =
       typeof body?.invoice_next_number === "number" && body.invoice_next_number >= 1
@@ -141,9 +143,9 @@ export async function POST(request: Request) {
     const currency = typeof body?.currency === "string" ? body.currency.trim().slice(0, 3).toUpperCase() || "EUR" : "EUR";
     const blocNotes = typeof body?.bloc_notes === "string" ? body.bloc_notes.trim() || null : null;
     const rows = await sql`
-      INSERT INTO companies (name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, vat_number, vat_rate, invoice_prefix, invoice_next_number, currency, bloc_notes)
-      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${fournisseur}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite}, ${vatNumber}, ${vatRate}, ${invoicePrefix}, ${invoiceNextNumber}, ${currency}, ${blocNotes})
-      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, invoice_template_id, bloc_notes, created_at, updated_at
+      INSERT INTO companies (name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency, bloc_notes)
+      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${fournisseur}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite}, ${vatNumber}, ${vatRates[0]}, ${JSON.stringify(vatRates)}::jsonb, ${invoicePrefix}, ${invoiceNextNumber}, ${currency}, ${blocNotes})
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, vat_rates, invoice_template_id, bloc_notes, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
