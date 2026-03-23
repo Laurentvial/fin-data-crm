@@ -114,9 +114,20 @@ export function AccountVignette({
   const balance = bankAccount.balance ?? 0;
   const ibanCountryCodes = getIbanCountryCodes(bankAccount.ibans);
   const [menuOpen, setMenuOpen] = useState(false);
+  const cardBgStyle = (() => {
+    const color = bankAccount.account_status_background_color;
+    if (!color) return undefined;
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+    if (!m) return undefined;
+    const opacity = bankAccount.account_status_background_opacity != null ? bankAccount.account_status_background_opacity : 0.25;
+    return { backgroundColor: `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${opacity})` };
+  })();
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)]">
+    <div
+      className="relative flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)]"
+      style={cardBgStyle}
+    >
       <button
         type="button"
         onClick={(e) => {

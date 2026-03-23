@@ -2,6 +2,20 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 
+function parseBackgroundColor(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s || !/^#[0-9A-Fa-f]{6}$/.test(s)) return null;
+  return s;
+}
+
+function parseBackgroundOpacity(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v));
+  if (!Number.isFinite(n) || n < 0 || n > 1) return null;
+  return n;
+}
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -18,7 +32,7 @@ export async function GET() {
   if (authError) return authError;
   try {
     const rows = await sql`
-      SELECT id, name, sort_order, is_default, created_at, updated_at
+      SELECT id, name, sort_order, is_default, background_color, background_opacity, created_at, updated_at
       FROM account_statuses
       ORDER BY sort_order, name
     `;
@@ -48,10 +62,12 @@ export async function POST(request: Request) {
     const [existingCount] = await sql`SELECT 1 FROM account_statuses LIMIT 1`;
     const isFirst = !existingCount;
     const isDefault = body?.is_default === true || isFirst;
+    const backgroundColor = parseBackgroundColor(body?.background_color);
+    const backgroundOpacity = parseBackgroundOpacity(body?.background_opacity);
     const rows = await sql`
-      INSERT INTO account_statuses (name, sort_order, is_default)
-      VALUES (${name}, ${sortOrder}, ${isDefault})
-      RETURNING id, name, sort_order, is_default, created_at, updated_at
+      INSERT INTO account_statuses (name, sort_order, is_default, background_color, background_opacity)
+      VALUES (${name}, ${sortOrder}, ${isDefault}, ${backgroundColor}, ${backgroundOpacity})
+      RETURNING id, name, sort_order, is_default, background_color, background_opacity, created_at, updated_at
     `;
     if (isDefault) {
       await sql`UPDATE account_statuses SET is_default = false WHERE id != ${rows[0].id}::uuid`;

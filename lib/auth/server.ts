@@ -13,5 +13,7 @@ export const auth = createNeonAuth({
   baseUrl,
   cookies: {
     secret: cookieSecret,
+    // Longer TTL = fewer upstream /get-session calls = less 429 from Neon Auth rate limits
+    sessionDataTtl: 600, // 10 minutes (default 300)
   },
 });

@@ -124,6 +124,10 @@ export interface AccountStatus {
   name: string;
   sort_order: number;
   is_default?: boolean;
+  /** Hex color for compte card background (e.g. #ff0000). Nullable. */
+  background_color?: string | null;
+  /** Opacity 0–1 for the background. Nullable. */
+  background_opacity?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -165,6 +169,10 @@ export interface BankAccount {
   account_status_name?: string | null;
   /** @deprecated Use account_status_name. Kept for backward compatibility. */
   account_status?: string | null;
+  /** Status background color for compte card (from account_statuses). Nullable. */
+  account_status_background_color?: string | null;
+  /** Status background opacity 0–1 for compte card. Nullable. */
+  account_status_background_opacity?: number | null;
   has_logo?: boolean;
   ibans?: IbanItem[];
   /** Identifiants: login, mot de passe, code PIN */

@@ -1274,9 +1274,13 @@ function AccountStatusesSection() {
   const [error, setError] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createColor, setCreateColor] = useState<string | null>(null);
+  const [createOpacity, setCreateOpacity] = useState<number | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [editingStatus, setEditingStatus] = useState<AccountStatus | null>(null);
   const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState<string | null>(null);
+  const [editOpacity, setEditOpacity] = useState<number | null>(null);
   const [editPending, setEditPending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
@@ -1307,10 +1311,16 @@ function AccountStatusesSection() {
     setCreatePending(true);
     setError(null);
     try {
+      const body: { name: string; sort_order: number; background_color?: string | null; background_opacity?: number | null } = {
+        name,
+        sort_order: accountStatuses.length,
+      };
+      if (createColor && /^#[0-9A-Fa-f]{6}$/.test(createColor)) body.background_color = createColor;
+      if (createOpacity != null && createOpacity >= 0 && createOpacity <= 1) body.background_opacity = createOpacity;
       const res = await fetch("/api/account-statuses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, sort_order: accountStatuses.length }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1319,6 +1329,8 @@ function AccountStatusesSection() {
       const created = await res.json();
       setAccountStatuses((prev) => [...prev, created].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)));
       setCreateName("");
+      setCreateColor(null);
+      setCreateOpacity(null);
       setCreateModalOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1334,10 +1346,13 @@ function AccountStatusesSection() {
     setEditPending(true);
     setError(null);
     try {
+      const body: { name: string; background_color?: string | null; background_opacity?: number | null } = { name };
+      body.background_color = editColor && /^#[0-9A-Fa-f]{6}$/.test(editColor) ? editColor : null;
+      body.background_opacity = editOpacity != null && editOpacity >= 0 && editOpacity <= 1 ? editOpacity : null;
       const res = await fetch(`/api/account-statuses/${editingStatus.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1349,6 +1364,8 @@ function AccountStatusesSection() {
       );
       setEditingStatus(null);
       setEditName("");
+      setEditColor(null);
+      setEditOpacity(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -1425,7 +1442,7 @@ function AccountStatusesSection() {
         <h3 className="subsection-header text-sm font-medium">Statuts existants</h3>
         <button
           type="button"
-          onClick={() => { setCreateModalOpen(true); setCreateName(""); setError(null); }}
+          onClick={() => { setCreateModalOpen(true); setCreateName(""); setCreateColor(null); setCreateOpacity(null); setError(null); }}
           className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
         >
           Ajouter un statut
@@ -1439,13 +1456,14 @@ function AccountStatusesSection() {
               <tr>
                 <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
                 <th className="table-header px-4 py-2 text-center font-medium w-10" title="Par défaut">★</th>
+                <th className="table-header px-4 py-2 text-center font-medium w-16">Fond</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {accountStatuses.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={4} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
                     Aucun statut de compte. Créez-en un pour que les comptes puissent en avoir un.
                   </td>
                 </tr>
@@ -1464,11 +1482,31 @@ function AccountStatusesSection() {
                         <StarIcon filled={!!s.is_default} className="text-amber-500" />
                       </button>
                     </td>
+                    <td className="px-4 py-2 text-center">
+                      {s.background_color ? (
+                        (() => {
+                          const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(s.background_color);
+                          if (!m) return <span className="text-[var(--muted-foreground)]">—</span>;
+                          const opacity = s.background_opacity != null ? s.background_opacity : 0.25;
+                          return (
+                            <span
+                              className="inline-block h-6 w-8 rounded border border-[var(--border)]"
+                              style={{
+                                backgroundColor: `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${opacity})`,
+                              }}
+                              title={`${s.background_color}${s.background_opacity != null ? ` ${Math.round(s.background_opacity * 100)}%` : ""}`}
+                            />
+                          );
+                        })()
+                      ) : (
+                        <span className="text-[var(--muted-foreground)]">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => { setEditingStatus(s); setEditName(s.name); setError(null); }}
+                          onClick={() => { setEditingStatus(s); setEditName(s.name); setEditColor(s.background_color ?? null); setEditOpacity(s.background_opacity ?? null); setError(null); }}
                           className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
                         >
                           Modifier
@@ -1513,6 +1551,57 @@ function AccountStatusesSection() {
                   autoFocus
                 />
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Couleur de fond (carte compte)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={createColor ?? "#94a3b8"}
+                    onChange={(e) => setCreateColor(e.target.value)}
+                    className="h-9 w-14 cursor-pointer rounded border border-[var(--border)] bg-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={createColor ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      setCreateColor(v || null);
+                    }}
+                    placeholder="#hex (optionnel)"
+                    className="flex-1 rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCreateColor(null)}
+                    className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    Aucune
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Opacité (0–100 %, optionnel)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={createOpacity != null ? Math.round(createOpacity * 100) : 50}
+                    onChange={(e) => setCreateOpacity(parseInt(e.target.value, 10) / 100)}
+                    className="flex-1"
+                  />
+                  <span className="w-10 text-right text-sm text-[var(--muted-foreground)]">
+                    {createOpacity != null ? Math.round(createOpacity * 100) : "—"}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCreateOpacity(null)}
+                    className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    Aucune
+                  </button>
+                </div>
+              </div>
               <div className="mt-6 flex justify-end gap-2">
                 <button
                   type="button"
@@ -1549,6 +1638,57 @@ function AccountStatusesSection() {
                   onChange={setEditName}
                   placeholder="Ex. Ouvert"
                 />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Couleur de fond (carte compte)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={editColor ?? "#94a3b8"}
+                    onChange={(e) => setEditColor(e.target.value)}
+                    className="h-9 w-14 cursor-pointer rounded border border-[var(--border)] bg-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={editColor ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      setEditColor(v || null);
+                    }}
+                    placeholder="#hex (optionnel)"
+                    className="flex-1 rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditColor(null)}
+                    className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    Aucune
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Opacité (0–100 %, optionnel)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={editOpacity != null ? Math.round(editOpacity * 100) : 50}
+                    onChange={(e) => setEditOpacity(parseInt(e.target.value, 10) / 100)}
+                    className="flex-1"
+                  />
+                  <span className="w-10 text-right text-sm text-[var(--muted-foreground)]">
+                    {editOpacity != null ? Math.round(editOpacity * 100) : "—"}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditOpacity(null)}
+                    className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    Aucune
+                  </button>
+                </div>
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">

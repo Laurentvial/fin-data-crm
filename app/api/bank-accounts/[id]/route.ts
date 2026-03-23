@@ -31,6 +31,8 @@ export async function GET(
         ba.account_type_id,
         ba.account_status_id,
         ast.name AS account_status_name,
+        ast.background_color AS account_status_background_color,
+        ast.background_opacity AS account_status_background_opacity,
         ba.login,
         ba.password,
         ba.pin_code,
@@ -69,7 +71,7 @@ export async function GET(
       LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, ast.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, ast.name, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name
     `;
     if (!row) {
       return NextResponse.json(
@@ -307,6 +309,8 @@ export async function PATCH(
         ba.account_type_id,
         ba.account_status_id,
         ast.name AS account_status_name,
+        ast.background_color AS account_status_background_color,
+        ast.background_opacity AS account_status_background_opacity,
         ba.login,
         ba.password,
         ba.pin_code,

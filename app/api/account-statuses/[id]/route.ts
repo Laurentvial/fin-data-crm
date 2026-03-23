@@ -2,6 +2,20 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 
+function parseBackgroundColor(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s || !/^#[0-9A-Fa-f]{6}$/.test(s)) return null;
+  return s;
+}
+
+function parseBackgroundOpacity(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v));
+  if (!Number.isFinite(n) || n < 0 || n > 1) return null;
+  return n;
+}
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -25,7 +39,9 @@ export async function PATCH(
     const name = typeof body?.name === "string" ? body.name.trim() : undefined;
     const sortOrder = typeof body?.sort_order === "number" ? body.sort_order : undefined;
     const isDefault = body?.is_default;
-    if (!name && sortOrder === undefined && isDefault === undefined) {
+    const backgroundColorInBody = "background_color" in body;
+    const backgroundOpacityInBody = "background_opacity" in body;
+    if (!name && sortOrder === undefined && isDefault === undefined && !backgroundColorInBody && !backgroundOpacityInBody) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -38,7 +54,7 @@ export async function PATCH(
       );
     }
     const [existing] = await sql`
-      SELECT id, name, sort_order, is_default FROM account_statuses WHERE id = ${id}::uuid
+      SELECT id, name, sort_order, is_default, background_color, background_opacity FROM account_statuses WHERE id = ${id}::uuid
     `;
     if (!existing) {
       return NextResponse.json(
@@ -49,14 +65,20 @@ export async function PATCH(
     const newName = name ?? existing.name;
     const newSortOrder = sortOrder !== undefined ? sortOrder : existing.sort_order;
     const newIsDefault = isDefault !== undefined ? isDefault : existing.is_default;
+    const newBackgroundColor = backgroundColorInBody
+      ? (body.background_color === null || body.background_color === "" ? null : parseBackgroundColor(body.background_color) ?? existing.background_color)
+      : existing.background_color;
+    const newBackgroundOpacity = backgroundOpacityInBody
+      ? (body.background_opacity === null ? null : parseBackgroundOpacity(body.background_opacity) ?? existing.background_opacity)
+      : existing.background_opacity;
     if (newIsDefault) {
       await sql`UPDATE account_statuses SET is_default = false WHERE id != ${id}::uuid`;
     }
     const rows = await sql`
       UPDATE account_statuses
-      SET name = ${newName}, sort_order = ${newSortOrder}, is_default = ${newIsDefault}, updated_at = NOW()
+      SET name = ${newName}, sort_order = ${newSortOrder}, is_default = ${newIsDefault}, background_color = ${newBackgroundColor}, background_opacity = ${newBackgroundOpacity}, updated_at = NOW()
       WHERE id = ${id}::uuid
-      RETURNING id, name, sort_order, is_default, created_at, updated_at
+      RETURNING id, name, sort_order, is_default, background_color, background_opacity, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
