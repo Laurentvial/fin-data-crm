@@ -580,11 +580,13 @@ function BanksSection() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createUrl, setCreateUrl] = useState("");
+  const [createBic, setCreateBic] = useState("");
   const [createLogoFile, setCreateLogoFile] = useState<File | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [editingBank, setEditingBank] = useState<Bank | null>(null);
   const [editName, setEditName] = useState("");
   const [editUrl, setEditUrl] = useState("");
+  const [editBic, setEditBic] = useState("");
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editPending, setEditPending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -619,7 +621,7 @@ function BanksSection() {
       const res = await fetch("/api/banks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, url: createUrl.trim() || null }),
+        body: JSON.stringify({ name, url: createUrl.trim() || null, bic: createBic.trim() || null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -642,6 +644,7 @@ function BanksSection() {
       setBanks((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setCreateName("");
       setCreateUrl("");
+      setCreateBic("");
       setCreateLogoFile(null);
       setCreateModalOpen(false);
     } catch (e) {
@@ -655,6 +658,7 @@ function BanksSection() {
     setCreateModalOpen(true);
     setCreateName("");
     setCreateUrl("");
+    setCreateBic("");
     setCreateLogoFile(null);
     setError(null);
   };
@@ -669,7 +673,7 @@ function BanksSection() {
       const res = await fetch(`/api/banks/${editingBank.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, url: editUrl.trim() || null }),
+        body: JSON.stringify({ name, url: editUrl.trim() || null, bic: editBic.trim() || null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -695,6 +699,7 @@ function BanksSection() {
       setEditingBank(null);
       setEditName("");
       setEditUrl("");
+      setEditBic("");
       setEditLogoFile(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -725,6 +730,7 @@ function BanksSection() {
     setEditingBank(bank);
     setEditName(bank.name);
     setEditUrl(bank.url ?? "");
+    setEditBic(bank.bic ?? "");
     setEditLogoFile(null);
     setError(null);
   };
@@ -784,13 +790,14 @@ function BanksSection() {
                 <th className="table-header px-4 py-2 text-left font-medium">Logo</th>
                 <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
                 <th className="table-header px-4 py-2 text-left font-medium">URL</th>
+                <th className="table-header px-4 py-2 text-left font-medium">BIC / SWIFT</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {banks.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={5} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
                     Aucune banque
                   </td>
                 </tr>
@@ -822,6 +829,9 @@ function BanksSection() {
                       ) : (
                         <span className="text-[var(--muted-foreground)]">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-2 text-[var(--foreground)] font-mono text-xs">
+                      {b.bic ?? "—"}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
@@ -883,6 +893,17 @@ function BanksSection() {
                   onChange={(e) => setCreateUrl(e.target.value)}
                   placeholder="https://www.banque.fr"
                   className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">BIC / SWIFT</label>
+                <input
+                  type="text"
+                  value={createBic}
+                  onChange={(e) => setCreateBic(e.target.value.toUpperCase())}
+                  placeholder="Ex. BNPAFRPP"
+                  maxLength={11}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono uppercase"
                 />
               </div>
               <div>
@@ -949,6 +970,17 @@ function BanksSection() {
                 />
               </div>
               <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">BIC / SWIFT</label>
+                <input
+                  type="text"
+                  value={editBic}
+                  onChange={(e) => setEditBic(e.target.value.toUpperCase())}
+                  placeholder="Ex. BNPAFRPP"
+                  maxLength={11}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono uppercase"
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Logo</label>
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="h-16 w-16 overflow-hidden rounded border border-[var(--border)] bg-[var(--muted)]">
@@ -1005,9 +1037,11 @@ function AccountTypesSection() {
   const [error, setError] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createEmoji, setCreateEmoji] = useState("");
   const [createPending, setCreatePending] = useState(false);
   const [editingType, setEditingType] = useState<AccountType | null>(null);
   const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
   const [editPending, setEditPending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -1016,8 +1050,8 @@ function AccountTypesSection() {
     setError(null);
     try {
       const res = await fetch("/api/account-types");
-      if (!res.ok) throw new Error("Échec du chargement");
       const data = await res.json();
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "Échec du chargement");
       setAccountTypes(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1040,7 +1074,7 @@ function AccountTypesSection() {
       const res = await fetch("/api/account-types", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, sort_order: accountTypes.length }),
+        body: JSON.stringify({ name, sort_order: accountTypes.length, emoji: createEmoji || null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1049,6 +1083,7 @@ function AccountTypesSection() {
       const created = await res.json();
       setAccountTypes((prev) => [...prev, created].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)));
       setCreateName("");
+      setCreateEmoji("");
       setCreateModalOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1067,7 +1102,7 @@ function AccountTypesSection() {
       const res = await fetch(`/api/account-types/${editingType.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, emoji: editEmoji || null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1079,6 +1114,7 @@ function AccountTypesSection() {
       );
       setEditingType(null);
       setEditName("");
+      setEditEmoji("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -1130,7 +1166,7 @@ function AccountTypesSection() {
         <h3 className="subsection-header text-sm font-medium">Types existants</h3>
         <button
           type="button"
-          onClick={() => { setCreateModalOpen(true); setCreateName(""); setError(null); }}
+          onClick={() => { setCreateModalOpen(true); setCreateName(""); setCreateEmoji(""); setError(null); }}
           className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
         >
           Ajouter un client
@@ -1142,6 +1178,7 @@ function AccountTypesSection() {
           <table className="w-full text-sm">
             <thead className="bg-[var(--primary-muted)]">
               <tr>
+                <th className="table-header px-4 py-2 text-center font-medium w-12">Emoji</th>
                 <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
               </tr>
@@ -1149,19 +1186,20 @@ function AccountTypesSection() {
             <tbody>
               {accountTypes.length === 0 ? (
                 <tr>
-                  <td colSpan={2} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={3} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
                     Aucun client. Créez-en un pour que les comptes puissent en avoir un.
                   </td>
                 </tr>
               ) : (
                 accountTypes.map((t) => (
                   <tr key={t.id} className="border-t border-[var(--border)]">
+                    <td className="px-4 py-2 text-center">{t.emoji || "—"}</td>
                     <td className="px-4 py-2 text-[var(--foreground)]">{t.name}</td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => { setEditingType(t); setEditName(t.name); setError(null); }}
+                          onClick={() => { setEditingType(t); setEditName(t.name); setEditEmoji(t.emoji ?? ""); setError(null); }}
                           className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
                         >
                           Modifier
@@ -1206,6 +1244,16 @@ function AccountTypesSection() {
                   autoFocus
                 />
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
+                <input
+                  type="text"
+                  value={createEmoji}
+                  onChange={(e) => setCreateEmoji(e.target.value)}
+                  placeholder="Ex. 🏦"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
               <div className="mt-6 flex justify-end gap-2">
                 <button
                   type="button"
@@ -1243,6 +1291,16 @@ function AccountTypesSection() {
                   placeholder="Ex. Compte courant"
                 />
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
+                <input
+                  type="text"
+                  value={editEmoji}
+                  onChange={(e) => setEditEmoji(e.target.value)}
+                  placeholder="Ex. 🏦"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button
@@ -1274,11 +1332,13 @@ function AccountStatusesSection() {
   const [error, setError] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createEmoji, setCreateEmoji] = useState("");
   const [createColor, setCreateColor] = useState<string | null>(null);
   const [createOpacity, setCreateOpacity] = useState<number | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [editingStatus, setEditingStatus] = useState<AccountStatus | null>(null);
   const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
   const [editColor, setEditColor] = useState<string | null>(null);
   const [editOpacity, setEditOpacity] = useState<number | null>(null);
   const [editPending, setEditPending] = useState(false);
@@ -1290,8 +1350,8 @@ function AccountStatusesSection() {
     setError(null);
     try {
       const res = await fetch("/api/account-statuses");
-      if (!res.ok) throw new Error("Échec du chargement");
       const data = await res.json();
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "Échec du chargement");
       setAccountStatuses(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1311,10 +1371,11 @@ function AccountStatusesSection() {
     setCreatePending(true);
     setError(null);
     try {
-      const body: { name: string; sort_order: number; background_color?: string | null; background_opacity?: number | null } = {
+      const body: { name: string; sort_order: number; emoji?: string | null; background_color?: string | null; background_opacity?: number | null } = {
         name,
         sort_order: accountStatuses.length,
       };
+      if (createEmoji.trim()) body.emoji = createEmoji.trim();
       if (createColor && /^#[0-9A-Fa-f]{6}$/.test(createColor)) body.background_color = createColor;
       if (createOpacity != null && createOpacity >= 0 && createOpacity <= 1) body.background_opacity = createOpacity;
       const res = await fetch("/api/account-statuses", {
@@ -1329,6 +1390,7 @@ function AccountStatusesSection() {
       const created = await res.json();
       setAccountStatuses((prev) => [...prev, created].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)));
       setCreateName("");
+      setCreateEmoji("");
       setCreateColor(null);
       setCreateOpacity(null);
       setCreateModalOpen(false);
@@ -1346,7 +1408,8 @@ function AccountStatusesSection() {
     setEditPending(true);
     setError(null);
     try {
-      const body: { name: string; background_color?: string | null; background_opacity?: number | null } = { name };
+      const body: { name: string; emoji?: string | null; background_color?: string | null; background_opacity?: number | null } = { name };
+      body.emoji = editEmoji.trim() ? editEmoji.trim() : null;
       body.background_color = editColor && /^#[0-9A-Fa-f]{6}$/.test(editColor) ? editColor : null;
       body.background_opacity = editOpacity != null && editOpacity >= 0 && editOpacity <= 1 ? editOpacity : null;
       const res = await fetch(`/api/account-statuses/${editingStatus.id}`, {
@@ -1364,6 +1427,7 @@ function AccountStatusesSection() {
       );
       setEditingStatus(null);
       setEditName("");
+      setEditEmoji("");
       setEditColor(null);
       setEditOpacity(null);
     } catch (e) {
@@ -1442,7 +1506,7 @@ function AccountStatusesSection() {
         <h3 className="subsection-header text-sm font-medium">Statuts existants</h3>
         <button
           type="button"
-          onClick={() => { setCreateModalOpen(true); setCreateName(""); setCreateColor(null); setCreateOpacity(null); setError(null); }}
+          onClick={() => { setCreateModalOpen(true); setCreateName(""); setCreateEmoji(""); setCreateColor(null); setCreateOpacity(null); setError(null); }}
           className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
         >
           Ajouter un statut
@@ -1454,6 +1518,7 @@ function AccountStatusesSection() {
           <table className="w-full text-sm">
             <thead className="bg-[var(--primary-muted)]">
               <tr>
+                <th className="table-header px-4 py-2 text-center font-medium w-12">Emoji</th>
                 <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
                 <th className="table-header px-4 py-2 text-center font-medium w-10" title="Par défaut">★</th>
                 <th className="table-header px-4 py-2 text-center font-medium w-16">Fond</th>
@@ -1463,13 +1528,14 @@ function AccountStatusesSection() {
             <tbody>
               {accountStatuses.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={5} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
                     Aucun statut de compte. Créez-en un pour que les comptes puissent en avoir un.
                   </td>
                 </tr>
               ) : (
                 accountStatuses.map((s) => (
                   <tr key={s.id} className="border-t border-[var(--border)]">
+                    <td className="px-4 py-2 text-center">{s.emoji || "—"}</td>
                     <td className="px-4 py-2 text-[var(--foreground)]">{s.name}</td>
                     <td className="px-4 py-2 text-center">
                       <button
@@ -1506,7 +1572,7 @@ function AccountStatusesSection() {
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => { setEditingStatus(s); setEditName(s.name); setEditColor(s.background_color ?? null); setEditOpacity(s.background_opacity ?? null); setError(null); }}
+                          onClick={() => { setEditingStatus(s); setEditName(s.name); setEditEmoji(s.emoji ?? ""); setEditColor(s.background_color ?? null); setEditOpacity(s.background_opacity ?? null); setError(null); }}
                           className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
                         >
                           Modifier
@@ -1549,6 +1615,16 @@ function AccountStatusesSection() {
                   onChange={setCreateName}
                   placeholder="Ex. Ouvert"
                   autoFocus
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
+                <input
+                  type="text"
+                  value={createEmoji}
+                  onChange={(e) => setCreateEmoji(e.target.value)}
+                  placeholder="Ex. ✅"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -1637,6 +1713,16 @@ function AccountStatusesSection() {
                   value={editName}
                   onChange={setEditName}
                   placeholder="Ex. Ouvert"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
+                <input
+                  type="text"
+                  value={editEmoji}
+                  onChange={(e) => setEditEmoji(e.target.value)}
+                  placeholder="Ex. ✅"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
               </div>
               <div>

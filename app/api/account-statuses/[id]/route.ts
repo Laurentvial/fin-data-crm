@@ -41,7 +41,8 @@ export async function PATCH(
     const isDefault = body?.is_default;
     const backgroundColorInBody = "background_color" in body;
     const backgroundOpacityInBody = "background_opacity" in body;
-    if (!name && sortOrder === undefined && isDefault === undefined && !backgroundColorInBody && !backgroundOpacityInBody) {
+    const emojiInBody = "emoji" in body;
+    if (!name && sortOrder === undefined && isDefault === undefined && !backgroundColorInBody && !backgroundOpacityInBody && !emojiInBody) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -54,7 +55,7 @@ export async function PATCH(
       );
     }
     const [existing] = await sql`
-      SELECT id, name, sort_order, is_default, background_color, background_opacity FROM account_statuses WHERE id = ${id}::uuid
+      SELECT id, name, sort_order, is_default, background_color, background_opacity, emoji FROM account_statuses WHERE id = ${id}::uuid
     `;
     if (!existing) {
       return NextResponse.json(
@@ -71,14 +72,17 @@ export async function PATCH(
     const newBackgroundOpacity = backgroundOpacityInBody
       ? (body.background_opacity === null ? null : parseBackgroundOpacity(body.background_opacity) ?? existing.background_opacity)
       : existing.background_opacity;
+    const newEmoji = emojiInBody
+      ? (typeof body.emoji === "string" ? body.emoji.trim() || null : body.emoji === null ? null : existing.emoji)
+      : existing.emoji;
     if (newIsDefault) {
       await sql`UPDATE account_statuses SET is_default = false WHERE id != ${id}::uuid`;
     }
     const rows = await sql`
       UPDATE account_statuses
-      SET name = ${newName}, sort_order = ${newSortOrder}, is_default = ${newIsDefault}, background_color = ${newBackgroundColor}, background_opacity = ${newBackgroundOpacity}, updated_at = NOW()
+      SET name = ${newName}, sort_order = ${newSortOrder}, is_default = ${newIsDefault}, background_color = ${newBackgroundColor}, background_opacity = ${newBackgroundOpacity}, emoji = ${newEmoji}, updated_at = NOW()
       WHERE id = ${id}::uuid
-      RETURNING id, name, sort_order, is_default, background_color, background_opacity, created_at, updated_at
+      RETURNING id, name, sort_order, is_default, background_color, background_opacity, emoji, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

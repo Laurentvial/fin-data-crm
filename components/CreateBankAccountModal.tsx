@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
@@ -119,6 +119,30 @@ export function CreateBankAccountModal({
   const effectiveCompanyId = fixedCompanyId ?? companyId;
   const showCompanySelector = !fixedCompanyId;
   const [ibanExpanded, setIbanExpanded] = useState(true);
+  const lastAutoNameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const client = accountTypes.find((t) => t.id === accountTypeId);
+    const status = accountStatuses.find((s) => s.id === accountStatusId);
+    const clientEmoji = client?.emoji?.trim() ?? "";
+    const statusEmoji = status?.emoji?.trim() ?? "";
+    const firstIban = ibans.find((i) => (i?.iban ?? "").trim().length > 0);
+    const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+    const iban2 = rawIban.slice(0, 2);
+    const bank = banks.find((b) => b.id === bankId);
+    const bankName = (bank?.name ?? "").trim();
+    const company = companies.find((c) => c.id === effectiveCompanyId);
+    const companyName = (company?.name ?? "").trim();
+    const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
+    const leftPart = [clientEmoji + statusEmoji, midPart].filter(Boolean).join(" ");
+    const autoName = [leftPart, companyName].filter(Boolean).join(" / ").toUpperCase();
+    if (!autoName) return;
+    const canUpdate = !name.trim() || name === lastAutoNameRef.current;
+    if (canUpdate) {
+      lastAutoNameRef.current = autoName;
+      onNameChange(autoName);
+    }
+  }, [accountTypeId, accountStatusId, ibans, bankId, effectiveCompanyId, accountTypes, accountStatuses, banks, companies, onNameChange, name]);
   const [cardsExpanded, setCardsExpanded] = useState(true);
   const [ibanLookupLoading, setIbanLookupLoading] = useState<number | null>(null);
 
@@ -137,6 +161,12 @@ export function CreateBankAccountModal({
       const swiftCode = typeof data?.swift_code === "string" ? data.swift_code.trim() : "";
       if (data?.valid && swiftCode) {
         setBic(index, swiftCode);
+        const bic8 = swiftCode.toUpperCase().slice(0, 8);
+        const matchedBank = banks.find((b) => {
+          const dbBic = (b.bic ?? "").trim().toUpperCase();
+          return dbBic.length >= 8 && dbBic.slice(0, 8) === bic8;
+        });
+        if (matchedBank) onBankIdChange(matchedBank.id);
       }
     } finally {
       setIbanLookupLoading(null);
@@ -192,72 +222,44 @@ export function CreateBankAccountModal({
             </div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
-            <AccountNameField
-              value={name}
-              onChange={onNameChange}
-              placeholder="Ex. Compte courant"
-              autoFocus
-            />
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Client</label>
+            <Select
+              value={accountTypeId}
+              onChange={(e) => onAccountTypeIdChange(e.target.value)}
+            >
+              <option value="">Aucun client</option>
+              {accountTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+            {accountTypes.length === 0 && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Aucun client configuré. Paramètres → Clients
+              </p>
+            )}
           </div>
-          {showCompanySelector && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Société</label>
-              <Select
-                value={companyId}
-                onChange={(e) => onCompanyIdChange(e.target.value)}
-              >
-                <option value="">Sélectionner une société</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
           <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Banque</label>
-            <BankSelect
-              value={bankId}
-              onChange={onBankIdChange}
-              banks={banks}
-              placeholder="Aucune banque"
-            />
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
+            <Select
+              value={accountStatusId}
+              onChange={(e) => onAccountStatusIdChange(e.target.value)}
+            >
+              <option value="">Sélectionner un statut</option>
+              {accountStatuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+            {accountStatuses.length === 0 && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Aucun statut configuré. Paramètres → Statuts de comptes
+              </p>
+            )}
           </div>
-          {accountTypes.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Client</label>
-              <Select
-                value={accountTypeId}
-                onChange={(e) => onAccountTypeIdChange(e.target.value)}
-              >
-                <option value="">Aucun client</option>
-                {accountTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          {accountStatuses.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
-              <Select
-                value={accountStatusId}
-                onChange={(e) => onAccountStatusIdChange(e.target.value)}
-              >
-                <option value="">Sélectionner un statut</option>
-                {accountStatuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          <div className="col-span-3 grid grid-cols-2 gap-4">
+          <div className="col-span-3">
             <div className="rounded-lg border border-[var(--border)]">
               <button
                 type="button"
@@ -330,6 +332,44 @@ export function CreateBankAccountModal({
               </div>
               )}
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Banque</label>
+            <BankSelect
+              value={bankId}
+              onChange={onBankIdChange}
+              banks={banks}
+              placeholder="Aucune banque"
+            />
+          </div>
+          {showCompanySelector && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Société</label>
+              <Select
+                value={companyId}
+                onChange={(e) => onCompanyIdChange(e.target.value)}
+              >
+                <option value="">Sélectionner une société</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
+            <AccountNameField
+              value={name}
+              onChange={onNameChange}
+              placeholder="Ex. Compte courant"
+              autoFocus
+            />
+          </div>
+
+          <div className="col-span-3">
             <div className="rounded-lg border border-[var(--border)]">
               <button
                 type="button"

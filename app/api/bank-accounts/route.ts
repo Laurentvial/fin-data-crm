@@ -320,14 +320,34 @@ BANQUE : ${bankName ?? "—"}`;
           createGroupBody.kbis_filename = kbisRow.filename;
         }
       }
-      const createRes = await fetch(`${serviceUrl!.replace(/\/$/, "")}/create-group`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": apiKey!,
-        },
-        body: JSON.stringify(createGroupBody),
-      });
+      let createRes: Response;
+      try {
+        createRes = await fetch(`${serviceUrl!.replace(/\/$/, "")}/create-group`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey!,
+          },
+          body: JSON.stringify(createGroupBody),
+        });
+      } catch (fetchErr) {
+        const err = fetchErr as NodeJS.ErrnoException & { cause?: { code?: string } };
+        const code = err?.cause?.code ?? err?.code;
+        if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
+          return NextResponse.json(
+            {
+              error:
+                "Le service Telegram est inaccessible. Vérifiez que le service est démarré (TELEGRAM_GROUP_SERVICE_URL) ou utilisez « Lier un groupe Telegram existant » en saisissant l'ID du groupe.",
+            },
+            { status: 502 }
+          );
+        }
+        console.error("Telegram create-group fetch error:", fetchErr);
+        return NextResponse.json(
+          { error: "Impossible de contacter le service Telegram." },
+          { status: 502 }
+        );
+      }
       if (!createRes.ok) {
         const errText = await createRes.text();
         let msg = "Impossible de créer le groupe Telegram";

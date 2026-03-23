@@ -106,6 +106,7 @@ export interface Bank {
   id: string;
   name: string;
   url?: string | null;
+  bic?: string | null;
   has_logo?: boolean;
   created_at: string;
   updated_at: string;
@@ -115,6 +116,8 @@ export interface AccountType {
   id: string;
   name: string;
   sort_order: number;
+  /** Emoji for auto-generated account name. Nullable. */
+  emoji?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -128,6 +131,8 @@ export interface AccountStatus {
   background_color?: string | null;
   /** Opacity 0–1 for the background. Nullable. */
   background_opacity?: number | null;
+  /** Emoji for auto-generated account name. Nullable. */
+  emoji?: string | null;
   created_at: string;
   updated_at: string;
 }

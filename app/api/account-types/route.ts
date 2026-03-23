@@ -18,7 +18,7 @@ export async function GET() {
   if (authError) return authError;
   try {
     const rows = await sql`
-      SELECT id, name, sort_order, created_at, updated_at
+      SELECT id, name, sort_order, emoji, created_at, updated_at
       FROM account_types
       ORDER BY sort_order, name
     `;
@@ -45,10 +45,11 @@ export async function POST(request: Request) {
       );
     }
     const sortOrder = typeof body?.sort_order === "number" ? body.sort_order : 0;
+    const emoji = typeof body?.emoji === "string" ? body.emoji.trim() || null : null;
     const rows = await sql`
-      INSERT INTO account_types (name, sort_order)
-      VALUES (${name}, ${sortOrder})
-      RETURNING id, name, sort_order, created_at, updated_at
+      INSERT INTO account_types (name, sort_order, emoji)
+      VALUES (${name}, ${sortOrder}, ${emoji})
+      RETURNING id, name, sort_order, emoji, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

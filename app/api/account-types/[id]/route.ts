@@ -24,7 +24,8 @@ export async function PATCH(
     const body = await request.json();
     const name = typeof body?.name === "string" ? body.name.trim() : undefined;
     const sortOrder = typeof body?.sort_order === "number" ? body.sort_order : undefined;
-    if (!name && sortOrder === undefined) {
+    const emoji = "emoji" in body ? (typeof body.emoji === "string" ? body.emoji.trim() || null : null) : undefined;
+    if (!name && sortOrder === undefined && emoji === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -37,7 +38,7 @@ export async function PATCH(
       );
     }
     const [existing] = await sql`
-      SELECT id, name, sort_order FROM account_types WHERE id = ${id}::uuid
+      SELECT id, name, sort_order, emoji FROM account_types WHERE id = ${id}::uuid
     `;
     if (!existing) {
       return NextResponse.json(
@@ -47,11 +48,12 @@ export async function PATCH(
     }
     const newName = name ?? existing.name;
     const newSortOrder = sortOrder !== undefined ? sortOrder : existing.sort_order;
+    const newEmoji = emoji !== undefined ? emoji : existing.emoji;
     const rows = await sql`
       UPDATE account_types
-      SET name = ${newName}, sort_order = ${newSortOrder}, updated_at = NOW()
+      SET name = ${newName}, sort_order = ${newSortOrder}, emoji = ${newEmoji}, updated_at = NOW()
       WHERE id = ${id}::uuid
-      RETURNING id, name, sort_order, created_at, updated_at
+      RETURNING id, name, sort_order, emoji, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

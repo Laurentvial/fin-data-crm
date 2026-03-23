@@ -32,7 +32,7 @@ export async function GET() {
   if (authError) return authError;
   try {
     const rows = await sql`
-      SELECT id, name, sort_order, is_default, background_color, background_opacity, created_at, updated_at
+      SELECT id, name, sort_order, is_default, background_color, background_opacity, emoji, created_at, updated_at
       FROM account_statuses
       ORDER BY sort_order, name
     `;
@@ -64,10 +64,11 @@ export async function POST(request: Request) {
     const isDefault = body?.is_default === true || isFirst;
     const backgroundColor = parseBackgroundColor(body?.background_color);
     const backgroundOpacity = parseBackgroundOpacity(body?.background_opacity);
+    const emoji = typeof body?.emoji === "string" ? body.emoji.trim() || null : null;
     const rows = await sql`
-      INSERT INTO account_statuses (name, sort_order, is_default, background_color, background_opacity)
-      VALUES (${name}, ${sortOrder}, ${isDefault}, ${backgroundColor}, ${backgroundOpacity})
-      RETURNING id, name, sort_order, is_default, background_color, background_opacity, created_at, updated_at
+      INSERT INTO account_statuses (name, sort_order, is_default, background_color, background_opacity, emoji)
+      VALUES (${name}, ${sortOrder}, ${isDefault}, ${backgroundColor}, ${backgroundOpacity}, ${emoji})
+      RETURNING id, name, sort_order, is_default, background_color, background_opacity, emoji, created_at, updated_at
     `;
     if (isDefault) {
       await sql`UPDATE account_statuses SET is_default = false WHERE id != ${rows[0].id}::uuid`;

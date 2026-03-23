@@ -22,7 +22,7 @@ export async function GET(
   const { id } = await params;
   try {
     const [row] = await sql`
-      SELECT id, name, url, created_at, updated_at
+      SELECT id, name, url, bic, created_at, updated_at
       FROM banks
       WHERE id = ${id}::uuid
     `;
@@ -58,12 +58,28 @@ export async function PATCH(
         { status: 400 }
       );
     }
-    const url = typeof body?.url === "string" ? body.url.trim() || null : null;
+    const [existing] = await sql`
+      SELECT id, name, url, bic FROM banks WHERE id = ${id}::uuid
+    `;
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Banque introuvable." },
+        { status: 404 }
+      );
+    }
+    const url =
+      "url" in body
+        ? (typeof body.url === "string" ? body.url.trim() || null : null)
+        : (existing.url as string | null);
+    const bic =
+      "bic" in body
+        ? (typeof body.bic === "string" ? body.bic.trim().toUpperCase() || null : null)
+        : (existing.bic as string | null);
     const rows = await sql`
       UPDATE banks
-      SET name = ${name}, url = ${url}, updated_at = NOW()
+      SET name = ${name}, url = ${url}, bic = ${bic}, updated_at = NOW()
       WHERE id = ${id}::uuid
-      RETURNING id, name, url, created_at, updated_at
+      RETURNING id, name, url, bic, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
@@ -432,6 +432,12 @@ function EditBankAccountModal({
         const next = [...ibans];
         next[index] = { ...next[index], bic: swiftCode };
         onIbansChange(next);
+        const bic8 = swiftCode.toUpperCase().slice(0, 8);
+        const matchedBank = banks.find((b) => {
+          const dbBic = (b.bic ?? "").trim().toUpperCase();
+          return dbBic.length >= 8 && dbBic.slice(0, 8) === bic8;
+        });
+        if (matchedBank) onBankIdChange(matchedBank.id);
       }
     } finally {
       setIbanLookupLoading(null);
@@ -457,6 +463,31 @@ function EditBankAccountModal({
     next[i] = { ...next[i], [field]: value || undefined };
     onCardsChange(next);
   };
+  const lastAutoNameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const client = accountTypes.find((t) => t.id === accountTypeId);
+    const status = accountStatuses.find((s) => s.id === accountStatusId);
+    const clientEmoji = client?.emoji?.trim() ?? "";
+    const statusEmoji = status?.emoji?.trim() ?? "";
+    const firstIban = ibans.find((i) => (i?.iban ?? "").trim().length > 0);
+    const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+    const iban2 = rawIban.slice(0, 2);
+    const bank = banks.find((b) => b.id === bankId);
+    const bankName = (bank?.name ?? "").trim();
+    const company = companies.find((c) => c.id === companyId);
+    const companyName = (company?.name ?? "").trim();
+    const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
+    const leftPart = [clientEmoji + statusEmoji, midPart].filter(Boolean).join(" ");
+    const autoName = [leftPart, companyName].filter(Boolean).join(" / ").toUpperCase();
+    if (!autoName) return;
+    const canUpdate = !name.trim() || name === lastAutoNameRef.current;
+    if (canUpdate) {
+      lastAutoNameRef.current = autoName;
+      onNameChange(autoName);
+    }
+  }, [accountTypeId, accountStatusId, ibans, bankId, companyId, accountTypes, accountStatuses, banks, companies, onNameChange, name]);
+
   const handleRibUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -498,111 +529,44 @@ function EditBankAccountModal({
         <div className="flex-1 overflow-y-auto p-6">
         <div className="grid grid-cols-3 gap-x-4 gap-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
-            <AccountNameField
-              value={name}
-              onChange={onNameChange}
-              placeholder="Ex. Compte courant"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Société</label>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Client</label>
             <Select
-              value={companyId}
-              onChange={(e) => onCompanyIdChange(e.target.value)}
+              value={accountTypeId}
+              onChange={(e) => onAccountTypeIdChange(e.target.value)}
             >
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              <option value="">Aucun client</option>
+              {accountTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
                 </option>
               ))}
             </Select>
+            {accountTypes.length === 0 && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Aucun client configuré. Paramètres → Clients
+              </p>
+            )}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Banque</label>
-            <BankSelect
-              value={bankId}
-              onChange={onBankIdChange}
-              banks={banks}
-              placeholder="Aucune banque"
-            />
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
+            <Select
+              value={accountStatusId}
+              onChange={(e) => onAccountStatusIdChange(e.target.value)}
+            >
+              <option value="">Sélectionner un statut</option>
+              {accountStatuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+            {accountStatuses.length === 0 && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Aucun statut configuré. Paramètres → Statuts de comptes
+              </p>
+            )}
           </div>
-          {companyEmails.length > 0 && onCompanyEmailIdChange && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Email de la société</label>
-              <Select
-                value={companyEmailId || (companyEmails.find((e) => e.is_default)?.id ?? companyEmails[0]?.id ?? "")}
-                onChange={(e) => onCompanyEmailIdChange(e.target.value)}
-              >
-                <option value="">Aucun</option>
-                {companyEmails.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.email}{e.is_default ? " ★" : ""}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          {companyPhones.length > 0 && onCompanyPhoneIdChange && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Téléphone de la société</label>
-              <Select
-                value={companyPhoneId || (companyPhones.find((p) => p.is_default)?.id ?? companyPhones[0]?.id ?? "")}
-                onChange={(e) => onCompanyPhoneIdChange(e.target.value)}
-              >
-                <option value="">Aucun</option>
-                {companyPhones.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.phone}{p.is_default ? " ★" : ""}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          {accountTypes.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Client</label>
-              <Select
-                value={accountTypeId}
-                onChange={(e) => onAccountTypeIdChange(e.target.value)}
-              >
-                <option value="">Aucun client</option>
-                {accountTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          {accountStatuses.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
-              <Select
-                value={accountStatusId}
-                onChange={(e) => onAccountStatusIdChange(e.target.value)}
-              >
-                <option value="">Sélectionner un statut</option>
-                {accountStatuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Telegram Chat ID</label>
-            <input
-              type="text"
-              value={telegramChatId}
-              onChange={(e) => onTelegramChatIdChange(e.target.value)}
-              placeholder="Ex. 123456789"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="col-span-3 grid grid-cols-2 gap-4">
+          <div className="col-span-3">
             <div className="rounded-lg border border-[var(--border)]">
               <button
                 type="button"
@@ -681,6 +645,40 @@ function EditBankAccountModal({
               </div>
               )}
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Banque</label>
+            <BankSelect
+              value={bankId}
+              onChange={onBankIdChange}
+              banks={banks}
+              placeholder="Aucune banque"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Société</label>
+            <Select
+              value={companyId}
+              onChange={(e) => onCompanyIdChange(e.target.value)}
+            >
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du compte</label>
+            <AccountNameField
+              value={name}
+              onChange={onNameChange}
+              placeholder="Ex. Compte courant"
+              autoFocus
+            />
+          </div>
+          <div className="col-span-3">
             <div className="rounded-lg border border-[var(--border)]">
               <button
                 type="button"
@@ -750,6 +748,48 @@ function EditBankAccountModal({
               </div>
               )}
             </div>
+          </div>
+          {companyEmails.length > 0 && onCompanyEmailIdChange && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Email de la société</label>
+              <Select
+                value={companyEmailId || (companyEmails.find((e) => e.is_default)?.id ?? companyEmails[0]?.id ?? "")}
+                onChange={(e) => onCompanyEmailIdChange(e.target.value)}
+              >
+                <option value="">Aucun</option>
+                {companyEmails.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.email}{e.is_default ? " ★" : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {companyPhones.length > 0 && onCompanyPhoneIdChange && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Téléphone de la société</label>
+              <Select
+                value={companyPhoneId || (companyPhones.find((p) => p.is_default)?.id ?? companyPhones[0]?.id ?? "")}
+                onChange={(e) => onCompanyPhoneIdChange(e.target.value)}
+              >
+                <option value="">Aucun</option>
+                {companyPhones.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.phone}{p.is_default ? " ★" : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Telegram Chat ID</label>
+            <input
+              type="text"
+              value={telegramChatId}
+              onChange={(e) => onTelegramChatIdChange(e.target.value)}
+              placeholder="Ex. 123456789"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
           </div>
 
           <div className="col-span-3">

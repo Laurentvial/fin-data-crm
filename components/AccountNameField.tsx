@@ -41,19 +41,22 @@ export function AccountNameField({
   placeholder = "Ex. Compte courant",
   autoFocus,
   className = "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm",
+  showEmoji = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
+  /** Show emoji picker (hidden for now) */
+  showEmoji?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { emoji, name } = parseValue(value);
 
   useEffect(() => {
-    if (!pickerOpen) return;
+    if (!pickerOpen || !showEmoji) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setPickerOpen(false);
@@ -61,7 +64,7 @@ export function AccountNameField({
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [pickerOpen]);
+  }, [pickerOpen, showEmoji]);
 
   const setEmoji = (e: string) => {
     onChange(buildValue(e, name));
@@ -70,6 +73,19 @@ export function AccountNameField({
   const setName = (n: string) => {
     onChange(buildValue(emoji, n));
   };
+
+  if (!showEmoji) {
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={className}
+        autoFocus={autoFocus}
+      />
+    );
+  }
 
   return (
     <div ref={containerRef} className="flex flex-col gap-2">
