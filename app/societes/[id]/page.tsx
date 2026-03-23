@@ -517,7 +517,7 @@ export default function SocieteDetailPage() {
     setCreateAccountModalOpen(true);
     setCreateAccountName("");
     setCreateAccountBankId("");
-    setCreateAccountTypeId("");
+    setCreateAccountTypeId(accountTypes.length > 0 ? [...accountTypes].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
     setCreateAccountStatusId(accountStatuses.length > 0 ? [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
     setCreateAccountIbans([]);
     setCreateAccountLogin("");

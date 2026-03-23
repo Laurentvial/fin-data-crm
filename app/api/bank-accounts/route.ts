@@ -244,7 +244,7 @@ export async function POST(request: Request) {
       WHERE company_id = ${company_id}::uuid AND file_type = 'kbis'
       LIMIT 1
     `;
-    const title = company.name !== name ? `${name} / ${company.name}` : name;
+    const title = name;
 
     const ibanStr =
       ibanItems.length > 0

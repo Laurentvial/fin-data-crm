@@ -468,8 +468,8 @@ function EditBankAccountModal({
   useEffect(() => {
     const client = accountTypes.find((t) => t.id === accountTypeId);
     const status = accountStatuses.find((s) => s.id === accountStatusId);
-    const clientEmoji = client?.emoji?.trim() ?? "";
-    const statusEmoji = status?.emoji?.trim() ?? "";
+    const clientEmoji = (client?.emoji?.trim() ?? "").replace(/\s/g, "");
+    const statusEmoji = (status?.emoji?.trim() ?? "").replace(/\s/g, "");
     const firstIban = ibans.find((i) => (i?.iban ?? "").trim().length > 0);
     const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
     const iban2 = rawIban.slice(0, 2);
@@ -478,7 +478,8 @@ function EditBankAccountModal({
     const company = companies.find((c) => c.id === companyId);
     const companyName = (company?.name ?? "").trim();
     const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
-    const leftPart = [clientEmoji + statusEmoji, midPart].filter(Boolean).join(" ");
+    const emojiBlock = clientEmoji + statusEmoji;
+    const leftPart = [emojiBlock, midPart].filter(Boolean).join(" ");
     const autoName = [leftPart, companyName].filter(Boolean).join(" / ").toUpperCase();
     if (!autoName) return;
     const canUpdate = !name.trim() || name === lastAutoNameRef.current;
@@ -1149,7 +1150,7 @@ function AccountsPageContent() {
     const firstId = companies[0]?.id ?? "";
     setCreateCompanyId(firstId);
     setCreateBankId("");
-    setCreateAccountTypeId("");
+    setCreateAccountTypeId(accountTypes.length > 0 ? [...accountTypes].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
     setCreateAccountStatusId(accountStatuses.length > 0 ? [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
     setCreateIbans([]);
     setCreateLogin("");
