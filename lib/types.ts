@@ -14,7 +14,10 @@ export interface Company {
   ville?: string | null;
   activite?: string | null;
   date_immatriculation?: string | null;
+  /** @deprecated Replaced by source_id. */
   fournisseur?: string | null;
+  source_id?: string | null;
+  source_name?: string | null;
   gerant_adresse?: string | null;
   gerant_code_postal?: string | null;
   gerant_ville?: string | null;

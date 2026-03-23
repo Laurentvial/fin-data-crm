@@ -22,15 +22,17 @@ export async function GET(
   const { id } = await params;
   try {
     const rows = await sql`
-      SELECT id, name, address, siret, directeur, website,
-        vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur,
-        gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance,
-        gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance,
-        gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite,
-        country_code, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency,
-        invoice_template_id, bloc_notes, created_at, updated_at
-      FROM companies
-      WHERE id = ${id}
+      SELECT c.id, c.name, c.address, c.siret, c.directeur, c.website,
+        c.vps, c.forme_juridique, c.capital_social, c.code_postal, c.ville, c.activite, c.date_immatriculation,
+        c.source_id, s.name AS source_name,
+        c.gerant_adresse, c.gerant_code_postal, c.gerant_ville, c.gerant_pays, c.gerant_date_naissance,
+        c.gerant_ville_naissance, c.gerant_code_postal_naissance, c.gerant_pays_naissance,
+        c.gerant_numero_fiscal, c.gerant_numero_secu, c.gerant_numero_piece_identite,
+        c.country_code, c.vat_number, c.vat_rate, c.vat_rates, c.invoice_prefix, c.invoice_next_number, c.currency,
+        c.invoice_template_id, c.bloc_notes, c.created_at, c.updated_at
+      FROM companies c
+      LEFT JOIN sources s ON s.id = c.source_id
+      WHERE c.id = ${id}
     `;
     const row = rows[0];
     if (!row) {
@@ -81,7 +83,7 @@ export async function PATCH(
         : body?.date_immatriculation === null || body?.date_immatriculation === ""
           ? null
           : undefined;
-    const fournisseur = typeof body?.fournisseur === "string" ? body.fournisseur.trim() || null : body?.fournisseur === null || body?.fournisseur === "" ? null : undefined;
+    const sourceId = typeof body?.source_id === "string" ? body.source_id.trim() || null : body?.source_id === null || body?.source_id === "" ? null : undefined;
     const gerantAdresse = typeof body?.gerant_adresse === "string" ? body.gerant_adresse.trim() || null : undefined;
     const gerantCodePostal = typeof body?.gerant_code_postal === "string" ? body.gerant_code_postal.trim() || null : undefined;
     const gerantVille = typeof body?.gerant_ville === "string" ? body.gerant_ville.trim() || null : undefined;
@@ -170,9 +172,9 @@ export async function PATCH(
       updates.push(`date_immatriculation = $${idx++}`);
       values.push(dateImmatriculation);
     }
-    if (fournisseur !== undefined) {
-      updates.push(`fournisseur = $${idx++}`);
-      values.push(fournisseur);
+    if (sourceId !== undefined) {
+      updates.push(`source_id = $${idx++}`);
+      values.push(sourceId);
     }
     if (gerantAdresse !== undefined) {
       updates.push(`gerant_adresse = $${idx++}`);
@@ -258,7 +260,7 @@ export async function PATCH(
       UPDATE companies
       SET ${updates.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, fournisseur, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency, invoice_template_id, bloc_notes, created_at, updated_at
+      RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, source_id, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, country_code, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency, invoice_template_id, bloc_notes, created_at, updated_at
     `;
     const result = await sql.query(queryText, values);
     const rows = Array.isArray(result) ? result : [result];

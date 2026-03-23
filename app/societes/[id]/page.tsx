@@ -916,8 +916,8 @@ export default function SocieteDetailPage() {
                       <dd className="text-base">{company?.currency ?? "—"}</dd>
                     </div>
                     <div className="mt-4 pt-4 border-t border-[var(--border)]">
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Fournisseur</dt>
-                      <dd className="text-base">{company?.fournisseur ?? "—"}</dd>
+                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Source</dt>
+                      <dd className="text-base">{company?.source_name ?? "—"}</dd>
                     </div>
                   </dl>
                 </div>
@@ -949,7 +949,7 @@ export default function SocieteDetailPage() {
                             activite: company.activite ?? null,
                             date_immatriculation: company.date_immatriculation ?? null,
                             country_code: company.country_code ?? null,
-                            fournisseur: company.fournisseur ?? null,
+                            source_id: company.source_id ?? null,
                             gerant_adresse: company.gerant_adresse ?? null,
                             gerant_code_postal: company.gerant_code_postal ?? null,
                             gerant_ville: company.gerant_ville ?? null,

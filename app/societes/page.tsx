@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
-import type { Bank, Company } from "@/lib/types";
+import type { Bank, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -291,7 +291,8 @@ function CompanyModal({
   title,
   name,
   address,
-  fournisseur,
+  sourceId,
+  sources,
   siret,
   directeur,
   website,
@@ -321,7 +322,7 @@ function CompanyModal({
   currency,
   onNameChange,
   onAddressChange,
-  onFournisseurChange,
+  onSourceIdChange,
   onSiretChange,
   onDirecteurChange,
   onWebsiteChange,
@@ -357,7 +358,8 @@ function CompanyModal({
   title: string;
   name: string;
   address: string;
-  fournisseur: string;
+  sourceId: string;
+  sources: Source[];
   siret: string;
   directeur: string;
   website: string;
@@ -387,7 +389,7 @@ function CompanyModal({
   currency: string;
   onNameChange: (v: string) => void;
   onAddressChange: (v: string) => void;
-  onFournisseurChange: (v: string) => void;
+  onSourceIdChange: (v: string) => void;
   onSiretChange: (v: string) => void;
   onDirecteurChange: (v: string) => void;
   onWebsiteChange: (v: string) => void;
@@ -560,14 +562,18 @@ function CompanyModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Fournisseur</label>
-            <input
-              type="text"
-              value={fournisseur}
-              onChange={(e) => onFournisseurChange(e.target.value)}
-              placeholder="Nom du fournisseur"
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-            />
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Source</label>
+            <Select
+              value={sourceId}
+              onChange={(e) => onSourceIdChange(e.target.value)}
+            >
+              <option value="">Aucune source</option>
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
           </div>
           <div className="col-span-3 border-t border-[var(--border)] pt-4 mt-4">
             <h4 className="subsection-header mb-3 text-sm font-medium">Gérant</h4>
@@ -822,7 +828,8 @@ function SocietesPageContent() {
   const [isAddModal, setIsAddModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
-  const [editFournisseur, setEditFournisseur] = useState("");
+  const [editSourceId, setEditSourceId] = useState("");
+  const [sources, setSources] = useState<Source[]>([]);
   const [editSiret, setEditSiret] = useState("");
   const [editDirecteur, setEditDirecteur] = useState("");
   const [editWebsite, setEditWebsite] = useState("");
@@ -894,9 +901,10 @@ function SocietesPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const [resAccounts, resBanks] = await Promise.all([
+      const [resAccounts, resBanks, resSources] = await Promise.all([
         fetch("/api/accounts"),
         fetch("/api/banks"),
+        fetch("/api/sources"),
       ]);
       if (!resAccounts.ok) throw new Error("Échec du chargement");
       const data = await resAccounts.json();
@@ -904,6 +912,10 @@ function SocietesPageContent() {
       if (resBanks.ok) {
         const banksData = await resBanks.json();
         setBanks(Array.isArray(banksData) ? banksData : []);
+      }
+      if (resSources.ok) {
+        const sourcesData = await resSources.json();
+        setSources(Array.isArray(sourcesData) ? sourcesData : []);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -919,7 +931,7 @@ function SocietesPageContent() {
   const populateEditForm = useCallback((c: Company) => {
     setEditName(c.name);
     setEditAddress(c.address ?? "");
-    setEditFournisseur(c.fournisseur ?? "");
+    setEditSourceId(c.source_id ?? "");
     setEditSiret(c.siret ?? "");
     setEditDirecteur(c.directeur ?? "");
     setEditWebsite(c.website ?? "");
@@ -980,7 +992,7 @@ function SocietesPageContent() {
     setIsAddModal(true);
     setEditName("");
     setEditAddress("");
-    setEditFournisseur("");
+    setEditSourceId("");
     setEditSiret("");
     setEditDirecteur("");
     setEditWebsite("");
@@ -1034,7 +1046,7 @@ function SocietesPageContent() {
     setMenuOpenId(null);
     setEditName("");
     setEditAddress("");
-    setEditFournisseur("");
+    setEditSourceId("");
     setEditSiret("");
     setEditDirecteur("");
     setEditWebsite("");
@@ -1072,7 +1084,7 @@ function SocietesPageContent() {
     const payload: Record<string, unknown> = {
       name,
       address: editAddress.trim() || null,
-      fournisseur: editFournisseur.trim() || null,
+      source_id: editSourceId.trim() || null,
       siret: editSiret.trim() || null,
       directeur: editDirecteur.trim() || null,
       website: editWebsite.trim() || null,
@@ -1289,8 +1301,9 @@ function SocietesPageContent() {
           title={isAddModal ? "Nouvelle société" : "Modifier la société"}
           name={editName}
           address={editAddress}
-          fournisseur={editFournisseur}
-          onFournisseurChange={setEditFournisseur}
+          sourceId={editSourceId}
+          sources={sources}
+          onSourceIdChange={setEditSourceId}
           siret={editSiret}
           directeur={editDirecteur}
           website={editWebsite}
