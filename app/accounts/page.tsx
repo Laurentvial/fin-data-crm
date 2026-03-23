@@ -1524,11 +1524,12 @@ function AccountsPageContent() {
           companies={companies}
           banks={banks}
           accountTypes={accountTypes}
+          accountStatuses={accountStatuses}
           name={createName}
           companyId={createCompanyId}
           bankId={createBankId}
           accountTypeId={createAccountTypeId}
-          accountStatus={createAccountStatus}
+          accountStatusId={createAccountStatusId}
           ibans={createIbans}
           login={createLogin}
           password={createPassword}
