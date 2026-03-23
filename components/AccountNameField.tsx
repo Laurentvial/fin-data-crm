@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const ACCOUNT_NAME_EMOJIS = [
   { emoji: "❄️", label: "Neige" },
@@ -10,14 +10,37 @@ const ACCOUNT_NAME_EMOJIS = [
   { emoji: "🏢", label: "Immeuble" },
   { emoji: "🐬", label: "Dauphin" },
   { emoji: "🧿", label: "Nazar" },
+  { emoji: "🚫", label: "Stop" },
+  { emoji: "⚠️", label: "Danger" },
+  { emoji: "🛑", label: "Hexagone rouge" },
 ] as const;
+
+const EMOJI_LIST = ACCOUNT_NAME_EMOJIS.map((e) => e.emoji);
+
+function parseValue(value: string): { emoji: string; name: string } {
+  const trimmed = value.trim();
+  for (const emoji of EMOJI_LIST) {
+    if (trimmed.startsWith(emoji)) {
+      const rest = trimmed.slice(emoji.length).trim();
+      return { emoji, name: rest };
+    }
+  }
+  return { emoji: "", name: trimmed };
+}
+
+function buildValue(emoji: string, name: string): string {
+  const n = name.trim();
+  if (emoji && n) return emoji + " " + n;
+  if (emoji) return emoji;
+  return n;
+}
 
 export function AccountNameField({
   value,
   onChange,
   placeholder = "Ex. Compte courant",
   autoFocus,
-  className = "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] py-2 pl-3 pr-10 text-sm",
+  className = "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm",
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -25,9 +48,9 @@ export function AccountNameField({
   autoFocus?: boolean;
   className?: string;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { emoji, name } = parseValue(value);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -40,69 +63,75 @@ export function AccountNameField({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pickerOpen]);
 
-  const insertEmoji = (emoji: string) => {
-    const input = inputRef.current;
-    if (input) {
-      const start = input.selectionStart ?? value.length;
-      const end = input.selectionEnd ?? value.length;
-      const next = value.slice(0, start) + emoji + value.slice(end);
-      onChange(next);
-      requestAnimationFrame(() => {
-        input.focus();
-        const pos = start + emoji.length;
-        input.setSelectionRange(pos, pos);
-      });
-    } else {
-      onChange(value + emoji);
-    }
-    setPickerOpen(false);
+  const setEmoji = (e: string) => {
+    onChange(buildValue(e, name));
+  };
+
+  const setName = (n: string) => {
+    onChange(buildValue(emoji, n));
   };
 
   return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
+    <div ref={containerRef} className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((o) => !o)}
+            title="Choisir un emoji"
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--background)] text-2xl leading-none transition-colors hover:bg-[var(--muted)]"
+            aria-label="Choisir un emoji"
+            aria-expanded={pickerOpen}
+          >
+            {emoji || "😀"}
+          </button>
+          {pickerOpen && (
+            <div
+              className="absolute left-0 top-full z-50 mt-1 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 shadow-lg"
+              role="dialog"
+              aria-label="Sélectionner un emoji"
+            >
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmoji("");
+                    setPickerOpen(false);
+                  }}
+                  title="Aucun emoji"
+                  className="rounded p-2 text-sm leading-none transition-colors hover:bg-[var(--muted)] text-[var(--muted-foreground)]"
+                  aria-label="Aucun emoji"
+                >
+                  —
+                </button>
+                {ACCOUNT_NAME_EMOJIS.map(({ emoji: e, label }) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => {
+                      setEmoji(e);
+                      setPickerOpen(false);
+                    }}
+                    title={label}
+                    className="rounded p-2 text-xl leading-none transition-colors hover:bg-[var(--muted)]"
+                    aria-label={`Choisir ${label}`}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <input
-          ref={inputRef}
           type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           placeholder={placeholder}
           className={className}
           autoFocus={autoFocus}
         />
-        <button
-          type="button"
-          onClick={() => setPickerOpen((o) => !o)}
-          title="Insérer un emoji"
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-lg leading-none text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-          aria-label="Ouvrir le sélecteur d'emoji"
-          aria-expanded={pickerOpen}
-        >
-          😀
-        </button>
       </div>
-      {pickerOpen && (
-        <div
-          className="absolute left-0 top-full z-50 mt-1 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 shadow-lg"
-          role="dialog"
-          aria-label="Sélectionner un emoji"
-        >
-          <div className="flex flex-wrap gap-1">
-            {ACCOUNT_NAME_EMOJIS.map(({ emoji, label }) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => insertEmoji(emoji)}
-                title={label}
-                className="rounded p-2 text-xl leading-none transition-colors hover:bg-[var(--muted)]"
-                aria-label={`Insérer ${label}`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

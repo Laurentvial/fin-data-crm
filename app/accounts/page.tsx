@@ -204,7 +204,7 @@ function AccountCard({
           {bankAccount.account_type_name && (
             <span className="text-[var(--muted-foreground)]">·</span>
           )}
-          <AccountStatusBadge status={bankAccount.account_status ?? "Ouvert"} />
+          <AccountStatusBadge status={bankAccount.account_status_name ?? bankAccount.account_status ?? "Ouvert"} />
         </p>
         {ibanCountryCodes.length > 0 && (
           <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">
@@ -318,11 +318,12 @@ function EditBankAccountModal({
   companies,
   banks,
   accountTypes,
+  accountStatuses,
   name,
   companyId,
   bankId,
   accountTypeId,
-  accountStatus,
+  accountStatusId,
   telegramChatId,
   ibans,
   login,
@@ -335,7 +336,7 @@ function EditBankAccountModal({
   onCompanyIdChange,
   onBankIdChange,
   onAccountTypeIdChange,
-  onAccountStatusChange,
+  onAccountStatusIdChange,
   onTelegramChatIdChange,
   onIbansChange,
   onLoginChange,
@@ -359,11 +360,12 @@ function EditBankAccountModal({
   companies: Company[];
   banks: Bank[];
   accountTypes: AccountType[];
+  accountStatuses: AccountStatus[];
   name: string;
   companyId: string;
   bankId: string;
   accountTypeId: string;
-  accountStatus: AccountStatus;
+  accountStatusId: string;
   telegramChatId: string;
   ibans: IbanItem[];
   login: string;
@@ -376,7 +378,7 @@ function EditBankAccountModal({
   onCompanyIdChange: (v: string) => void;
   onBankIdChange: (v: string) => void;
   onAccountTypeIdChange: (v: string) => void;
-  onAccountStatusChange: (v: AccountStatus) => void;
+  onAccountStatusIdChange: (v: string) => void;
   onTelegramChatIdChange: (v: string) => void;
   onIbansChange: (v: IbanItem[]) => void;
   onLoginChange: (v: string) => void;
@@ -551,12 +553,12 @@ function EditBankAccountModal({
           )}
           {accountTypes.length > 0 && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type de compte</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Client</label>
               <Select
                 value={accountTypeId}
                 onChange={(e) => onAccountTypeIdChange(e.target.value)}
               >
-                <option value="">Aucun type</option>
+                <option value="">Aucun client</option>
                 {accountTypes.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -565,17 +567,22 @@ function EditBankAccountModal({
               </Select>
             </div>
           )}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
-            <Select
-              value={accountStatus}
-              onChange={(e) => onAccountStatusChange(e.target.value as AccountStatus)}
-            >
-              <option value="Ouvert">Ouvert</option>
-              <option value="Fermé">Fermé</option>
-              <option value="Problème">Problème</option>
-            </Select>
-          </div>
+          {accountStatuses.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
+              <Select
+                value={accountStatusId}
+                onChange={(e) => onAccountStatusIdChange(e.target.value)}
+              >
+                <option value="">Sélectionner un statut</option>
+                {accountStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Telegram Chat ID</label>
             <input
@@ -847,6 +854,7 @@ function AccountsPageContent() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
+  const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -855,7 +863,7 @@ function AccountsPageContent() {
   const [editCompanyId, setEditCompanyId] = useState("");
   const [editBankId, setEditBankId] = useState("");
   const [editAccountTypeId, setEditAccountTypeId] = useState("");
-  const [editAccountStatus, setEditAccountStatus] = useState<AccountStatus>("Ouvert");
+  const [editAccountStatusId, setEditAccountStatusId] = useState("");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
   const [editIbans, setEditIbans] = useState<IbanItem[]>([]);
   const [editLogin, setEditLogin] = useState("");
@@ -874,7 +882,7 @@ function AccountsPageContent() {
   const [createCompanyId, setCreateCompanyId] = useState("");
   const [createBankId, setCreateBankId] = useState("");
   const [createAccountTypeId, setCreateAccountTypeId] = useState("");
-  const [createAccountStatus, setCreateAccountStatus] = useState<AccountStatus>("Ouvert");
+  const [createAccountStatusId, setCreateAccountStatusId] = useState("");
   const [createIbans, setCreateIbans] = useState<IbanItem[]>([]);
   const [createLogin, setCreateLogin] = useState("");
   const [createPassword, setCreatePassword] = useState("");
@@ -940,24 +948,27 @@ function AccountsPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const [resBa, resCo, resBanks, resAccountTypes] = await Promise.all([
+      const [resBa, resCo, resBanks, resAccountTypes, resAccountStatuses] = await Promise.all([
         fetch("/api/bank-accounts"),
         fetch("/api/accounts"),
         fetch("/api/banks"),
         fetch("/api/account-types"),
+        fetch("/api/account-statuses"),
       ]);
       if (!resBa.ok) throw new Error("Échec du chargement des comptes");
       if (!resCo.ok) throw new Error("Échec du chargement des sociétés");
-      const [dataBa, dataCo, dataBanks, dataAccountTypes] = await Promise.all([
+      const [dataBa, dataCo, dataBanks, dataAccountTypes, dataAccountStatuses] = await Promise.all([
         resBa.json(),
         resCo.json(),
         resBanks.ok ? resBanks.json() : Promise.resolve([]),
         resAccountTypes.ok ? resAccountTypes.json() : Promise.resolve([]),
+        resAccountStatuses.ok ? resAccountStatuses.json() : Promise.resolve([]),
       ]);
       setBankAccounts(dataBa);
       setCompanies(dataCo);
       setBanks(Array.isArray(dataBanks) ? dataBanks : []);
       setAccountTypes(Array.isArray(dataAccountTypes) ? dataAccountTypes : []);
+      setAccountStatuses(Array.isArray(dataAccountStatuses) ? dataAccountStatuses : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -1022,7 +1033,7 @@ function AccountsPageContent() {
         setEditCompanyId(account.company_id);
         setEditBankId(account.bank_id ?? "");
         setEditAccountTypeId(account.account_type_id ?? "");
-        setEditAccountStatus((account.account_status as AccountStatus) ?? "Ouvert");
+        setEditAccountStatusId(account.account_status_id ?? "");
         setEditTelegramChatId(String(account.telegram_chat_id ?? ""));
         setEditIbans(account.ibans ?? []);
         setEditLogin(account.login ?? "");
@@ -1044,7 +1055,7 @@ function AccountsPageContent() {
     setEditCompanyId(ba.company_id);
     setEditBankId(ba.bank_id ?? "");
     setEditAccountTypeId(ba.account_type_id ?? "");
-    setEditAccountStatus((ba.account_status as AccountStatus) ?? "Ouvert");
+    setEditAccountStatusId(ba.account_status_id ?? "");
     setEditTelegramChatId(String(ba.telegram_chat_id ?? ""));
     setEditIbans(ba.ibans ?? []);
     setEditLogin(ba.login ?? "");
@@ -1090,7 +1101,7 @@ function AccountsPageContent() {
     setCreateCompanyId(firstId);
     setCreateBankId("");
     setCreateAccountTypeId("");
-    setCreateAccountStatus("Ouvert");
+    setCreateAccountStatusId(accountStatuses.length > 0 ? [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
     setCreateIbans([]);
     setCreateLogin("");
     setCreatePassword("");
@@ -1127,14 +1138,14 @@ function AccountsPageContent() {
           cvv: (v.cvv ?? "").trim() || undefined,
         }))
         .filter((v) => v.numero.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
+      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status_id?: string; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
         name,
         company_id: createCompanyId,
         ibans: ibansToSend,
       };
       if (createBankId) body.bank_id = createBankId;
       if (createAccountTypeId) body.account_type_id = createAccountTypeId;
-      body.account_status = createAccountStatus;
+      if (createAccountStatusId) body.account_status_id = createAccountStatusId;
       if (createLogin.trim()) body.login = createLogin.trim();
       if (createPassword.trim()) body.password = createPassword.trim();
       if (createPinCode.trim()) body.pin_code = createPinCode.trim();
@@ -1184,13 +1195,13 @@ function AccountsPageContent() {
     setSaving(true);
     setError(null);
     try {
-      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status?: AccountStatus; telegram_chat_id?: number; ibans?: IbanItem[]; login?: string | null; password?: string | null; pin_code?: string | null; plafond_limit?: string | null; cards?: CardItem[]; company_email_id?: string | null; company_phone_id?: string | null } = {
+      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status_id?: string; telegram_chat_id?: number; ibans?: IbanItem[]; login?: string | null; password?: string | null; pin_code?: string | null; plafond_limit?: string | null; cards?: CardItem[]; company_email_id?: string | null; company_phone_id?: string | null } = {
         name,
         company_id: editCompanyId,
       };
       body.bank_id = editBankId || null;
       body.account_type_id = editAccountTypeId || null;
-      body.account_status = editAccountStatus;
+      if (editAccountStatusId) body.account_status_id = editAccountStatusId;
       const tid = editTelegramChatId.trim();
       if (tid) {
         const num = parseInt(tid, 10);
@@ -1245,7 +1256,8 @@ function AccountsPageContent() {
                 bank_name: updated.bank_name ?? undefined,
                 account_type_id: updated.account_type_id ?? undefined,
                 account_type_name: updated.account_type_name ?? undefined,
-                account_status: updated.account_status ?? "Ouvert",
+                account_status_id: updated.account_status_id ?? undefined,
+                account_status_name: updated.account_status_name ?? undefined,
                 telegram_chat_id: updated.telegram_chat_id,
                 ibans: updated.ibans ?? ba.ibans,
                 login: updated.login ?? ba.login,
@@ -1426,11 +1438,12 @@ function AccountsPageContent() {
           companies={companies}
           banks={banks}
           accountTypes={accountTypes}
+          accountStatuses={accountStatuses}
           name={editName}
           companyId={editCompanyId}
           bankId={editBankId}
           accountTypeId={editAccountTypeId}
-          accountStatus={editAccountStatus}
+          accountStatusId={editAccountStatusId}
           telegramChatId={editTelegramChatId}
           ibans={editIbans}
           login={editLogin}
@@ -1455,8 +1468,8 @@ function AccountsPageContent() {
             setEditAccountTypeId(v);
             setError(null);
           }}
-          onAccountStatusChange={(v) => {
-            setEditAccountStatus(v);
+          onAccountStatusIdChange={(v) => {
+            setEditAccountStatusId(v);
             setError(null);
           }}
           onTelegramChatIdChange={(v) => {
@@ -1538,8 +1551,8 @@ function AccountsPageContent() {
             setCreateAccountTypeId(v);
             setError(null);
           }}
-          onAccountStatusChange={(v) => {
-            setCreateAccountStatus(v);
+          onAccountStatusIdChange={(v) => {
+            setCreateAccountStatusId(v);
             setError(null);
           }}
           onIbansChange={(v) => {

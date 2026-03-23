@@ -24,7 +24,8 @@ export async function PATCH(
     const body = await request.json();
     const name = typeof body?.name === "string" ? body.name.trim() : undefined;
     const sortOrder = typeof body?.sort_order === "number" ? body.sort_order : undefined;
-    if (!name && sortOrder === undefined) {
+    const isDefault = body?.is_default;
+    if (!name && sortOrder === undefined && isDefault === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -32,37 +33,41 @@ export async function PATCH(
     }
     if (name !== undefined && !name) {
       return NextResponse.json(
-        { error: "Le nom du client ne peut pas être vide." },
+        { error: "Le nom du statut de compte ne peut pas être vide." },
         { status: 400 }
       );
     }
     const [existing] = await sql`
-      SELECT id, name, sort_order FROM account_types WHERE id = ${id}::uuid
+      SELECT id, name, sort_order, is_default FROM account_statuses WHERE id = ${id}::uuid
     `;
     if (!existing) {
       return NextResponse.json(
-        { error: "Client introuvable." },
+        { error: "Statut de compte introuvable." },
         { status: 404 }
       );
     }
     const newName = name ?? existing.name;
     const newSortOrder = sortOrder !== undefined ? sortOrder : existing.sort_order;
+    const newIsDefault = isDefault !== undefined ? isDefault : existing.is_default;
+    if (newIsDefault) {
+      await sql`UPDATE account_statuses SET is_default = false WHERE id != ${id}::uuid`;
+    }
     const rows = await sql`
-      UPDATE account_types
-      SET name = ${newName}, sort_order = ${newSortOrder}, updated_at = NOW()
+      UPDATE account_statuses
+      SET name = ${newName}, sort_order = ${newSortOrder}, is_default = ${newIsDefault}, updated_at = NOW()
       WHERE id = ${id}::uuid
-      RETURNING id, name, sort_order, created_at, updated_at
+      RETURNING id, name, sort_order, is_default, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
       return NextResponse.json(
-        { error: "Client introuvable." },
+        { error: "Statut de compte introuvable." },
         { status: 404 }
       );
     }
     return NextResponse.json(row);
   } catch (error) {
-    console.error("PATCH /api/account-types/[id] error:", error);
+    console.error("PATCH /api/account-statuses/[id] error:", error);
     return NextResponse.json(
       { error: "Échec de la mise à jour." },
       { status: 500 }
@@ -78,18 +83,33 @@ export async function DELETE(
   if (authError) return authError;
   const { id } = await params;
   try {
-    const rows = await sql`
-      DELETE FROM account_types WHERE id = ${id}::uuid RETURNING id
+    const [deleted] = await sql`
+      DELETE FROM account_statuses WHERE id = ${id}::uuid RETURNING id, is_default
     `;
-    if (rows.length === 0) {
+    if (!deleted) {
       return NextResponse.json(
-        { error: "Client introuvable." },
+        { error: "Statut de compte introuvable." },
         { status: 404 }
       );
     }
+    if (deleted.is_default) {
+      const [next] = await sql`
+        SELECT id FROM account_statuses ORDER BY sort_order, name LIMIT 1
+      `;
+      if (next) {
+        await sql`UPDATE account_statuses SET is_default = true WHERE id = ${next.id}::uuid`;
+      }
+    }
     return new NextResponse(null, { status: 204 });
-  } catch (error) {
-    console.error("DELETE /api/account-types/[id] error:", error);
+  } catch (error: unknown) {
+    console.error("DELETE /api/account-statuses/[id] error:", error);
+    const msg = error instanceof Error ? error.message : "";
+    if (msg.includes("foreign key") || msg.includes("violates")) {
+      return NextResponse.json(
+        { error: "Impossible de supprimer ce statut : des comptes l'utilisent encore." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       { error: "Échec de la suppression." },
       { status: 500 }

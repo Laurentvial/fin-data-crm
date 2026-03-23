@@ -26,11 +26,12 @@ export interface CreateBankAccountModalProps {
   companies: Company[];
   banks: Bank[];
   accountTypes: AccountType[];
+  accountStatuses: AccountStatus[];
   name: string;
   companyId: string;
   bankId: string;
   accountTypeId: string;
-  accountStatus: AccountStatus;
+  accountStatusId: string;
   ibans: IbanItem[];
   login?: string;
   password?: string;
@@ -41,7 +42,7 @@ export interface CreateBankAccountModalProps {
   onCompanyIdChange: (v: string) => void;
   onBankIdChange: (v: string) => void;
   onAccountTypeIdChange: (v: string) => void;
-  onAccountStatusChange: (v: AccountStatus) => void;
+  onAccountStatusIdChange: (v: string) => void;
   onIbansChange: (v: IbanItem[]) => void;
   onLoginChange?: (v: string) => void;
   onPasswordChange?: (v: string) => void;
@@ -79,7 +80,7 @@ export function CreateBankAccountModal({
   onCompanyIdChange,
   onBankIdChange,
   onAccountTypeIdChange,
-  onAccountStatusChange,
+  onAccountStatusIdChange,
   onIbansChange,
   onLoginChange,
   onPasswordChange,
@@ -225,12 +226,12 @@ export function CreateBankAccountModal({
           </div>
           {accountTypes.length > 0 && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Type de compte</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Client</label>
               <Select
                 value={accountTypeId}
                 onChange={(e) => onAccountTypeIdChange(e.target.value)}
               >
-                <option value="">Aucun type</option>
+                <option value="">Aucun client</option>
                 {accountTypes.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -239,17 +240,22 @@ export function CreateBankAccountModal({
               </Select>
             </div>
           )}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
-            <Select
-              value={accountStatus}
-              onChange={(e) => onAccountStatusChange(e.target.value as AccountStatus)}
-            >
-              <option value="Ouvert">Ouvert</option>
-              <option value="Fermé">Fermé</option>
-              <option value="Problème">Problème</option>
-            </Select>
-          </div>
+          {accountStatuses.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Statut du compte</label>
+              <Select
+                value={accountStatusId}
+                onChange={(e) => onAccountStatusIdChange(e.target.value)}
+              >
+                <option value="">Sélectionner un statut</option>
+                {accountStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div className="col-span-3 grid grid-cols-2 gap-4">
             <div className="rounded-lg border border-[var(--border)]">
               <button

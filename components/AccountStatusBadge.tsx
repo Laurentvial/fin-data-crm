@@ -1,8 +1,6 @@
 "use client";
 
-import type { AccountStatus } from "@/lib/types";
-
-function getStatusColor(status: AccountStatus): string {
+function getStatusColor(status: string): string {
   switch (status) {
     case "Ouvert":
       return "text-green-600 dark:text-green-400";
@@ -15,7 +13,7 @@ function getStatusColor(status: AccountStatus): string {
   }
 }
 
-export function AccountStatusBadge({ status, className = "" }: { status: AccountStatus; className?: string }) {
+export function AccountStatusBadge({ status, className = "" }: { status: string; className?: string }) {
   const colorClass = getStatusColor(status);
   return <span className={`${colorClass} ${className}`}>{status}</span>;
 }

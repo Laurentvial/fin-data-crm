@@ -29,7 +29,8 @@ export async function GET(
         ba.telegram_chat_id,
         ba.bank_id,
         ba.account_type_id,
-        ba.account_status,
+        ba.account_status_id,
+        ast.name AS account_status_name,
         ba.login,
         ba.password,
         ba.pin_code,
@@ -65,9 +66,10 @@ export async function GET(
       LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
+      LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, ast.name, ba.created_at, ba.updated_at, c.name
     `;
     if (!row) {
       return NextResponse.json(
@@ -102,11 +104,8 @@ export async function PATCH(
     const account_type_id = body?.account_type_id !== undefined
       ? (typeof body.account_type_id === "string" ? (body.account_type_id.trim() || null) : null)
       : undefined;
-    const validStatuses = ["Ouvert", "Fermé", "Problème"] as const;
-    const account_status = body?.account_status !== undefined
-      ? (typeof body.account_status === "string" && validStatuses.includes(body.account_status as (typeof validStatuses)[number])
-          ? (body.account_status as (typeof validStatuses)[number])
-          : undefined)
+    const account_status_id = body?.account_status_id !== undefined
+      ? (typeof body.account_status_id === "string" ? (body.account_status_id.trim() || null) : null)
       : undefined;
     const telegram_chat_id =
       body?.telegram_chat_id !== undefined
@@ -168,7 +167,7 @@ export async function PATCH(
         })
       : undefined;
 
-    if (!name && company_id === undefined && bank_id === undefined && account_type_id === undefined && account_status === undefined && telegram_chat_id === undefined && ibanItems === undefined && login === undefined && password === undefined && pin_code === undefined && plafond_limit === undefined && company_email_id === undefined && company_phone_id === undefined && cardItems === undefined) {
+    if (!name && company_id === undefined && bank_id === undefined && account_type_id === undefined && account_status_id === undefined && telegram_chat_id === undefined && ibanItems === undefined && login === undefined && password === undefined && pin_code === undefined && plafond_limit === undefined && company_email_id === undefined && company_phone_id === undefined && cardItems === undefined) {
       return NextResponse.json(
         { error: "Aucune modification fournie." },
         { status: 400 }
@@ -193,7 +192,7 @@ export async function PATCH(
     }
 
     const [existing] = await sql`
-      SELECT id, name, company_id, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit, company_email_id, company_phone_id FROM bank_accounts WHERE id = ${id}
+      SELECT id, name, company_id, telegram_chat_id, bank_id, account_type_id, account_status_id, login, password, pin_code, plafond_limit, company_email_id, company_phone_id FROM bank_accounts WHERE id = ${id}
     `;
     if (!existing) {
       return NextResponse.json(
@@ -206,7 +205,22 @@ export async function PATCH(
     const newCompanyId = company_id ?? existing.company_id;
     const newBankId = bank_id !== undefined ? bank_id : existing.bank_id;
     const newAccountTypeId = account_type_id !== undefined ? account_type_id : existing.account_type_id;
-    const newAccountStatus = account_status !== undefined ? account_status : existing.account_status;
+    let newAccountStatusId: string = existing.account_status_id as string;
+    if (account_status_id !== undefined) {
+      if (account_status_id) {
+        const [statusCheck] = await sql`SELECT 1 FROM account_statuses WHERE id = ${account_status_id}::uuid LIMIT 1`;
+        if (!statusCheck) {
+          return NextResponse.json(
+            { error: "Statut de compte introuvable." },
+            { status: 400 }
+          );
+        }
+        newAccountStatusId = account_status_id;
+      } else {
+        const [defaultStatus] = await sql`SELECT id FROM account_statuses WHERE is_default = true LIMIT 1`;
+        newAccountStatusId = defaultStatus?.id ? (defaultStatus.id as string) : (existing.account_status_id as string);
+      }
+    }
     const newTelegramChatId =
       telegram_chat_id !== undefined ? telegram_chat_id : existing.telegram_chat_id;
     const newLogin = login !== undefined ? login : existing.login;
@@ -246,7 +260,7 @@ export async function PATCH(
         company_id = ${newCompanyId},
         bank_id = ${newBankId},
         account_type_id = ${newAccountTypeId},
-        account_status = ${newAccountStatus},
+        account_status_id = ${newAccountStatusId},
         telegram_chat_id = ${newTelegramChatId},
         login = ${newLogin},
         password = ${newPassword},
@@ -256,7 +270,7 @@ export async function PATCH(
         company_phone_id = ${newCompanyPhoneId},
         updated_at = NOW()
       WHERE id = ${id}
-      RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, created_at, updated_at
+      RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
@@ -291,7 +305,8 @@ export async function PATCH(
         ba.telegram_chat_id,
         ba.bank_id,
         ba.account_type_id,
-        ba.account_status,
+        ba.account_status_id,
+        ast.name AS account_status_name,
         ba.login,
         ba.password,
         ba.pin_code,
@@ -325,6 +340,7 @@ export async function PATCH(
       LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
+      LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       WHERE ba.id = ${id}
     `;
     return NextResponse.json(full ?? row);

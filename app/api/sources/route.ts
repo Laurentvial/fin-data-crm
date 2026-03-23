@@ -19,14 +19,14 @@ export async function GET() {
   try {
     const rows = await sql`
       SELECT id, name, sort_order, created_at, updated_at
-      FROM account_types
+      FROM sources
       ORDER BY sort_order, name
     `;
     return NextResponse.json(rows);
   } catch (error) {
-    console.error("GET /api/account-types error:", error);
+    console.error("GET /api/sources error:", error);
     return NextResponse.json(
-      { error: "Échec du chargement des clients." },
+      { error: "Échec du chargement des sources." },
       { status: 500 }
     );
   }
@@ -40,28 +40,28 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     if (!name) {
       return NextResponse.json(
-        { error: "Le nom du client est requis." },
+        { error: "Le nom de la source est requis." },
         { status: 400 }
       );
     }
     const sortOrder = typeof body?.sort_order === "number" ? body.sort_order : 0;
     const rows = await sql`
-      INSERT INTO account_types (name, sort_order)
+      INSERT INTO sources (name, sort_order)
       VALUES (${name}, ${sortOrder})
       RETURNING id, name, sort_order, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
       return NextResponse.json(
-        { error: "Échec de la création du client." },
+        { error: "Échec de la création de la source." },
         { status: 500 }
       );
     }
     return NextResponse.json(row);
   } catch (error) {
-    console.error("POST /api/account-types error:", error);
+    console.error("POST /api/sources error:", error);
     return NextResponse.json(
-      { error: "Échec de la création du client." },
+      { error: "Échec de la création de la source." },
       { status: 500 }
     );
   }

@@ -243,7 +243,7 @@ export function AccountVignette({
         {bankAccount.account_type_name && (
           <span className="text-[var(--muted-foreground)]">·</span>
         )}
-        <AccountStatusBadge status={bankAccount.account_status ?? "Ouvert"} />
+        <AccountStatusBadge status={bankAccount.account_status_name ?? bankAccount.account_status ?? "Ouvert"} />
       </p>
       {ibanCountryCodes.length > 0 && (
         <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">

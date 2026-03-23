@@ -119,6 +119,23 @@ export interface AccountType {
   updated_at: string;
 }
 
+export interface AccountStatus {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_default?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Source {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IbanItem {
   iban: string;
   bic?: string | null;
@@ -130,7 +147,8 @@ export interface CardItem {
   cvv?: string | null;
 }
 
-export type AccountStatus = "Ouvert" | "Fermé" | "Problème";
+/** @deprecated Use account_status_name from BankAccount. Legacy type for varchar status. */
+export type AccountStatusLegacy = "Ouvert" | "Fermé" | "Problème";
 
 export interface BankAccount {
   id: string;
@@ -143,7 +161,10 @@ export interface BankAccount {
   bank_url?: string | null;
   account_type_id?: string | null;
   account_type_name?: string | null;
-  account_status?: AccountStatus;
+  account_status_id?: string | null;
+  account_status_name?: string | null;
+  /** @deprecated Use account_status_name. Kept for backward compatibility. */
+  account_status?: string | null;
   has_logo?: boolean;
   ibans?: IbanItem[];
   /** Identifiants: login, mot de passe, code PIN */

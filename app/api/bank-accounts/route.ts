@@ -25,7 +25,7 @@ export async function GET() {
         ba.telegram_chat_id,
         ba.bank_id,
         ba.account_type_id,
-        ba.account_status,
+        ba.account_status_id,
         ba.login,
         ba.password,
         ba.pin_code,
@@ -36,6 +36,7 @@ export async function GET() {
         cp.phone AS company_phone,
         b.name AS bank_name,
         at.name AS account_type_name,
+        ast.name AS account_status_name,
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
@@ -60,8 +61,9 @@ export async function GET() {
       LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
+      LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, at.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, at.name, ast.name, ba.created_at, ba.updated_at, c.name
       ORDER BY c.name, ba.name
     `;
     return NextResponse.json(rows);
@@ -83,11 +85,7 @@ export async function POST(request: Request) {
     const company_id = typeof body?.company_id === "string" ? body.company_id.trim() : "";
     const bank_id = typeof body?.bank_id === "string" ? body.bank_id.trim() : null;
     const account_type_id = typeof body?.account_type_id === "string" ? body.account_type_id.trim() || null : null;
-    const accountStatusRaw = body?.account_status;
-    const validStatuses = ["Ouvert", "Fermé", "Problème"] as const;
-    const account_status = typeof accountStatusRaw === "string" && validStatuses.includes(accountStatusRaw as (typeof validStatuses)[number])
-      ? (accountStatusRaw as (typeof validStatuses)[number])
-      : "Ouvert";
+    let account_status_id: string | null = typeof body?.account_status_id === "string" ? body.account_status_id.trim() || null : null;
     const ibansRaw = body?.ibans;
     const telegramChatIdRaw = body?.telegram_chat_id;
     const existingTelegramChatId =
@@ -193,6 +191,24 @@ export async function POST(request: Request) {
       if (!phCheck) {
         return NextResponse.json(
           { error: "Le téléphone sélectionné n'appartient pas à cette société." },
+          { status: 400 }
+        );
+      }
+    }
+    if (!account_status_id) {
+      const [defaultStatus] = await sql`SELECT id FROM account_statuses WHERE is_default = true LIMIT 1`;
+      account_status_id = defaultStatus?.id ? (defaultStatus.id as string) : null;
+      if (!account_status_id) {
+        return NextResponse.json(
+          { error: "Aucun statut de compte par défaut trouvé. Créez des statuts et marquez-en un par défaut (★) dans Paramètres." },
+          { status: 400 }
+        );
+      }
+    } else {
+      const [statusCheck] = await sql`SELECT 1 FROM account_statuses WHERE id = ${account_status_id}::uuid LIMIT 1`;
+      if (!statusCheck) {
+        return NextResponse.json(
+          { error: "Statut de compte introuvable." },
           { status: 400 }
         );
       }
@@ -358,9 +374,9 @@ BANQUE : ${bankName ?? "—"}`;
       }
     }
     const rows = await sql`
-      INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, login, password, pin_code, plafond_limit, company_email_id, company_phone_id)
-      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null}, ${account_type_id}, ${account_status}, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
-      RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status, created_at, updated_at
+      INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, login, password, pin_code, plafond_limit, company_email_id, company_phone_id)
+      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null}, ${account_type_id}, ${account_status_id}::uuid, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
+      RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {
@@ -389,7 +405,8 @@ BANQUE : ${bankName ?? "—"}`;
         ba.telegram_chat_id,
         ba.bank_id,
         ba.account_type_id,
-        ba.account_status,
+        ba.account_status_id,
+        ast.name AS account_status_name,
         ba.login,
         ba.password,
         ba.pin_code,
@@ -417,6 +434,7 @@ BANQUE : ${bankName ?? "—"}`;
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
+      LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       WHERE ba.id = ${row.id}
     `;
     const result = full ?? row;

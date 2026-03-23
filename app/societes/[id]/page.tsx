@@ -89,11 +89,12 @@ export default function SocieteDetailPage() {
   const [addingPhone, setAddingPhone] = useState(false);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
+  const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
   const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
   const [createAccountName, setCreateAccountName] = useState("");
   const [createAccountBankId, setCreateAccountBankId] = useState("");
   const [createAccountTypeId, setCreateAccountTypeId] = useState("");
-  const [createAccountStatus, setCreateAccountStatus] = useState<AccountStatus>("Ouvert");
+  const [createAccountStatusId, setCreateAccountStatusId] = useState("");
   const [createAccountIbans, setCreateAccountIbans] = useState<IbanItem[]>([]);
   const [createAccountLogin, setCreateAccountLogin] = useState("");
   const [createAccountPassword, setCreateAccountPassword] = useState("");
@@ -116,13 +117,14 @@ export default function SocieteDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resLogo, resDocs, resTemplates] = await Promise.all([
+      const [resCompany, resEmails, resPhones, resBank, resBanks, resAccountTypes, resAccountStatuses, resLogo, resDocs, resTemplates] = await Promise.all([
         fetch(`/api/accounts/${id}`, { credentials: "same-origin" }),
         fetch(`/api/accounts/${id}/emails`),
         fetch(`/api/accounts/${id}/phones`),
         fetch(`/api/accounts/${id}/bank-accounts`),
         fetch("/api/banks"),
         fetch("/api/account-types"),
+        fetch("/api/account-statuses"),
         fetch(`/api/accounts/${id}/files/logo`).then((r) => (r.ok ? r : null)),
         fetch(`/api/accounts/${id}/files`),
         fetch("/api/templates"),
@@ -181,6 +183,11 @@ export default function SocieteDetailPage() {
       if (resAccountTypes?.ok) {
         const accountTypesData = await resAccountTypes.json();
         setAccountTypes(Array.isArray(accountTypesData) ? accountTypesData : []);
+      }
+
+      if (resAccountStatuses?.ok) {
+        const accountStatusesData = await resAccountStatuses.json();
+        setAccountStatuses(Array.isArray(accountStatusesData) ? accountStatusesData : []);
       }
 
       setHasLogo(resLogo?.ok ?? false);
@@ -511,7 +518,7 @@ export default function SocieteDetailPage() {
     setCreateAccountName("");
     setCreateAccountBankId("");
     setCreateAccountTypeId("");
-    setCreateAccountStatus("Ouvert");
+    setCreateAccountStatusId(accountStatuses.length > 0 ? [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
     setCreateAccountIbans([]);
     setCreateAccountLogin("");
     setCreateAccountPassword("");
@@ -571,14 +578,14 @@ export default function SocieteDetailPage() {
           cvv: (v.cvv ?? "").trim() || undefined,
         }))
         .filter((v) => v.numero.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status?: AccountStatus; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
+      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status_id?: string; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
         name,
         company_id: id,
         ibans: ibansToSend,
       };
       if (createAccountBankId) body.bank_id = createAccountBankId;
       if (createAccountTypeId) body.account_type_id = createAccountTypeId;
-      body.account_status = createAccountStatus;
+      if (createAccountStatusId) body.account_status_id = createAccountStatusId;
       if (createAccountLogin.trim()) body.login = createAccountLogin.trim();
       if (createAccountPassword.trim()) body.password = createAccountPassword.trim();
       if (createAccountPinCode.trim()) body.pin_code = createAccountPinCode.trim();
@@ -1346,8 +1353,8 @@ export default function SocieteDetailPage() {
             setCreateAccountTypeId(v);
             if (bankAccountError) setBankAccountError(null);
           }}
-          onAccountStatusChange={(v) => {
-            setCreateAccountStatus(v);
+          onAccountStatusIdChange={(v) => {
+            setCreateAccountStatusId(v);
             if (bankAccountError) setBankAccountError(null);
           }}
           onIbansChange={(v) => {
