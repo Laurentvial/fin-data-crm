@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
@@ -144,9 +145,10 @@ export async function POST(request: Request) {
           : 1;
     const currency = typeof body?.currency === "string" ? body.currency.trim().slice(0, 3).toUpperCase() || "EUR" : "EUR";
     const blocNotes = typeof body?.bloc_notes === "string" ? body.bloc_notes.trim() || null : null;
+    const id = randomUUID();
     const rows = await sql`
-      INSERT INTO companies (name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, source_id, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency, bloc_notes)
-      VALUES (${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${sourceId}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite}, ${vatNumber}, ${vatRates[0]}, ${JSON.stringify(vatRates)}::jsonb, ${invoicePrefix}, ${invoiceNextNumber}, ${currency}, ${blocNotes})
+      INSERT INTO companies (id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, country_code, source_id, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, vat_number, vat_rate, vat_rates, invoice_prefix, invoice_next_number, currency, bloc_notes)
+      VALUES (${id}, ${name}, ${address}, ${siret}, ${directeur}, ${website}, ${vps}, ${formeJuridique}, ${capitalSocial}, ${codePostal}, ${ville}, ${activite}, ${dateImmatriculation}, ${countryCode}, ${sourceId}, ${gerantAdresse}, ${gerantCodePostal}, ${gerantVille}, ${gerantPays}, ${gerantDateNaissance}, ${gerantVilleNaissance}, ${gerantCodePostalNaissance}, ${gerantPaysNaissance}, ${gerantNumeroFiscal}, ${gerantNumeroSecu}, ${gerantNumeroPieceIdentite}, ${vatNumber}, ${vatRates[0]}, ${JSON.stringify(vatRates)}::jsonb, ${invoicePrefix}, ${invoiceNextNumber}, ${currency}, ${blocNotes})
       RETURNING id, name, address, siret, directeur, website, vps, forme_juridique, capital_social, code_postal, ville, activite, date_immatriculation, source_id, gerant_adresse, gerant_code_postal, gerant_ville, gerant_pays, gerant_date_naissance, gerant_ville_naissance, gerant_code_postal_naissance, gerant_pays_naissance, gerant_numero_fiscal, gerant_numero_secu, gerant_numero_piece_identite, invoice_prefix, invoice_next_number, currency, country_code, vat_number, vat_rate, vat_rates, invoice_template_id, bloc_notes, created_at, updated_at
     `;
     const row = rows[0];
