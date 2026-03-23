@@ -1309,11 +1309,12 @@ export default function SocieteDetailPage() {
           companies={[company]}
           banks={banks}
           accountTypes={accountTypes}
+          accountStatuses={accountStatuses}
           name={createAccountName}
           companyId={id}
           bankId={createAccountBankId}
           accountTypeId={createAccountTypeId}
-          accountStatus={createAccountStatus}
+          accountStatusId={createAccountStatusId}
           ibans={createAccountIbans}
           login={createAccountLogin}
           password={createAccountPassword}
