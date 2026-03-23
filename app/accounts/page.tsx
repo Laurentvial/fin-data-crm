@@ -122,12 +122,18 @@ function getInitials(name: string): string {
     .toUpperCase() || "?";
 }
 
-function getIbanCountryCodes(ibans: IbanItem[] | undefined): string[] {
+function formatIbanForDisplay(iban: string): string {
+  const raw = iban.replace(/\s/g, "").toUpperCase();
+  if (!raw) return iban;
+  return raw.replace(/(.{4})/g, "$1 ").trim();
+}
+
+function getFullIbans(ibans: IbanItem[] | undefined): string[] {
   if (!ibans?.length) return [];
-  const codes = ibans
-    .map((item) => item.iban.replace(/\s/g, "").slice(0, 2).toUpperCase())
-    .filter((c) => c.length === 2);
-  return [...new Set(codes)];
+  return ibans
+    .map((item) => (item.iban ?? "").trim())
+    .filter((s) => s.length > 0)
+    .map(formatIbanForDisplay);
 }
 
 function AccountCard({
@@ -148,7 +154,7 @@ function AccountCard({
   deleting: boolean;
 }) {
   const balance = bankAccount.balance ?? 0;
-  const ibanCountryCodes = getIbanCountryCodes(bankAccount.ibans);
+  const fullIbans = getFullIbans(bankAccount.ibans);
   const cardBgStyle = (() => {
     const color = bankAccount.account_status_background_color;
     if (!color) return undefined;
@@ -206,19 +212,29 @@ function AccountCard({
             <MoreVerticalIcon />
           </button>
         </div>
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--foreground)]">
           {bankAccount.account_type_name && (
-            <span className="text-[var(--muted-foreground)]">{bankAccount.account_type_name}</span>
+            <span>
+              {bankAccount.account_type_emoji?.trim() ? `${bankAccount.account_type_emoji.trim()} ` : ""}
+              {bankAccount.account_type_name}
+            </span>
           )}
           {bankAccount.account_type_name && (
-            <span className="text-[var(--muted-foreground)]">·</span>
+            <span>·</span>
           )}
-          <AccountStatusBadge status={bankAccount.account_status_name ?? bankAccount.account_status ?? "Ouvert"} />
+          <AccountStatusBadge
+            status={bankAccount.account_status_name ?? bankAccount.account_status ?? "Ouvert"}
+            emoji={bankAccount.account_status_emoji}
+          />
         </p>
-        {ibanCountryCodes.length > 0 && (
-          <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">
-            {ibanCountryCodes.join(" / ")}
-          </p>
+        {fullIbans.length > 0 && (
+          <div className="mt-0.5 space-y-0.5">
+            {fullIbans.map((iban, i) => (
+              <p key={i} className="text-xs font-mono text-[var(--foreground)]">
+                {iban}
+              </p>
+            ))}
+          </div>
         )}
         <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
           {new Intl.NumberFormat("fr-FR", {
@@ -466,10 +482,16 @@ function EditBankAccountModal({
   const lastAutoNameRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const client = accountTypes.find((t) => t.id === accountTypeId);
-    const status = accountStatuses.find((s) => s.id === accountStatusId);
-    const clientEmoji = (client?.emoji?.trim() ?? "").replace(/\s/g, "");
-    const statusEmoji = (status?.emoji?.trim() ?? "").replace(/\s/g, "");
+    const typeId = (accountTypeId ?? "").toString().trim().toLowerCase();
+    const statusId = (accountStatusId ?? "").toString().trim().toLowerCase();
+    const client = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
+    const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
+    const clientEmoji = (client?.emoji ?? "").toString().trim().replace(/\s/g, "");
+    const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
+    const clientPart = clientEmoji;
+    const statusPart = statusEmoji;
+    const prefixParts = [clientPart, statusPart].filter(Boolean);
+    const prefix = prefixParts.join(" ");
     const firstIban = ibans.find((i) => (i?.iban ?? "").trim().length > 0);
     const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
     const iban2 = rawIban.slice(0, 2);
@@ -478,15 +500,16 @@ function EditBankAccountModal({
     const company = companies.find((c) => c.id === companyId);
     const companyName = (company?.name ?? "").trim();
     const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
-    const emojiBlock = clientEmoji + statusEmoji;
-    const leftPart = [emojiBlock, midPart].filter(Boolean).join(" ");
-    const autoName = [leftPart, companyName].filter(Boolean).join(" / ").toUpperCase();
+    const textPart = [midPart, companyName].filter(Boolean).join(" / ").toUpperCase();
+    const autoName = textPart ? (prefix ? prefix + " " : "") + textPart : prefix || "";
     if (!autoName) return;
-    const canUpdate = !name.trim() || name === lastAutoNameRef.current;
-    if (canUpdate) {
-      lastAutoNameRef.current = autoName;
-      onNameChange(autoName);
-    }
+    const nameTrimmed = name.trim();
+    const nameHasExpectedPrefix = prefix && nameTrimmed.startsWith(prefix);
+    const userEditedRest = nameHasExpectedPrefix && nameTrimmed !== lastAutoNameRef.current;
+    if (userEditedRest) return;
+    if (nameTrimmed === autoName) return;
+    lastAutoNameRef.current = autoName;
+    onNameChange(autoName);
   }, [accountTypeId, accountStatusId, ibans, bankId, companyId, accountTypes, accountStatuses, banks, companies, onNameChange, name]);
 
   const handleRibUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -801,6 +824,7 @@ function EditBankAccountModal({
                 value={login}
                 onChange={(e) => onLoginChange(e.target.value)}
                 placeholder="Login"
+                autoComplete="off"
                 className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               />
               <input
@@ -808,6 +832,7 @@ function EditBankAccountModal({
                 value={password}
                 onChange={(e) => onPasswordChange(e.target.value)}
                 placeholder="Mot de passe"
+                autoComplete="off"
                 className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               />
               <input
@@ -815,6 +840,7 @@ function EditBankAccountModal({
                 value={pinCode}
                 onChange={(e) => onPinCodeChange(e.target.value)}
                 placeholder="Code PIN"
+                autoComplete="off"
                 className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               />
             </div>
@@ -1150,8 +1176,12 @@ function AccountsPageContent() {
     const firstId = companies[0]?.id ?? "";
     setCreateCompanyId(firstId);
     setCreateBankId("");
-    setCreateAccountTypeId(accountTypes.length > 0 ? [...accountTypes].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
-    setCreateAccountStatusId(accountStatuses.length > 0 ? [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
+    const sortedTypes = [...accountTypes].sort((a, b) => a.sort_order - b.sort_order);
+    const defaultType = sortedTypes.find((t) => t.emoji?.trim()) ?? sortedTypes[0];
+    setCreateAccountTypeId(defaultType?.id ?? "");
+    const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
+    const defaultStatus = sortedStatuses.find((s) => s.emoji?.trim()) ?? sortedStatuses[0];
+    setCreateAccountStatusId(defaultStatus?.id ?? "");
     setCreateIbans([]);
     setCreateLogin("");
     setCreatePassword("");
@@ -1163,11 +1193,44 @@ function AccountsPageContent() {
     setCreateInviteWarning(null);
   };
 
+  const createLastAutoNameRef = useRef<string | null>(null);
+
   const closeCreateModal = () => {
     setCreateModalOpen(false);
     setError(null);
     setCreateInviteWarning(null);
+    createLastAutoNameRef.current = null;
   };
+
+  useEffect(() => {
+    if (!createModalOpen) return;
+    const typeId = (createAccountTypeId ?? "").toString().trim().toLowerCase();
+    const statusId = (createAccountStatusId ?? "").toString().trim().toLowerCase();
+    const client = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
+    const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
+    const clientEmoji = (client?.emoji ?? "").toString().trim().replace(/\s/g, "");
+    const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
+    const clientPart = clientEmoji;
+    const statusPart = statusEmoji;
+    const prefix = [clientPart, statusPart].filter(Boolean).join(" ");
+    const company = companies.find((c) => c.id === createCompanyId);
+    const companyName = (company?.name ?? "").trim();
+    const firstIban = createIbans.find((i) => (i?.iban ?? "").trim().length > 0);
+    const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+    const iban2 = rawIban.slice(0, 2);
+    const bank = banks.find((b) => b.id === createBankId);
+    const bankName = (bank?.name ?? "").trim();
+    const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
+    const textPart = [midPart, companyName].filter(Boolean).join(" / ").toUpperCase();
+    const autoName = textPart ? (prefix ? prefix + " " : "") + textPart : prefix || "";
+    if (!autoName) return;
+    const nameTrimmed = createName.trim();
+    const canUpdate = !nameTrimmed || nameTrimmed === createLastAutoNameRef.current;
+    if (!canUpdate) return;
+    if (nameTrimmed === autoName) return;
+    createLastAutoNameRef.current = autoName;
+    setCreateName(autoName);
+  }, [createModalOpen, createAccountTypeId, createAccountStatusId, createCompanyId, createBankId, createIbans, createName, accountTypes, accountStatuses, companies, banks]);
 
   const handleCreate = async () => {
     const name = createName.trim();
@@ -1306,8 +1369,10 @@ function AccountsPageContent() {
                 bank_name: updated.bank_name ?? undefined,
                 account_type_id: updated.account_type_id ?? undefined,
                 account_type_name: updated.account_type_name ?? undefined,
+                account_type_emoji: updated.account_type_emoji ?? undefined,
                 account_status_id: updated.account_status_id ?? undefined,
                 account_status_name: updated.account_status_name ?? undefined,
+                account_status_emoji: updated.account_status_emoji ?? undefined,
                 telegram_chat_id: updated.telegram_chat_id,
                 ibans: updated.ibans ?? ba.ibans,
                 login: updated.login ?? ba.login,

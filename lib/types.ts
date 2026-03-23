@@ -173,8 +173,10 @@ export interface BankAccount {
   bank_url?: string | null;
   account_type_id?: string | null;
   account_type_name?: string | null;
+  account_type_emoji?: string | null;
   account_status_id?: string | null;
   account_status_name?: string | null;
+  account_status_emoji?: string | null;
   /** @deprecated Use account_status_name. Kept for backward compatibility. */
   account_status?: string | null;
   /** Status background color for compte card (from account_statuses). Nullable. */

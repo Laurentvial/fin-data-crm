@@ -2,6 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountNameField } from "@/components/AccountNameField";
+import { Select } from "@/components/Select";
+
+const EMOJI_OPTIONS = [
+  { value: "", label: "Aucun" },
+  { value: "❄️", label: "Neige" },
+  { value: "🏠", label: "Maison" },
+  { value: "🔴", label: "Point rouge" },
+  { value: "🟢", label: "Point vert" },
+  { value: "🏢", label: "Immeuble" },
+  { value: "🐬", label: "Dauphin" },
+  { value: "🧿", label: "Nazar" },
+  { value: "🚫", label: "Stop" },
+  { value: "⚠️", label: "Danger" },
+  { value: "🛑", label: "Hexagone rouge" },
+] as const;
 import { authClient } from "@/lib/auth/client";
 import { getCachedSession } from "@/lib/auth/session-cache";
 import type { AccountStatus, AccountType, Bank, InvoiceTemplate, Source } from "@/lib/types";
@@ -1246,13 +1261,13 @@ function AccountTypesSection() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
-                <input
-                  type="text"
-                  value={createEmoji}
-                  onChange={(e) => setCreateEmoji(e.target.value)}
-                  placeholder="Ex. 🏦"
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
+                <Select value={createEmoji} onChange={(e) => setCreateEmoji(e.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                  {EMOJI_OPTIONS.map(({ value, label }) => (
+                    <option key={value || "none"} value={value}>
+                      {value ? `${value} ${label}` : label}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div className="mt-6 flex justify-end gap-2">
                 <button
@@ -1293,13 +1308,13 @@ function AccountTypesSection() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
-                <input
-                  type="text"
-                  value={editEmoji}
-                  onChange={(e) => setEditEmoji(e.target.value)}
-                  placeholder="Ex. 🏦"
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
+                <Select value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                  {EMOJI_OPTIONS.map(({ value, label }) => (
+                    <option key={value || "none"} value={value}>
+                      {value ? `${value} ${label}` : label}
+                    </option>
+                  ))}
+                </Select>
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">
@@ -1619,13 +1634,13 @@ function AccountStatusesSection() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
-                <input
-                  type="text"
-                  value={createEmoji}
-                  onChange={(e) => setCreateEmoji(e.target.value)}
-                  placeholder="Ex. ✅"
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
+                <Select value={createEmoji} onChange={(e) => setCreateEmoji(e.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                  {EMOJI_OPTIONS.map(({ value, label }) => (
+                    <option key={value || "none"} value={value}>
+                      {value ? `${value} ${label}` : label}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Couleur de fond (carte compte)</label>
@@ -1717,13 +1732,13 @@ function AccountStatusesSection() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Emoji (optionnel)</label>
-                <input
-                  type="text"
-                  value={editEmoji}
-                  onChange={(e) => setEditEmoji(e.target.value)}
-                  placeholder="Ex. ✅"
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
+                <Select value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                  {EMOJI_OPTIONS.map(({ value, label }) => (
+                    <option key={value || "none"} value={value}>
+                      {value ? `${value} ${label}` : label}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Couleur de fond (carte compte)</label>

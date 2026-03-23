@@ -45,7 +45,9 @@ export async function GET(
         ba.plafond_limit,
         b.name AS bank_name,
         at.name AS account_type_name,
+        at.emoji AS account_type_emoji,
         ast.name AS account_status_name,
+        ast.emoji AS account_status_emoji,
         ast.background_color AS account_status_background_color,
         ast.background_opacity AS account_status_background_opacity,
         ba.created_at,
@@ -73,7 +75,7 @@ export async function GET(
       LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.company_id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, ast.name, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, at.emoji, ast.name, ast.emoji, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name
       ORDER BY ba.name
     `;
     return NextResponse.json(rows);

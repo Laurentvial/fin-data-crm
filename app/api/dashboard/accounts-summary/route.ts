@@ -44,6 +44,12 @@ export async function GET() {
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
+        at.name AS account_type_name,
+        at.emoji AS account_type_emoji,
+        ast.name AS account_status_name,
+        ast.emoji AS account_status_emoji,
+        ast.background_color AS account_status_background_color,
+        ast.background_opacity AS account_status_background_opacity,
         EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = ba.bank_id AND bf.file_type = 'logo') AS has_logo,
         COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
         COALESCE(
@@ -55,9 +61,11 @@ export async function GET() {
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
       LEFT JOIN banks b ON b.id = ba.bank_id
+      LEFT JOIN account_types at ON at.id = ba.account_type_id
+      LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ANY(${ids})
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, b.name, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, b.name, ba.created_at, ba.updated_at, c.name, at.name, at.emoji, ast.name, ast.emoji, ast.background_color, ast.background_opacity
     `;
 
     const txRows = await sql`

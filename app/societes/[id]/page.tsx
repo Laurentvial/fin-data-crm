@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
@@ -517,8 +517,12 @@ export default function SocieteDetailPage() {
     setCreateAccountModalOpen(true);
     setCreateAccountName("");
     setCreateAccountBankId("");
-    setCreateAccountTypeId(accountTypes.length > 0 ? [...accountTypes].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
-    setCreateAccountStatusId(accountStatuses.length > 0 ? [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? "" : "");
+    const sortedTypes = [...accountTypes].sort((a, b) => a.sort_order - b.sort_order);
+    const defaultType = sortedTypes.find((t) => t.emoji?.trim()) ?? sortedTypes[0];
+    setCreateAccountTypeId(defaultType?.id ?? "");
+    const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
+    const defaultStatus = sortedStatuses.find((s) => s.emoji?.trim()) ?? sortedStatuses[0];
+    setCreateAccountStatusId(defaultStatus?.id ?? "");
     setCreateAccountIbans([]);
     setCreateAccountLogin("");
     setCreateAccountPassword("");
@@ -530,11 +534,43 @@ export default function SocieteDetailPage() {
     setBankAccountInviteWarning(null);
   };
 
+  const createAccountLastAutoNameRef = useRef<string | null>(null);
+
   const closeCreateAccountModal = () => {
     setCreateAccountModalOpen(false);
     setBankAccountError(null);
     setBankAccountInviteWarning(null);
+    createAccountLastAutoNameRef.current = null;
   };
+
+  useEffect(() => {
+    if (!createAccountModalOpen || !company) return;
+    const typeId = (createAccountTypeId ?? "").toString().trim().toLowerCase();
+    const statusId = (createAccountStatusId ?? "").toString().trim().toLowerCase();
+    const client = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
+    const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
+    const clientEmoji = (client?.emoji ?? "").toString().trim().replace(/\s/g, "");
+    const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
+    const clientPart = clientEmoji;
+    const statusPart = statusEmoji;
+    const prefix = [clientPart, statusPart].filter(Boolean).join(" ");
+    const firstIban = createAccountIbans.find((i) => (i?.iban ?? "").trim().length > 0);
+    const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+    const iban2 = rawIban.slice(0, 2);
+    const bank = banks.find((b) => b.id === createAccountBankId);
+    const bankName = (bank?.name ?? "").trim();
+    const companyName = (company?.name ?? "").trim();
+    const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
+    const textPart = [midPart, companyName].filter(Boolean).join(" / ").toUpperCase();
+    const autoName = textPart ? (prefix ? prefix + " " : "") + textPart : prefix || "";
+    if (!autoName) return;
+    const nameTrimmed = createAccountName.trim();
+    const canUpdate = !nameTrimmed || nameTrimmed === createAccountLastAutoNameRef.current;
+    if (!canUpdate) return;
+    if (nameTrimmed === autoName) return;
+    createAccountLastAutoNameRef.current = autoName;
+    setCreateAccountName(autoName);
+  }, [createAccountModalOpen, company, createAccountTypeId, createAccountStatusId, createAccountBankId, createAccountIbans, createAccountName, accountTypes, accountStatuses, banks]);
 
   const handleDeleteBankAccount = async (ba: BankAccount) => {
     setDeletingBankAccountId(ba.id);

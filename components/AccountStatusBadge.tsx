@@ -13,7 +13,16 @@ function getStatusColor(status: string): string {
   }
 }
 
-export function AccountStatusBadge({ status, className = "" }: { status: string; className?: string }) {
+export function AccountStatusBadge({
+  status,
+  emoji,
+  className = "",
+}: {
+  status: string;
+  emoji?: string | null;
+  className?: string;
+}) {
   const colorClass = getStatusColor(status);
-  return <span className={`${colorClass} ${className}`}>{status}</span>;
+  const display = emoji?.trim() ? `${emoji.trim()} ${status}` : status;
+  return <span className={`${colorClass} ${className}`}>{display}</span>;
 }

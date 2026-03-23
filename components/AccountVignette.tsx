@@ -5,12 +5,18 @@ import { useState } from "react";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import type { BankAccount, IbanItem, Transaction } from "@/lib/types";
 
-function getIbanCountryCodes(ibans: IbanItem[] | undefined): string[] {
+function formatIbanForDisplay(iban: string): string {
+  const raw = iban.replace(/\s/g, "").toUpperCase();
+  if (!raw) return iban;
+  return raw.replace(/(.{4})/g, "$1 ").trim();
+}
+
+function getFullIbans(ibans: IbanItem[] | undefined): string[] {
   if (!ibans?.length) return [];
-  const codes = ibans
-    .map((item) => item.iban.replace(/\s/g, "").slice(0, 2).toUpperCase())
-    .filter((c) => c.length === 2);
-  return [...new Set(codes)];
+  return ibans
+    .map((item) => (item.iban ?? "").trim())
+    .filter((s) => s.length > 0)
+    .map(formatIbanForDisplay);
 }
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -112,7 +118,7 @@ export function AccountVignette({
   deleting?: boolean;
 }) {
   const balance = bankAccount.balance ?? 0;
-  const ibanCountryCodes = getIbanCountryCodes(bankAccount.ibans);
+  const fullIbans = getFullIbans(bankAccount.ibans);
   const [menuOpen, setMenuOpen] = useState(false);
   const cardBgStyle = (() => {
     const color = bankAccount.account_status_background_color;
@@ -247,19 +253,29 @@ export function AccountVignette({
           )}
         </div>
       </div>
-      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--foreground)]">
         {bankAccount.account_type_name && (
-          <span className="text-[var(--muted-foreground)]">{bankAccount.account_type_name}</span>
+          <span>
+            {bankAccount.account_type_emoji?.trim() ? `${bankAccount.account_type_emoji.trim()} ` : ""}
+            {bankAccount.account_type_name}
+          </span>
         )}
         {bankAccount.account_type_name && (
-          <span className="text-[var(--muted-foreground)]">·</span>
+          <span>·</span>
         )}
-        <AccountStatusBadge status={bankAccount.account_status_name ?? bankAccount.account_status ?? "Ouvert"} />
+        <AccountStatusBadge
+          status={bankAccount.account_status_name ?? bankAccount.account_status ?? "Ouvert"}
+          emoji={bankAccount.account_status_emoji}
+        />
       </p>
-      {ibanCountryCodes.length > 0 && (
-        <p className="mt-0.5 text-xs font-medium text-[var(--muted-foreground)]">
-          {ibanCountryCodes.join(" / ")}
-        </p>
+      {fullIbans.length > 0 && (
+        <div className="mt-0.5 space-y-0.5">
+          {fullIbans.map((iban, i) => (
+            <p key={i} className="text-xs font-mono text-[var(--foreground)]">
+              {iban}
+            </p>
+          ))}
+        </div>
       )}
       <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
         {new Intl.NumberFormat("fr-FR", {
