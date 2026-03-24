@@ -11,7 +11,10 @@ import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummar
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
 import { debitStatusLabel } from "@/lib/debit-status";
 import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
-import { groupedInvoiceDisabledReason } from "@/lib/grouped-invoice-selection";
+import {
+  groupedInvoiceDisabledReason,
+  singleInvoiceDisabledReason,
+} from "@/lib/grouped-invoice-selection";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
   applyClientTransactionFilters,
@@ -370,6 +373,19 @@ function HomeContent() {
     setInvoiceModalTransactions(txns);
   }, []);
 
+  const createInvoiceToolbar = useMemo(() => {
+    const st = selectionStats;
+    const ids = st?.selectedTransactionIds;
+    if (!st || !ids || ids.length !== 1) return undefined;
+    const reason = singleInvoiceDisabledReason(st, selectedTransactionsFromGrid);
+    return {
+      count: 1,
+      disabled: Boolean(reason),
+      disabledReason: reason,
+      onClick: () => handleCreateGroupedInvoice(selectedTransactionsFromGrid),
+    };
+  }, [selectionStats, selectedTransactionsFromGrid, handleCreateGroupedInvoice]);
+
   const groupedInvoiceToolbar = useMemo(() => {
     const st = selectionStats;
     const ids = st?.selectedTransactionIds;
@@ -479,6 +495,7 @@ function HomeContent() {
         onAddClick={
           bankAccounts.length > 0 && !loadingBankAccounts ? () => setAddModalOpen(true) : undefined
         }
+        createInvoice={createInvoiceToolbar}
         groupedInvoice={groupedInvoiceToolbar}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -494,7 +511,6 @@ function HomeContent() {
               onCellValueChanged={handleCellValueChanged}
               onSelectionStatsChange={setSelectionStats}
               onDelete={handleDeleteTransaction}
-              onGenerateInvoice={(txn) => setInvoiceModalTransactions([txn])}
               onSortDirect={handleSortDirect}
               onSortDefault={handleSortDefault}
               sortState={sortState ?? DEFAULT_TRANSACTION_TABLE_SORT}

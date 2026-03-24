@@ -137,7 +137,7 @@ export interface TransactionSelectionStats {
   debitsTotal: number;
   /** Somme des montants des lignes CREDIT. */
   creditsTotal: number;
-  /** IDs des transactions cochées dans la colonne de gauche (facture groupée). */
+  /** IDs des transactions cochées dans la colonne de gauche (facture simple ou groupée). */
   selectedTransactionIds: string[];
 }
 
@@ -170,8 +170,6 @@ interface TransactionsGridProps {
   onCellValueChanged?: (id: string, field: string, value: unknown) => Promise<void>;
   onSelectionStatsChange?: (stats: TransactionSelectionStats | null) => void;
   onDelete?: (id: string) => Promise<void>;
-  /** Called when user clicks "Facture" to generate an invoice. */
-  onGenerateInvoice?: (transaction: Transaction) => void;
   /** Tri explicite (menus de colonne). */
   onSortDirect?: (field: string, direction: "asc" | "desc") => void;
   /** Rétablit le tri par défaut (menu colonne). */
@@ -582,6 +580,53 @@ function createDebitStatusRenderer(): CustomRenderer<CustomCell<DebitStatusCellD
   } as CustomRenderer<CustomCell<DebitStatusCellData>>;
 }
 
+/** Même géométrie / rendu que le pilule « Statut » (débit), couleurs type OK. */
+interface InvoiceLinkCellData {
+  type: "invoice_link";
+  hasLink: boolean;
+}
+
+function createInvoiceLinkRenderer(): CustomRenderer<CustomCell<InvoiceLinkCellData>> {
+  const okPill = debitStatusPillStyle("ok");
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<InvoiceLinkCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<InvoiceLinkCellData>).data?.type === "invoice_link",
+    draw: (args: DrawArgs<CustomCell<InvoiceLinkCellData>>, cell) => {
+      const { ctx, rect, theme } = args;
+      if (!cell.data.hasLink) {
+        ctx.save();
+        ctx.fillStyle = theme.textMedium ?? theme.textLight ?? "#94a3b8";
+        ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+        ctx.textBaseline = "middle";
+        ctx.fillText("—", rect.x + 8, rect.y + rect.height / 2);
+        ctx.restore();
+        return;
+      }
+      const pill = okPill ?? { label: "Voir la facture", bg: "#16a34a", fg: "#ffffff" };
+      const label = "Voir la facture";
+      ctx.save();
+      const padX = 8;
+      const h = Math.min(26, Math.max(20, rect.height - 10));
+      const y = rect.y + (rect.height - h) / 2;
+      ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+      const w = ctx.measureText(label).width + padX * 2;
+      const x = rect.x + 4;
+      const r = Math.min(6, h / 2);
+      roundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle = pill.bg;
+      ctx.fill();
+      ctx.fillStyle = pill.fg;
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, x + padX, y + h / 2);
+      ctx.restore();
+    },
+    getAccessibilityString: (cell: CustomCell<InvoiceLinkCellData>) =>
+      cell.data.hasLink ? "Voir la facture" : "Pas de facture",
+  } as CustomRenderer<CustomCell<InvoiceLinkCellData>>;
+}
+
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
@@ -624,7 +669,6 @@ export function TransactionsGrid({
   onCellValueChanged,
   onSelectionStatsChange,
   onDelete,
-  onGenerateInvoice,
   onSortDirect,
   onSortDefault,
   sortState,
@@ -645,6 +689,7 @@ export function TransactionsGrid({
     [settingsClients]
   );
   const debitStatusRenderer = useMemo(() => createDebitStatusRenderer(), []);
+  const invoiceLinkRenderer = useMemo(() => createInvoiceLinkRenderer(), []);
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
@@ -776,9 +821,7 @@ export function TransactionsGrid({
         id: "processed_by_user_name",
       }),
     ];
-    if (onGenerateInvoice) {
-      cols.push({ title: "Facture", width: Math.round(155 * scale), id: "invoice" });
-    }
+    cols.push({ title: "Facture", width: Math.round(118 * scale), id: "invoice" });
     if (onDelete) {
       cols.push({ title: "", width: Math.round(110 * scale), id: "delete" });
     }
@@ -786,7 +829,6 @@ export function TransactionsGrid({
   }, [
     scale,
     onDelete,
-    onGenerateInvoice,
     columnFiltersEnabled,
     filterValues,
     sortState?.column,
@@ -975,17 +1017,13 @@ export function TransactionsGrid({
       }
       if (field === "invoice") {
         const hasInvoice = Boolean(txn.invoice_id ?? txn.invoice_pdf_url);
-        const label = hasInvoice ? "Voir la facture" : "Créer une facture";
         return {
-          kind: GridCellKind.Text,
-          data: label,
-          displayData: label,
+          kind: GridCellKind.Custom,
+          data: { type: "invoice_link" as const, hasLink: hasInvoice },
+          copyData: hasInvoice ? "Voir la facture" : "",
           allowOverlay: false,
           readonly: true,
-          themeOverride: {
-            bgCell: hasInvoice ? "#22c55e" : "#ffffff",
-            textDark: hasInvoice ? "#ffffff" : "#1a1a1a",
-          },
+          cursor: hasInvoice ? "pointer" : "default",
         };
       }
       if (field === "delete") {
@@ -1010,9 +1048,6 @@ export function TransactionsGrid({
       if (!txn?.id || !onCellValueChanged) return;
 
       if (field === "invoice") {
-        if (onGenerateInvoice) {
-          onGenerateInvoice(txn);
-        }
         return;
       }
       if (field === "delete") {
@@ -1110,7 +1145,7 @@ export function TransactionsGrid({
         // Page handles error display
       }
     },
-    [transactions, onCellValueChanged, onDelete, onGenerateInvoice]
+    [transactions, onCellValueChanged, onDelete]
   );
 
   const onGridSelectionChange = useCallback(
@@ -1202,12 +1237,11 @@ export function TransactionsGrid({
       const [col, row] = cell;
       const field = COL_FIELDS[col];
       const txn = transactions[row];
-      if (field === "invoice" && txn && onGenerateInvoice) {
-        const hasInvoice = Boolean(txn.invoice_id ?? txn.invoice_pdf_url);
-        if (hasInvoice && txn.invoice_id) {
+      if (field === "invoice" && txn) {
+        if (txn.invoice_id) {
           window.open(`/api/invoices/${txn.invoice_id}/pdf`, "_blank");
-        } else {
-          onGenerateInvoice(txn);
+        } else if (txn.invoice_pdf_url?.trim()) {
+          window.open(new URL(txn.invoice_pdf_url.trim(), window.location.origin).href, "_blank");
         }
       } else if (field === "delete" && txn?.id && onDelete) {
         if (confirm("Supprimer cette transaction ?")) {
@@ -1219,7 +1253,7 @@ export function TransactionsGrid({
         }
       }
     },
-    [transactions, onDelete, onGenerateInvoice]
+    [transactions, onDelete]
   );
 
   const rowHeight = Math.round(56 * scale);
@@ -1337,7 +1371,7 @@ export function TransactionsGrid({
                 getRowThemeOverride={getRowThemeOverride}
                 onItemHovered={onItemHovered}
                 onCellEdited={onCellValueChanged ? onCellEdited : undefined}
-                onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
+                onCellClicked={onCellClicked}
                 onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
                 gridSelection={onSelectionStatsChange ? selection : undefined}
                 onGridSelectionChange={onSelectionStatsChange ? onGridSelectionChange : undefined}
@@ -1355,6 +1389,7 @@ export function TransactionsGrid({
                   fournisseurRenderer,
                   settingsClientRenderer,
                   debitStatusRenderer,
+                  invoiceLinkRenderer,
                 ]}
               />
             </div>

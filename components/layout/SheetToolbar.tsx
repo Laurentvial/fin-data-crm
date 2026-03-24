@@ -1,6 +1,6 @@
 "use client";
 
-export interface GroupedInvoiceToolbarAction {
+export interface InvoiceToolbarAction {
   count: number;
   disabled: boolean;
   disabledReason: string | null;
@@ -12,8 +12,10 @@ interface SheetToolbarProps {
   onResetFiltersClick?: () => void;
   onExportClick?: () => void;
   onAddClick?: () => void;
+  /** Affiché à côté de « Ajouter » lorsqu’une seule ligne est cochée. */
+  createInvoice?: InvoiceToolbarAction | null;
   /** Affiché à côté de « Ajouter » lorsque ≥ 2 lignes sont cochées. */
-  groupedInvoice?: GroupedInvoiceToolbarAction | null;
+  groupedInvoice?: InvoiceToolbarAction | null;
 }
 
 function FilterIcon({ className }: { className?: string }) {
@@ -65,6 +67,7 @@ export function SheetToolbar({
   onResetFiltersClick,
   onExportClick,
   onAddClick,
+  createInvoice,
   groupedInvoice,
 }: SheetToolbarProps) {
   return (
@@ -77,6 +80,17 @@ export function SheetToolbar({
         >
           <PlusIcon className="h-4 w-4" />
           Ajouter
+        </button>
+      )}
+      {createInvoice && (
+        <button
+          type="button"
+          disabled={createInvoice.disabled}
+          title={createInvoice.disabled ? createInvoice.disabledReason ?? undefined : undefined}
+          onClick={createInvoice.onClick}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Créer une facture
         </button>
       )}
       {groupedInvoice && (

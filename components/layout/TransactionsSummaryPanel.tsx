@@ -118,8 +118,9 @@ export function TransactionsSummaryPanel({
             <p className="mt-3 max-w-xl shrink-0 text-xs leading-relaxed text-[var(--muted-foreground)]">
               {selectionStats.selectedTransactionIds.length > 0 ? (
                 <>
-                  Cochez les cases à gauche du tableau pour choisir les transactions d&apos;une facture groupée. Les totaux
-                  ci-dessus portent sur les lignes cochées. Débits et crédits : sommes brutes (positives) par type.
+                  Cochez les cases à gauche : une ligne → « Créer une facture » dans la barre d&apos;outils ; plusieurs
+                  lignes → « Facture groupée ». Les totaux ci-dessus portent sur les lignes cochées. Débits et crédits :
+                  sommes brutes (positives) par type.
                 </>
               ) : (
                 <>
