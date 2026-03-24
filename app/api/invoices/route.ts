@@ -14,13 +14,31 @@ async function requireAuth() {
   return null;
 }
 
+function parseTransactionIds(body: unknown): string[] | null {
+  const rawIds = (body as { transaction_ids?: unknown })?.transaction_ids;
+  if (Array.isArray(rawIds) && rawIds.length > 0) {
+    const ids = [
+      ...new Set(
+        rawIds
+          .map((x) => (typeof x === "string" ? x.trim() : ""))
+          .filter(Boolean)
+      ),
+    ];
+    return ids.length > 0 ? ids : null;
+  }
+  const single = typeof (body as { transaction_id?: unknown })?.transaction_id === "string"
+    ? (body as { transaction_id: string }).transaction_id.trim()
+    : "";
+  return single ? [single] : null;
+}
+
 export async function POST(request: NextRequest) {
   const authError = await requireAuth();
   if (authError) return authError;
 
   try {
     const body = await request.json();
-    const transactionId = typeof body?.transaction_id === "string" ? body.transaction_id.trim() : "";
+    const transactionIds = parseTransactionIds(body);
     const customerName = typeof body?.customer_name === "string" ? body.customer_name.trim() : "";
     const customerAddress =
       typeof body?.customer_address === "string" ? body.customer_address.trim() || undefined : undefined;
@@ -28,9 +46,9 @@ export async function POST(request: NextRequest) {
       typeof body?.customer_vat === "string" ? body.customer_vat.trim() || undefined : undefined;
     const lineItemsRaw = Array.isArray(body?.line_items) ? body.line_items : [];
 
-    if (!transactionId) {
+    if (!transactionIds || transactionIds.length === 0) {
       return NextResponse.json(
-        { error: "transaction_id est requis" },
+        { error: "transaction_ids (tableau non vide) ou transaction_id est requis" },
         { status: 400 }
       );
     }
@@ -75,31 +93,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const linesTotal = lineItems.reduce(
-      (sum, li) => sum + li.quantity * li.unit_price_ttc,
-      0
-    );
-    const txnRows = await sql`
-      SELECT amount FROM transactions WHERE id = ${transactionId}::uuid
-    `;
-    const txn = Array.isArray(txnRows) ? txnRows[0] : txnRows;
-    if (!txn) {
-      return NextResponse.json(
-        { error: "Transaction introuvable" },
-        { status: 404 }
-      );
-    }
-    const transactionAmount = Math.abs(Number(txn.amount));
-    const roundedTotal = Math.round(linesTotal * 100) / 100;
-    if (Math.abs(roundedTotal - transactionAmount) >= 0.01) {
-      return NextResponse.json(
-        { error: "Le total des lignes doit être égal au montant de la transaction" },
-        { status: 400 }
-      );
-    }
-
     const result = await generateInvoice({
-      transactionId,
+      transactionIds,
       customerName,
       customerAddress,
       customerVat,
@@ -112,6 +107,18 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/invoices error:", err);
     if (msg.includes("Transaction introuvable")) {
       return NextResponse.json({ error: "Transaction introuvable" }, { status: 404 });
+    }
+    if (msg.includes("même société")) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    if (msg.includes("déjà une facture")) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    if (msg.includes("Au moins une transaction")) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    if (msg.includes("total des lignes")) {
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
     if (msg.includes("Cloudinary")) {
       return NextResponse.json(
@@ -148,7 +155,14 @@ export async function GET(request: NextRequest) {
       JOIN companies c ON c.id = i.company_id
       WHERE
         (${companyId}::uuid IS NULL OR i.company_id = ${companyId}::uuid)
-        AND (${transactionId}::uuid IS NULL OR i.transaction_id = ${transactionId}::uuid)
+        AND (
+          ${transactionId}::uuid IS NULL
+          OR i.transaction_id = ${transactionId}::uuid
+          OR EXISTS (
+            SELECT 1 FROM invoice_transactions it
+            WHERE it.invoice_id = i.id AND it.transaction_id = ${transactionId}::uuid
+          )
+        )
       ORDER BY i.issue_date DESC, i.created_at DESC
       LIMIT ${limit}
       OFFSET ${offset}

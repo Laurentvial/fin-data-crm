@@ -11,6 +11,7 @@ import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummar
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
 import { debitStatusLabel } from "@/lib/debit-status";
 import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
+import { groupedInvoiceDisabledReason } from "@/lib/grouped-invoice-selection";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
   applyClientTransactionFilters,
@@ -63,7 +64,7 @@ function HomeContent() {
       : { mode: "all" },
   }));
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [invoiceModalTransaction, setInvoiceModalTransaction] = useState<Transaction | null>(null);
+  const [invoiceModalTransactions, setInvoiceModalTransactions] = useState<Transaction[] | null>(null);
   const [zoom, setZoom] = useState(100);
   const [sortState, setSortState] = useState<{
     column: string;
@@ -142,6 +143,13 @@ function HomeContent() {
     () => applyClientTransactionFilters(sortedTransactions, filterValues),
     [sortedTransactions, filterValues]
   );
+
+  const selectedTransactionsFromGrid = useMemo(() => {
+    const ids = selectionStats?.selectedTransactionIds;
+    if (!ids?.length) return [];
+    const byId = new Map(filteredTransactions.map((t) => [t.id, t]));
+    return ids.map((id) => byId.get(id)).filter((t): t is Transaction => t != null);
+  }, [selectionStats, filteredTransactions]);
 
   const filteredBalance = useMemo(() => {
     return filteredTransactions.reduce((sum, t) => sum + signedAmount(t), 0);
@@ -354,9 +362,26 @@ function HomeContent() {
 
   const handleInvoiceSuccess = useCallback((invoiceId: string) => {
     window.open(`/api/invoices/${invoiceId}/pdf`, "_blank");
-    setInvoiceModalTransaction(null);
+    setInvoiceModalTransactions(null);
     fetchTransactions();
   }, [fetchTransactions]);
+
+  const handleCreateGroupedInvoice = useCallback((txns: Transaction[]) => {
+    setInvoiceModalTransactions(txns);
+  }, []);
+
+  const groupedInvoiceToolbar = useMemo(() => {
+    const st = selectionStats;
+    const ids = st?.selectedTransactionIds;
+    if (!st || !ids || ids.length < 2) return undefined;
+    const reason = groupedInvoiceDisabledReason(st, selectedTransactionsFromGrid);
+    return {
+      count: ids.length,
+      disabled: Boolean(reason),
+      disabledReason: reason,
+      onClick: () => handleCreateGroupedInvoice(selectedTransactionsFromGrid),
+    };
+  }, [selectionStats, selectedTransactionsFromGrid, handleCreateGroupedInvoice]);
 
   const handleAddTransaction = useCallback((newTx: Transaction) => {
     setTransactions((prev) => [newTx, ...prev]);
@@ -454,6 +479,7 @@ function HomeContent() {
         onAddClick={
           bankAccounts.length > 0 && !loadingBankAccounts ? () => setAddModalOpen(true) : undefined
         }
+        groupedInvoice={groupedInvoiceToolbar}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="flex min-h-full flex-1 flex-col px-4 py-4">
@@ -468,7 +494,7 @@ function HomeContent() {
               onCellValueChanged={handleCellValueChanged}
               onSelectionStatsChange={setSelectionStats}
               onDelete={handleDeleteTransaction}
-              onGenerateInvoice={(txn) => setInvoiceModalTransaction(txn)}
+              onGenerateInvoice={(txn) => setInvoiceModalTransactions([txn])}
               onSortDirect={handleSortDirect}
               onSortDefault={handleSortDefault}
               sortState={sortState ?? DEFAULT_TRANSACTION_TABLE_SORT}
@@ -494,10 +520,11 @@ function HomeContent() {
           onSuccess={handleAddTransaction}
         />
       )}
-      {invoiceModalTransaction && (
+      {invoiceModalTransactions && invoiceModalTransactions.length > 0 && (
         <GenerateInvoiceModal
-          transaction={invoiceModalTransaction}
-          onClose={() => setInvoiceModalTransaction(null)}
+          key={invoiceModalTransactions.map((t) => t.id).join(",")}
+          transactions={invoiceModalTransactions}
+          onClose={() => setInvoiceModalTransactions(null)}
           onSuccess={handleInvoiceSuccess}
         />
       )}

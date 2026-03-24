@@ -173,10 +173,18 @@ export async function GET(request: NextRequest) {
         LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
         LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
         LEFT JOIN LATERAL (
-          SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
-          FROM invoices
-          WHERE transaction_id::text = t.id::text
-          ORDER BY created_at DESC
+          SELECT u.id AS invoice_id, u.pdf_url AS invoice_pdf_url
+          FROM (
+            SELECT i.id, i.pdf_url, i.created_at
+            FROM invoices i
+            WHERE i.transaction_id::text = t.id::text
+            UNION
+            SELECT i2.id, i2.pdf_url, i2.created_at
+            FROM invoice_transactions it2
+            JOIN invoices i2 ON i2.id = it2.invoice_id
+            WHERE it2.transaction_id::text = t.id::text
+          ) u
+          ORDER BY u.created_at DESC
           LIMIT 1
         ) i ON true
         WHERE

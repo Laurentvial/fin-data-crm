@@ -1,10 +1,19 @@
 "use client";
 
+export interface GroupedInvoiceToolbarAction {
+  count: number;
+  disabled: boolean;
+  disabledReason: string | null;
+  onClick: () => void;
+}
+
 interface SheetToolbarProps {
   /** Remet à zéro tous les filtres du tableau (colonnes + période API). */
   onResetFiltersClick?: () => void;
   onExportClick?: () => void;
   onAddClick?: () => void;
+  /** Affiché à côté de « Ajouter » lorsque ≥ 2 lignes sont cochées. */
+  groupedInvoice?: GroupedInvoiceToolbarAction | null;
 }
 
 function FilterIcon({ className }: { className?: string }) {
@@ -52,7 +61,12 @@ function PlusIcon({ className }: { className?: string }) {
   );
 }
 
-export function SheetToolbar({ onResetFiltersClick, onExportClick, onAddClick }: SheetToolbarProps) {
+export function SheetToolbar({
+  onResetFiltersClick,
+  onExportClick,
+  onAddClick,
+  groupedInvoice,
+}: SheetToolbarProps) {
   return (
     <div className="relative z-20 flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm">
       {onAddClick && (
@@ -63,6 +77,17 @@ export function SheetToolbar({ onResetFiltersClick, onExportClick, onAddClick }:
         >
           <PlusIcon className="h-4 w-4" />
           Ajouter
+        </button>
+      )}
+      {groupedInvoice && (
+        <button
+          type="button"
+          disabled={groupedInvoice.disabled}
+          title={groupedInvoice.disabled ? groupedInvoice.disabledReason ?? undefined : undefined}
+          onClick={groupedInvoice.onClick}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Facture groupée ({groupedInvoice.count})
         </button>
       )}
       {onResetFiltersClick && (

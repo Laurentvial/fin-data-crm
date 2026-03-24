@@ -13,7 +13,8 @@ const DEFAULT_TEMPLATE = readFileSync(
 );
 
 export interface GenerateInvoiceInput {
-  transactionId: string;
+  /** One or more transactions covered by this invoice (same company). */
+  transactionIds: string[];
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
@@ -26,10 +27,56 @@ export interface GenerateInvoiceResult {
   pdfUrl: string;
 }
 
+type TxnRow = {
+  id: string;
+  bank_account_id: string;
+  transaction_date: string | Date;
+  amount: unknown;
+  description: unknown;
+  type: unknown;
+  company_id: string;
+  company_name: unknown;
+  company_address: unknown;
+  siret: unknown;
+  directeur: unknown;
+  vat_number: unknown;
+  vat_rate: unknown;
+  vat_rates: unknown;
+  invoice_prefix: unknown;
+  invoice_next_number: unknown;
+  currency: unknown;
+  country_code: unknown;
+  invoice_template_id: unknown;
+  company_website: unknown;
+};
+
+function toDateStr(d: string | Date): string {
+  return typeof d === "string" ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10);
+}
+
+/** Latest transaction_date, then lexicographically greatest id (stable anchor). */
+function pickAnchorTxn(rows: TxnRow[]): TxnRow {
+  return [...rows].sort((a, b) => {
+    const da = toDateStr(a.transaction_date);
+    const db = toDateStr(b.transaction_date);
+    if (da !== db) return db.localeCompare(da);
+    return String(b.id).localeCompare(String(a.id));
+  })[0];
+}
+
 export async function generateInvoice(
   input: GenerateInvoiceInput
 ): Promise<GenerateInvoiceResult> {
-  const { transactionId, customerName, customerAddress, customerVat, lineItems: lineItemsInput } = input;
+  const { customerName, customerAddress, customerVat, lineItems: lineItemsInput } = input;
+
+  const transactionIds = [
+    ...new Set(
+      input.transactionIds.map((id) => (typeof id === "string" ? id.trim() : "")).filter(Boolean)
+    ),
+  ];
+  if (transactionIds.length === 0) {
+    throw new Error("Au moins une transaction est requise");
+  }
 
   const txnRows = await sql`
     SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
@@ -39,15 +86,40 @@ export async function generateInvoice(
     FROM transactions t
     JOIN bank_accounts ba ON ba.id = t.bank_account_id
     JOIN companies c ON c.id = ba.company_id
-    WHERE t.id = ${transactionId}::uuid
+    WHERE t.id = ANY(${transactionIds}::uuid[])
   `;
-  const txn = Array.isArray(txnRows) ? txnRows[0] : txnRows;
-  if (!txn) {
+  const rowList = (Array.isArray(txnRows) ? txnRows : txnRows != null ? [txnRows] : []) as TxnRow[];
+  if (rowList.length !== transactionIds.length) {
     throw new Error("Transaction introuvable");
   }
 
-  const companyId = txn.company_id as string;
-  const transactionAmount = Math.abs(Number(txn.amount));
+  const companyId = rowList[0].company_id as string;
+  if (!rowList.every((r) => r.company_id === companyId)) {
+    throw new Error("Toutes les transactions doivent appartenir à la même société");
+  }
+
+  const alreadyLinked = await sql`
+    SELECT transaction_id::text AS transaction_id FROM (
+      SELECT transaction_id FROM invoice_transactions
+      WHERE transaction_id = ANY(${transactionIds}::uuid[])
+      UNION
+      SELECT transaction_id FROM invoices
+      WHERE transaction_id = ANY(${transactionIds}::uuid[])
+    ) sub
+  `;
+  const linkedList = Array.isArray(alreadyLinked) ? alreadyLinked : alreadyLinked != null ? [alreadyLinked] : [];
+  if (linkedList.length > 0) {
+    throw new Error("Une ou plusieurs transactions ont déjà une facture");
+  }
+
+  const expectedTotal =
+    Math.round(
+      rowList.reduce((s, r) => s + Math.abs(Number(r.amount)), 0) * 100
+    ) / 100;
+
+  const txn = pickAnchorTxn(rowList);
+  const issueDate = toDateStr(txn.transaction_date);
+
   const vatRatesArr = txn.vat_rates as number[] | null | undefined;
   const defaultVatRatePct =
     Array.isArray(vatRatesArr) && vatRatesArr.length > 0
@@ -73,16 +145,21 @@ export async function generateInvoice(
   });
 
   const total = Math.round(lineItems.reduce((s, li) => s + li.amount, 0) * 100) / 100;
-  if (Math.abs(total - transactionAmount) >= 0.01) {
-    throw new Error("Le total des lignes ne correspond pas au montant de la transaction");
+  if (Math.abs(total - expectedTotal) >= 0.01) {
+    throw new Error(
+      transactionIds.length > 1
+        ? "Le total des lignes doit être égal à la somme des montants des transactions sélectionnées"
+        : "Le total des lignes ne correspond pas au montant de la transaction"
+    );
   }
 
-  const subtotal = Math.round(
-    lineItems.reduce((s, li) => {
-      const rate = li.vat_rate / 100;
-      return s + li.amount / (1 + rate);
-    }, 0) * 100
-  ) / 100;
+  const subtotal =
+    Math.round(
+      lineItems.reduce((s, li) => {
+        const rate = li.vat_rate / 100;
+        return s + li.amount / (1 + rate);
+      }, 0) * 100
+    ) / 100;
   const taxAmount = Math.round((total - subtotal) * 100) / 100;
 
   const allLinesZeroVat = lineItems.length > 0 && lineItems.every((li) => li.vat_rate === 0);
@@ -102,11 +179,6 @@ export async function generateInvoice(
   const year = new Date().getFullYear();
   const invoiceNumber = `${invoicePrefix}${year}-${String(seq).padStart(4, "0")}`;
 
-  const transactionDate = txn.transaction_date as string | Date;
-  const issueDate =
-    typeof transactionDate === "string"
-      ? transactionDate.slice(0, 10)
-      : new Date(transactionDate).toISOString().slice(0, 10);
   const dueDate = new Date(issueDate);
   dueDate.setDate(dueDate.getDate() + 30);
   const dueDateStr = dueDate.toISOString().slice(0, 10);
@@ -195,7 +267,6 @@ export async function generateInvoice(
   const html = renderHandlebarsTemplate(templateContent, templateData);
   const pdfBuffer = await htmlToPdfBuffer(html);
 
-  // Create or find customer linked to company
   const nameNorm = customerName.trim().toLowerCase();
   const existingCustomerRows = await sql`
     SELECT id FROM customers
@@ -206,7 +277,6 @@ export async function generateInvoice(
   let customerId: string | null = null;
   if (existingCustomer?.id) {
     customerId = existingCustomer.id as string;
-    // Update address/vat if provided and different
     await sql`
       UPDATE customers SET
         address = COALESCE(${customerAddress ?? null}, address),
@@ -224,6 +294,8 @@ export async function generateInvoice(
     customerId = (insertedCustomer?.id as string) ?? null;
   }
 
+  const anchorTransactionId = txn.id as string;
+
   const insertRows = await sql`
     INSERT INTO invoices (
       company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
@@ -231,7 +303,7 @@ export async function generateInvoice(
       subtotal, tax_amount, total, currency, status
     )
     VALUES (
-      ${companyId}::uuid, ${transactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
+      ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
       ${issueDate}::date, ${dueDateStr}::date,
       ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
       ${JSON.stringify(lineItems)}::jsonb,
@@ -242,6 +314,12 @@ export async function generateInvoice(
   `;
   const inserted = Array.isArray(insertRows) ? insertRows[0] : insertRows;
   const invoiceId = (inserted?.id as string) ?? "";
+
+  await sql`
+    INSERT INTO invoice_transactions (invoice_id, transaction_id)
+    SELECT ${invoiceId}::uuid, u.tid::uuid
+    FROM unnest(${transactionIds}::uuid[]) AS u(tid)
+  `;
 
   const pdfUrl = await uploadPdfToCloudinary(pdfBuffer, companyId, invoiceId);
 

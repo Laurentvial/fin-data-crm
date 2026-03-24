@@ -92,7 +92,11 @@ export function TransactionsSummaryPanel({
             <p className="mb-3 shrink-0 text-sm font-medium text-[var(--muted-foreground)]">Sélection dans le tableau</p>
             <div className={`${summaryRowClass} shrink-0`}>
               <StatBlock
-                label="Lignes avec montant dans la sélection"
+                label={
+                  selectionStats.selectedTransactionIds.length > 0
+                    ? "Lignes cochées"
+                    : "Lignes avec montant dans la sélection"
+                }
                 value={selectionStats.rowCount.toLocaleString("fr-FR")}
               />
               <StatBlock
@@ -112,8 +116,17 @@ export function TransactionsSummaryPanel({
               />
             </div>
             <p className="mt-3 max-w-xl shrink-0 text-xs leading-relaxed text-[var(--muted-foreground)]">
-              Le décompte de lignes et les totaux ne concernent que les rangées dont la cellule « Montant » est incluse
-              dans la sélection. Débits et crédits : sommes brutes (positives) par type.
+              {selectionStats.selectedTransactionIds.length > 0 ? (
+                <>
+                  Cochez les cases à gauche du tableau pour choisir les transactions d&apos;une facture groupée. Les totaux
+                  ci-dessus portent sur les lignes cochées. Débits et crédits : sommes brutes (positives) par type.
+                </>
+              ) : (
+                <>
+                  Sans cases cochées, le décompte ne concerne que les rangées dont la cellule « Montant » est incluse dans
+                  la sélection rectangulaire. Débits et crédits : sommes brutes (positives) par type.
+                </>
+              )}
             </p>
           </div>
         )}

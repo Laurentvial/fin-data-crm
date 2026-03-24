@@ -14,7 +14,8 @@ interface LineItemRow {
 }
 
 interface GenerateInvoiceModalProps {
-  transaction: Transaction;
+  /** Une ou plusieurs transactions (même société) couvertes par la facture. */
+  transactions: Transaction[];
   onClose: () => void;
   onSuccess: (invoiceId: string, pdfUrl: string, invoiceNumber: string) => void;
 }
@@ -30,10 +31,13 @@ function createEmptyRow(defaultVatRate: number): LineItemRow {
 }
 
 export function GenerateInvoiceModal({
-  transaction,
+  transactions,
   onClose,
   onSuccess,
 }: GenerateInvoiceModalProps) {
+  if (transactions.length === 0) return null;
+
+  const isMulti = transactions.length > 1;
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerVat, setCustomerVat] = useState("");
@@ -51,7 +55,7 @@ export function GenerateInvoiceModal({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const companyId = transaction.company_id;
+  const companyId = transactions[0]?.company_id;
 
   useEffect(() => {
     if (!companyId) return;
@@ -125,12 +129,14 @@ export function GenerateInvoiceModal({
     }, 150);
   }, []);
 
-  const amount = Number(transaction.amount);
-  const transactionAmount = Math.abs(amount);
+  const transactionAmount =
+    Math.round(
+      transactions.reduce((s, t) => s + Math.abs(Number(t.amount)), 0) * 100
+    ) / 100;
   const displayAmount = new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(transaction.type === "DEBIT" ? -transactionAmount : transactionAmount);
+  }).format(transactionAmount);
 
   const totalLines = lineItems.reduce(
     (sum, row) => sum + row.quantity * row.unit_price_ttc,
@@ -194,7 +200,11 @@ export function GenerateInvoiceModal({
       return;
     }
     if (!isValidTotal) {
-      setError("Le total des lignes doit être égal au montant de la transaction.");
+      setError(
+        isMulti
+          ? "Le total des lignes doit être égal à la somme des montants des transactions sélectionnées."
+          : "Le total des lignes doit être égal au montant de la transaction."
+      );
       return;
     }
     setError(null);
@@ -204,7 +214,7 @@ export function GenerateInvoiceModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transaction_id: transaction.id,
+          transaction_ids: transactions.map((t) => t.id),
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
@@ -215,7 +225,7 @@ export function GenerateInvoiceModal({
       if (!res.ok) {
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
-      onSuccess(data.id, data.pdf_url, data.invoice_number);
+      onSuccess(data.id, data.pdfUrl, data.invoiceNumber);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la génération");
@@ -240,14 +250,57 @@ export function GenerateInvoiceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="subsection-header mb-4 text-lg font-medium">
-          Générer une facture
+          {isMulti ? `Générer une facture groupée (${transactions.length})` : "Générer une facture"}
         </h3>
         <div className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--muted)]/50 p-3 text-sm">
-          <p className="text-[var(--muted-foreground)]">
-            Transaction : {transaction.description || "—"} |{" "}
-            {transaction.company_name ?? "—"}
-          </p>
-          <p className="mt-1 font-medium">Montant : {displayAmount} €</p>
+          {isMulti ? (
+            <>
+              <p className="text-[var(--muted-foreground)]">
+                Société : {transactions[0]?.company_name ?? "—"} · Montant total cible :{" "}
+                <span className="font-medium text-[var(--foreground)]">{displayAmount} €</span>
+              </p>
+              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-[var(--muted-foreground)]">
+                {transactions.map((t) => {
+                  const num = Number(t.amount);
+                  const mag = Math.abs(num);
+                  const signed =
+                    t.type === "DEBIT"
+                      ? -mag
+                      : mag;
+                  const line = new Intl.NumberFormat("fr-FR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }).format(signed);
+                  return (
+                    <li key={t.id} className="truncate text-xs">
+                      <span className="tabular-nums">{(t.transaction_date ?? "").slice(0, 10)}</span>
+                      {" · "}
+                      {t.description || "—"} — {line} €
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ) : (
+            <>
+              <p className="text-[var(--muted-foreground)]">
+                Transaction : {transactions[0]?.description || "—"} |{" "}
+                {transactions[0]?.company_name ?? "—"}
+              </p>
+              <p className="mt-1 font-medium">
+                Montant :{" "}
+                {new Intl.NumberFormat("fr-FR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }).format(
+                  transactions[0]!.type === "DEBIT"
+                    ? -Math.abs(Number(transactions[0]!.amount))
+                    : Math.abs(Number(transactions[0]!.amount))
+                )}{" "}
+                €
+              </p>
+            </>
+          )}
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div ref={customerListRef} className="relative">

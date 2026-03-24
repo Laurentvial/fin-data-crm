@@ -137,6 +137,8 @@ export interface TransactionSelectionStats {
   debitsTotal: number;
   /** Somme des montants des lignes CREDIT. */
   creditsTotal: number;
+  /** IDs des transactions cochées dans la colonne de gauche (facture groupée). */
+  selectedTransactionIds: string[];
 }
 
 /** Glide `onHeaderMenuClick` reçoit le rectangle d’en-tête déjà en coordonnées viewport (voir getBoundsForItem). */
@@ -1117,44 +1119,80 @@ export function TransactionsGrid({
 
       if (!onSelectionStatsChange) return;
 
+      const checkedRows = newSelection.rows.toArray().sort((a, b) => a - b);
+      const selectedTransactionIds = checkedRows
+        .filter((r) => r >= 0 && r < transactions.length)
+        .map((r) => transactions[r]?.id)
+        .filter((id): id is string => Boolean(id));
+
       const current = newSelection.current;
-      if (!current?.range) {
+      const hasRect = Boolean(current?.range);
+
+      let sum = 0;
+      let debitsTotal = 0;
+      let creditsTotal = 0;
+      let rowCount = 0;
+
+      const addTxnTotals = (txn: (typeof transactions)[number]) => {
+        const num = Number(txn.amount);
+        if (Number.isNaN(num)) return;
+        if (txn.type === "DEBIT") {
+          debitsTotal += num;
+          sum -= num;
+        } else {
+          creditsTotal += num;
+          sum += num;
+        }
+      };
+
+      if (checkedRows.length > 0) {
+        for (const row of checkedRows) {
+          if (row < 0 || row >= transactions.length) continue;
+          const txn = transactions[row];
+          if (!txn) continue;
+          rowCount += 1;
+          addTxnTotals(txn);
+        }
+      } else if (hasRect && current?.range) {
+        const ranges = [current.range, ...(current.rangeStack ?? [])];
+        const rowSet = new Set<number>();
+        const numCols = COL_FIELDS.length;
+
+        for (const rect of ranges) {
+          const { x, y, width, height } = rect;
+          for (let row = y; row < y + height; row++) {
+            if (row < 0 || row >= transactions.length) continue;
+            const txn = transactions[row];
+            if (!txn) continue;
+            let rowTouchesAmount = false;
+            for (let col = x; col < x + width; col++) {
+              if (col < 0 || col >= numCols) continue;
+              if (col === AMOUNT_COL) {
+                rowTouchesAmount = true;
+                break;
+              }
+            }
+            if (rowTouchesAmount) {
+              rowSet.add(row);
+              addTxnTotals(txn);
+            }
+          }
+        }
+        rowCount = rowSet.size;
+      }
+
+      if (checkedRows.length === 0 && !hasRect) {
         onSelectionStatsChange(null);
         return;
       }
 
-      const ranges = [current.range, ...(current.rangeStack ?? [])];
-      let sum = 0;
-      let debitsTotal = 0;
-      let creditsTotal = 0;
-      const rowSet = new Set<number>();
-
-      for (const rect of ranges) {
-        const { x, y, width, height } = rect;
-        for (let row = y; row < y + height; row++) {
-          if (row < 0 || row >= transactions.length) continue;
-          const txn = transactions[row];
-          if (!txn) continue;
-          for (let col = x; col < x + width; col++) {
-            if (col === AMOUNT_COL) {
-              rowSet.add(row);
-              const num = Number(txn.amount);
-              if (!Number.isNaN(num)) {
-                if (txn.type === "DEBIT") {
-                  debitsTotal += num;
-                  sum -= num;
-                } else {
-                  creditsTotal += num;
-                  sum += num;
-                }
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      onSelectionStatsChange({ sum, rowCount: rowSet.size, debitsTotal, creditsTotal });
+      onSelectionStatsChange({
+        sum,
+        rowCount,
+        debitsTotal,
+        creditsTotal,
+        selectedTransactionIds,
+      });
     },
     [transactions, onSelectionStatsChange]
   );
@@ -1304,7 +1342,9 @@ export function TransactionsGrid({
                 gridSelection={onSelectionStatsChange ? selection : undefined}
                 onGridSelectionChange={onSelectionStatsChange ? onGridSelectionChange : undefined}
                 rangeSelect={onSelectionStatsChange ? "multi-rect" : "none"}
-                rowMarkers="number"
+                rowSelectionMode={onSelectionStatsChange ? "multi" : undefined}
+                rowMarkers="both"
+                rowMarkerWidth={Math.round(52 * scale)}
                 rowHeight={rowHeight}
                 headerHeight={headerHeight}
                 theme={gridTheme}
