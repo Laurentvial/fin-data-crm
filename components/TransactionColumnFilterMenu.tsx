@@ -575,6 +575,12 @@ export function TransactionColumnFilterMenu({
         </ul>
       </>
     );
+  } else if (columnId === "client_name") {
+    body = (
+      <p className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+        Pas de filtre sur cette colonne. Le client vient des Paramètres › Clients (tri A→Z ci-dessus).
+      </p>
+    );
   }
 
   if (body === null) {

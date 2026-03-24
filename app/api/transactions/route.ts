@@ -72,12 +72,18 @@ export async function POST(request: NextRequest) {
       SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
         t.raw_image_path, t.extracted_data_json, t.created_at, t.processed_by_user_id,
         t.fournisseur_id, fn.name AS fournisseur_name,
+        t.client_account_type_id,
+        bat.name AS bank_account_type_name,
+        atc.name AS client_name,
         COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
         ba.name AS bank_account_name,
+        ba.company_id,
         c.name AS company_name
       FROM transactions t
       LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
       LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+      LEFT JOIN account_types atc ON atc.id = COALESCE(t.client_account_type_id, ba.account_type_id)
+      LEFT JOIN account_types bat ON bat.id = ba.account_type_id
       LEFT JOIN companies c ON c.id::text = ba.company_id::text
       LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
       LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
@@ -128,6 +134,9 @@ export async function GET(request: NextRequest) {
           t.processed_by_user_id,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
+          t.client_account_type_id,
+          bat.name AS bank_account_type_name,
+          atc.name AS client_name,
           COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
           ba.name AS bank_account_name,
           ba.company_id,
@@ -137,6 +146,8 @@ export async function GET(request: NextRequest) {
         FROM transactions t
         LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN account_types atc ON atc.id = COALESCE(t.client_account_type_id, ba.account_type_id)
+        LEFT JOIN account_types bat ON bat.id = ba.account_type_id
         LEFT JOIN companies c ON c.id::text = ba.company_id::text
         LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
         LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id

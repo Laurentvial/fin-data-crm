@@ -20,7 +20,7 @@ import {
   type DrawArgs,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
-import type { BankAccount, Fournisseur, Transaction, TransactionType } from "@/lib/types";
+import type { AccountType, BankAccount, Fournisseur, Transaction, TransactionType } from "@/lib/types";
 import { TransactionColumnFilterMenu, type FilterMenuAnchor } from "@/components/TransactionColumnFilterMenu";
 import {
   DEFAULT_TRANSACTION_TABLE_SORT,
@@ -104,6 +104,7 @@ const SORTABLE_FIELDS = new Set<string>([
   "amount",
   "type",
   "description",
+  "client_name",
   "created_at",
   "processed_by_user_name",
 ]);
@@ -115,6 +116,7 @@ const COLUMN_FILTER_IDS = new Set<string>([
   "amount",
   "type",
   "description",
+  "client_name",
   "processed_by_user_name",
 ]);
 
@@ -174,6 +176,8 @@ interface TransactionsGridProps {
   transactionsForFilterOptions?: Transaction[];
   /** Liste des fournisseurs (Paramètres) pour la colonne et l’éditeur. */
   fournisseurs?: Fournisseur[];
+  /** Clients = account_types (Paramètres › Clients) pour la colonne Client. */
+  settingsClients?: AccountType[];
 }
 
 interface DateCellData {
@@ -396,6 +400,81 @@ function createFournisseurRenderer(
   } as CustomRenderer<CustomCell<FournisseurCellData>>;
 }
 
+interface SettingsClientCellData {
+  type: "settings_client";
+  /** Surcharge (account_types) ; null = client du compte (`account_type_id`). */
+  overrideId: string | null;
+  displayName: string;
+  defaultDisplayName: string;
+}
+
+function createSettingsClientRenderer(
+  settingsClients: AccountType[]
+): CustomRenderer<CustomCell<SettingsClientCellData>> {
+  const sorted = [...settingsClients].sort((a, b) => a.sort_order - b.sort_order);
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<SettingsClientCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<SettingsClientCellData>).data?.type === "settings_client",
+    draw: (args: DrawArgs<CustomCell<SettingsClientCellData>>, cell) => {
+      drawTextCell(args as Parameters<typeof drawTextCell>[0], cell.data.displayName ?? "");
+    },
+    provideEditor: () => (p) => {
+      const theme = p.theme;
+      const currentOverride = p.value.data.overrideId ?? "";
+      const inputStyle: React.CSSProperties = {
+        height: 36,
+        padding: "6px 8px",
+        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+        borderRadius: 6,
+        fontSize: 14,
+        fontFamily: "inherit",
+        background: theme.bgCell ?? "#fff",
+        color: theme.textDark ?? "#171717",
+        width: "100%",
+        minWidth: 160,
+        maxWidth: 360,
+      };
+      return (
+        <select
+          autoFocus
+          value={currentOverride}
+          style={inputStyle}
+          className="focus:outline-none focus:border-[var(--muted)]"
+          onChange={(e) => {
+            const v = e.target.value;
+            const nextId = v === "" ? null : v;
+            const label =
+              nextId === null
+                ? (p.value.data.defaultDisplayName ?? "")
+                : (sorted.find((c) => c.id === nextId)?.name ?? p.value.data.displayName);
+            const next = {
+              ...p.value,
+              data: {
+                type: "settings_client" as const,
+                overrideId: nextId,
+                displayName: label,
+                defaultDisplayName: p.value.data.defaultDisplayName,
+              },
+            };
+            p.onChange(next);
+            p.onFinishedEditing(next);
+          }}
+        >
+          <option value="">Compte (défaut)</option>
+          {sorted.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      );
+    },
+    getAccessibilityString: (cell: CustomCell<SettingsClientCellData>) => cell.data.displayName ?? "",
+  } as CustomRenderer<CustomCell<SettingsClientCellData>>;
+}
+
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
@@ -406,6 +485,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "type",
   "description",
   "fournisseur_id",
+  "client_account_type_id",
   "created_at",
   "processed_by_user_name",
   "invoice",
@@ -445,11 +525,16 @@ export function TransactionsGrid({
   bankAccounts = [],
   transactionsForFilterOptions = [],
   fournisseurs = [],
+  settingsClients = [],
 }: TransactionsGridProps) {
   const scale = zoom / 100;
   const fournisseurRenderer = useMemo(
     () => createFournisseurRenderer(fournisseurs),
     [fournisseurs]
+  );
+  const settingsClientRenderer = useMemo(
+    () => createSettingsClientRenderer(settingsClients),
+    [settingsClients]
   );
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
@@ -560,6 +645,11 @@ export function TransactionsGrid({
         width: Math.round(180 * scale),
         id: "fournisseur",
       },
+      menuCol({
+        title: "Client",
+        width: Math.round(200 * scale),
+        id: "client_name",
+      }),
       {
         title: "Créé le",
         width: Math.round(120 * scale),
@@ -707,6 +797,20 @@ export function TransactionsGrid({
           allowOverlay: true,
         };
       }
+      if (field === "client_account_type_id") {
+        const defaultDisplayName = txn.bank_account_type_name ?? "";
+        return {
+          kind: GridCellKind.Custom,
+          data: {
+            type: "settings_client",
+            overrideId: txn.client_account_type_id ?? null,
+            displayName: txn.client_name ?? "",
+            defaultDisplayName,
+          },
+          copyData: txn.client_name ?? "",
+          allowOverlay: true,
+        };
+      }
       if (field === "created_at") {
         const val = txn.created_at
           ? new Date(txn.created_at).toLocaleString("fr-FR", {
@@ -800,6 +904,21 @@ export function TransactionsGrid({
         if (v === undefined) return;
         try {
           await onCellValueChanged(txn.id, "fournisseur_id", v);
+        } catch {
+          // Page handles error display
+        }
+        return;
+      }
+
+      if (field === "client_account_type_id") {
+        let v: unknown;
+        if (newValue.kind === GridCellKind.Custom) {
+          const d = (newValue as CustomCell<SettingsClientCellData>).data;
+          if (d?.type === "settings_client") v = d.overrideId ?? null;
+        }
+        if (v === undefined) return;
+        try {
+          await onCellValueChanged(txn.id, "client_account_type_id", v);
         } catch {
           // Page handles error display
         }
@@ -1034,7 +1153,7 @@ export function TransactionsGrid({
                 theme={gridTheme}
                 drawHeader={drawHeader}
                 onVisibleRegionChanged={onLoadMore && hasMore ? handleVisibleRegionChanged : undefined}
-                customRenderers={[dateCellRenderer, fournisseurRenderer]}
+                customRenderers={[dateCellRenderer, fournisseurRenderer, settingsClientRenderer]}
               />
             </div>
             {loadingMore && (

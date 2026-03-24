@@ -102,6 +102,37 @@ export async function PATCH(
         );
       }
     }
+    if (body.client_account_type_id !== undefined) {
+      const v = body.client_account_type_id;
+      if (v === null || v === "") {
+        updates.client_account_type_id = null;
+      } else if (typeof v === "string") {
+        const uuidRe =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRe.test(v)) {
+          return NextResponse.json(
+            { error: "client_account_type_id invalide (UUID attendu)" },
+            { status: 400 }
+          );
+        }
+        const found = await sql`
+          SELECT 1 AS ok FROM account_types WHERE id = ${v}::uuid LIMIT 1
+        `;
+        const ok = Array.isArray(found) ? found[0] : found;
+        if (!ok) {
+          return NextResponse.json(
+            { error: "Client introuvable (Paramètres › Clients)" },
+            { status: 400 }
+          );
+        }
+        updates.client_account_type_id = v;
+      } else {
+        return NextResponse.json(
+          { error: "client_account_type_id invalide" },
+          { status: 400 }
+        );
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -143,6 +174,10 @@ export async function PATCH(
       setClauses.push(`fournisseur_id = $${idx++}::uuid`);
       values.push(updates.fournisseur_id);
     }
+    if (updates.client_account_type_id !== undefined) {
+      setClauses.push(`client_account_type_id = $${idx++}::uuid`);
+      values.push(updates.client_account_type_id);
+    }
     values.push(id);
 
     const queryText = `
@@ -167,6 +202,9 @@ export async function PATCH(
           t.processed_by_user_id,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
+          t.client_account_type_id,
+          bat.name AS bank_account_type_name,
+          atc.name AS client_name,
           COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
           ba.name AS bank_account_name,
           ba.company_id,
@@ -176,6 +214,8 @@ export async function PATCH(
         FROM transactions t
         LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN account_types atc ON atc.id = COALESCE(t.client_account_type_id, ba.account_type_id)
+        LEFT JOIN account_types bat ON bat.id = ba.account_type_id
         LEFT JOIN companies c ON c.id::text = ba.company_id::text
         LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
         LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id

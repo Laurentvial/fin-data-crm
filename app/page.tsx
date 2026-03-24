@@ -9,7 +9,7 @@ import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummaryPanel";
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
-import type { BankAccount, Fournisseur, Transaction } from "@/lib/types";
+import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
   applyClientTransactionFilters,
@@ -42,6 +42,7 @@ function HomeContent() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
+  const [settingsClients, setSettingsClients] = useState<AccountType[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingBankAccounts, setLoadingBankAccounts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
@@ -113,6 +114,9 @@ function HomeContent() {
           break;
         case "description":
           cmp = (a.description ?? "").localeCompare(b.description ?? "");
+          break;
+        case "client_name":
+          cmp = (a.client_name ?? "").localeCompare(b.client_name ?? "");
           break;
         case "created_at":
           cmp = parseDate(a.created_at) - parseDate(b.created_at);
@@ -260,6 +264,21 @@ function HomeContent() {
     fetchFournisseurs();
   }, [fetchFournisseurs]);
 
+  const fetchSettingsClients = useCallback(async () => {
+    try {
+      const res = await fetch("/api/account-types");
+      if (!res.ok) return;
+      const data = await res.json();
+      setSettingsClients(Array.isArray(data) ? data : []);
+    } catch {
+      /* optionnel pour le tableau */
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSettingsClients();
+  }, [fetchSettingsClients]);
+
   useEffect(() => {
     const id = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
     setFilterValues((prev) => ({
@@ -293,6 +312,8 @@ function HomeContent() {
       const body: Record<string, unknown> = { [field]: value };
       if (field === "amount") body.amount = Number(value);
       if (field === "fournisseur_id") body.fournisseur_id = value === "" ? null : value;
+      if (field === "client_account_type_id")
+        body.client_account_type_id = value === "" || value == null ? null : value;
       setSaveStatus("saving");
       setSaveMessage("");
       try {
@@ -373,6 +394,7 @@ function HomeContent() {
       "Type",
       "Description",
       "Fournisseur",
+      "Client",
       "Créé le",
     ];
     const rows = filteredTransactions.map((t) => {
@@ -387,6 +409,7 @@ function HomeContent() {
         t.type,
         t.description ?? "",
         t.fournisseur_name ?? "",
+        t.client_name ?? "",
         t.created_at ?? "",
       ];
     });
@@ -443,6 +466,7 @@ function HomeContent() {
               bankAccounts={bankAccounts}
               transactionsForFilterOptions={sortedTransactions}
               fournisseurs={fournisseurs}
+              settingsClients={settingsClients}
             />
           </div>
         </div>

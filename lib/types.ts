@@ -235,6 +235,15 @@ export interface Transaction {
   invoice_pdf_url?: string | null;
   fournisseur_id?: string | null;
   fournisseur_name?: string | null;
+  /**
+   * Surcharge du « Client » (Paramètres › Clients = account_types).
+   * null = utiliser le client du compte (`account_type_id` sur le compte bancaire).
+   */
+  client_account_type_id?: string | null;
+  /** Nom du client défini sur le compte (account_types), sans surcharge ligne. */
+  bank_account_type_name?: string | null;
+  /** Nom affiché : surcharge ou client du compte. */
+  client_name?: string | null;
 }
 
 export interface TransactionUpdateBody {
@@ -243,6 +252,7 @@ export interface TransactionUpdateBody {
   description?: string;
   type?: TransactionType;
   fournisseur_id?: string | null;
+  client_account_type_id?: string | null;
 }
 
 export interface CompanyEmail {

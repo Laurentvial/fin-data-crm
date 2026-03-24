@@ -1343,7 +1343,22 @@ function AccountsPageContent() {
     setSaving(true);
     setError(null);
     try {
-      const body: { name: string; company_id: string; bank_id?: string | null; account_type_id?: string | null; account_status_id?: string; telegram_chat_id?: number; ibans?: IbanItem[]; login?: string | null; password?: string | null; pin_code?: string | null; plafond_limit?: string | null; cards?: CardItem[]; company_email_id?: string | null; company_phone_id?: string | null } = {
+      const body: {
+        name: string;
+        company_id: string;
+        bank_id?: string | null;
+        account_type_id?: string | null;
+        account_status_id?: string;
+        telegram_chat_id?: number;
+        ibans?: IbanItem[];
+        login?: string | null;
+        password?: string | null;
+        pin_code?: string | null;
+        plafond_limit?: string | null;
+        cards?: CardItem[];
+        company_email_id?: string | null;
+        company_phone_id?: string | null;
+      } = {
         name,
         company_id: editCompanyId,
       };
