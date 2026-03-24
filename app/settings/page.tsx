@@ -449,11 +449,39 @@ function TelegramConnectionSection() {
     setError(null);
   };
 
+  const handleLogoutSession = async () => {
+    if (
+      !confirm(
+        "Déconnecter le compte Telegram utilisé par le serveur pour créer les groupes ? Vous pourrez ensuite vous connecter avec un autre numéro."
+      )
+    )
+      return;
+    setPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/telegram-auth/logout", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setStatus({ authorized: false });
+        setStep("phone");
+        setPhone("");
+        setCode("");
+        setPassword("");
+      } else {
+        setError(typeof data.error === "string" ? data.error : "Échec de la déconnexion");
+      }
+    } catch {
+      setError("Service inaccessible");
+    } finally {
+      setPending(false);
+    }
+  };
+
   if (loading) {
     return (
       <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
         <h2 className="section-header mb-4 text-lg font-medium">
-          Connexion Telegram
+          Session Telegram (création de groupes)
         </h2>
         <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
       </section>
@@ -463,10 +491,10 @@ function TelegramConnectionSection() {
   return (
     <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
       <h2 className="section-header mb-4 text-lg font-medium">
-        Connexion Telegram
+        Session Telegram (création de groupes)
       </h2>
       <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-        Connectez votre compte Telegram pour créer automatiquement des groupes lors de l&apos;ajout de comptes bancaires.
+        Compte Telegram utilisé <strong>par le serveur</strong> pour créer les supergroupes lors de l&apos;ajout de comptes bancaires. À ne pas confondre avec « Mon Telegram » : chaque utilisateur doit lier son propre compte pour être invité dans ces groupes.
       </p>
 
       {status?.error && !status.authorized && (
@@ -476,11 +504,19 @@ function TelegramConnectionSection() {
       )}
 
       {status?.authorized && status.user ? (
-        <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-800 dark:bg-green-950">
-          <span className="text-sm text-green-800 dark:text-green-200">
+        <div className="flex flex-col gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-green-800 dark:bg-green-950">
+          <span className="min-w-0 flex-1 break-words text-sm text-green-800 dark:text-green-200">
             Connecté en tant que <strong>{status.user.first_name}</strong>
-            {status.user.username && ` (@${status.user.username})`}
+            {status.user.username ? ` (@${status.user.username})` : ""}
           </span>
+          <button
+            type="button"
+            onClick={handleLogoutSession}
+            disabled={pending}
+            className="shrink-0 rounded-lg border border-green-300 bg-white px-3 py-1.5 text-sm font-medium text-green-900 hover:bg-green-100 disabled:opacity-50 dark:border-green-700 dark:bg-green-900 dark:text-green-100 dark:hover:bg-green-800"
+          >
+            {pending ? "…" : "Changer de compte"}
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -3075,7 +3111,7 @@ export default function SettingsPage() {
           </>
         )}
 
-        {/* Section Connexion Telegram (session MTProto) - visible aux admins */}
+        {/* Session MTProto (création de groupes) — visible aux admins */}
         {!usersLoading && isAdmin && (
           <TelegramConnectionSection />
         )}

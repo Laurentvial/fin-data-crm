@@ -1,0 +1,55 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth/server";
+
+async function requireAdmin() {
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if ((session.user as { role?: string }).role !== "admin") {
+    return NextResponse.json(
+      { error: "Accès réservé aux administrateurs." },
+      { status: 403 }
+    );
+  }
+  return null;
+}
+
+export async function POST() {
+  const authError = await requireAdmin();
+  if (authError) return authError;
+
+  const serviceUrl = process.env.TELEGRAM_GROUP_SERVICE_URL;
+  const apiKey = process.env.TELEGRAM_SERVICE_API_KEY;
+  if (!serviceUrl || !apiKey) {
+    return NextResponse.json(
+      { error: "Service Telegram non configuré." },
+      { status: 503 }
+    );
+  }
+
+  try {
+    const res = await fetch(`${serviceUrl.replace(/\/$/, "")}/auth/logout`, {
+      method: "POST",
+      headers: { "X-API-Key": apiKey },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        typeof data.detail === "string"
+          ? data.detail
+          : "Impossible de supprimer la session Telegram.";
+      return NextResponse.json({ error: msg }, { status: res.status });
+    }
+    return NextResponse.json(data);
+  } catch (e) {
+    console.error("POST /api/telegram-auth/logout error:", e);
+    return NextResponse.json(
+      { error: "Service Telegram inaccessible." },
+      { status: 502 }
+    );
+  }
+}

@@ -251,7 +251,8 @@ export async function PATCH(
           ba.company_id,
           c.name AS company_name,
           i.invoice_id,
-          i.invoice_pdf_url
+          i.invoice_pdf_url,
+          i.invoice_number
         FROM transactions t
         LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
@@ -261,13 +262,13 @@ export async function PATCH(
         LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
         LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
         LEFT JOIN LATERAL (
-          SELECT u.id AS invoice_id, u.pdf_url AS invoice_pdf_url
+          SELECT u.id AS invoice_id, u.pdf_url AS invoice_pdf_url, u.invoice_number AS invoice_number
           FROM (
-            SELECT i.id, i.pdf_url, i.created_at
+            SELECT i.id, i.pdf_url, i.invoice_number, i.created_at
             FROM invoices i
             WHERE i.transaction_id::text = t.id::text
             UNION
-            SELECT i2.id, i2.pdf_url, i2.created_at
+            SELECT i2.id, i2.pdf_url, i2.invoice_number, i2.created_at
             FROM invoice_transactions it2
             JOIN invoices i2 ON i2.id = it2.invoice_id
             WHERE it2.transaction_id::text = t.id::text

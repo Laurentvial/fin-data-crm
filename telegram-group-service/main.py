@@ -11,6 +11,7 @@ import io
 import logging
 import os
 import time
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -59,7 +60,7 @@ async def get_client() -> TelegramClient:
         if not await c.is_user_authorized():
             await c.disconnect()
             raise RuntimeError(
-                "Telegram session not authorized. Connectez-vous dans Paramètres → Connexion Telegram."
+                "Telegram session not authorized. Connectez-vous dans Paramètres → Session Telegram (création de groupes)."
             )
         client = c
     return client
@@ -215,6 +216,40 @@ async def auth_confirm(request: Request, x_api_key: str | None = Header(None)):
         except Exception:
             pass
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/auth/logout")
+async def auth_logout(x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    global client
+    for _, (pending_client, _) in list(_auth_pending.items()):
+        try:
+            await pending_client.disconnect()
+        except Exception:
+            pass
+    _auth_pending.clear()
+    if client:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        client = None
+
+    session_base = Path(TELEGRAM_SESSION_PATH)
+    parent = session_base.parent
+    name = session_base.name
+    main_session = parent / f"{name}.session"
+    for p in list(parent.glob(f"{name}.session*")):
+        try:
+            p.unlink()
+        except OSError as e:
+            logger.warning("Could not remove session file %s: %s", p, e)
+    if main_session.exists():
+        raise HTTPException(
+            status_code=500,
+            detail="La session Telegram n'a pas pu être supprimée (fichier verrouillé ou permissions).",
+        )
+    return {"success": True}
 
 
 def _parse_users(body: dict) -> list[tuple[int, str | None]]:

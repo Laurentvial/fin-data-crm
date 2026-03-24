@@ -235,6 +235,7 @@ export interface Transaction {
   /** Present when an invoice exists for this transaction (from GET /api/transactions) */
   invoice_id?: string | null;
   invoice_pdf_url?: string | null;
+  invoice_number?: string | null;
   fournisseur_id?: string | null;
   fournisseur_name?: string | null;
   /**

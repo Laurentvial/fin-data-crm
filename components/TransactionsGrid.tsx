@@ -584,6 +584,22 @@ function createDebitStatusRenderer(): CustomRenderer<CustomCell<DebitStatusCellD
 interface InvoiceLinkCellData {
   type: "invoice_link";
   hasLink: boolean;
+  /** Numéro de facture affiché dans la pilule (ex. FAC2025-0001). */
+  invoiceLabel: string;
+}
+
+function truncateTextToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxInnerWidth: number
+): string {
+  if (ctx.measureText(text).width <= maxInnerWidth) return text;
+  const ellipsis = "…";
+  let s = text;
+  while (s.length > 0 && ctx.measureText(s + ellipsis).width > maxInnerWidth) {
+    s = s.slice(0, -1);
+  }
+  return s ? s + ellipsis : ellipsis;
 }
 
 function createInvoiceLinkRenderer(): CustomRenderer<CustomCell<InvoiceLinkCellData>> {
@@ -604,14 +620,16 @@ function createInvoiceLinkRenderer(): CustomRenderer<CustomCell<InvoiceLinkCellD
         ctx.restore();
         return;
       }
-      const pill = okPill ?? { label: "Voir la facture", bg: "#16a34a", fg: "#ffffff" };
-      const label = "Voir la facture";
-      ctx.save();
+      const pill = okPill ?? { label: "", bg: "#16a34a", fg: "#ffffff" };
       const padX = 8;
+      const maxPillWidth = Math.max(24, rect.width - 12);
+      ctx.save();
+      ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+      const innerMax = maxPillWidth - padX * 2;
+      const label = truncateTextToWidth(ctx, cell.data.invoiceLabel, innerMax);
+      const w = Math.min(ctx.measureText(label).width + padX * 2, maxPillWidth);
       const h = Math.min(26, Math.max(20, rect.height - 10));
       const y = rect.y + (rect.height - h) / 2;
-      ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
-      const w = ctx.measureText(label).width + padX * 2;
       const x = rect.x + 4;
       const r = Math.min(6, h / 2);
       roundedRect(ctx, x, y, w, h, r);
@@ -623,8 +641,48 @@ function createInvoiceLinkRenderer(): CustomRenderer<CustomCell<InvoiceLinkCellD
       ctx.restore();
     },
     getAccessibilityString: (cell: CustomCell<InvoiceLinkCellData>) =>
-      cell.data.hasLink ? "Voir la facture" : "Pas de facture",
+      cell.data.hasLink ? `Facture ${cell.data.invoiceLabel}` : "Pas de facture",
   } as CustomRenderer<CustomCell<InvoiceLinkCellData>>;
+}
+
+/** Pilule destructive, même géométrie que statut débit / facture. */
+interface DeleteActionCellData {
+  type: "delete_action";
+}
+
+/** Même pilule que la colonne Facture (hauteur, marges), couleurs destructives. */
+const DELETE_ACTION_PILL = { label: "Supprimer", bg: "#dc2626", fg: "#ffffff" } as const;
+
+function createDeleteActionRenderer(): CustomRenderer<CustomCell<DeleteActionCellData>> {
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<DeleteActionCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<DeleteActionCellData>).data?.type === "delete_action",
+    draw: (args: DrawArgs<CustomCell<DeleteActionCellData>>) => {
+      const { ctx, rect, theme } = args;
+      const { label, bg, fg } = DELETE_ACTION_PILL;
+      ctx.save();
+      const padX = 8;
+      const maxPillWidth = Math.max(24, rect.width - 12);
+      ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+      const innerMax = maxPillWidth - padX * 2;
+      const shortLabel = truncateTextToWidth(ctx, label, innerMax);
+      const w = Math.min(ctx.measureText(shortLabel).width + padX * 2, maxPillWidth);
+      const h = Math.min(26, Math.max(20, rect.height - 10));
+      const y = rect.y + (rect.height - h) / 2;
+      const x = rect.x + 4;
+      const r = Math.min(6, h / 2);
+      roundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle = bg;
+      ctx.fill();
+      ctx.fillStyle = fg;
+      ctx.textBaseline = "middle";
+      ctx.fillText(shortLabel, x + padX, y + h / 2);
+      ctx.restore();
+    },
+    getAccessibilityString: () => "Supprimer cette transaction",
+  } as CustomRenderer<CustomCell<DeleteActionCellData>>;
 }
 
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
@@ -690,6 +748,7 @@ export function TransactionsGrid({
   );
   const debitStatusRenderer = useMemo(() => createDebitStatusRenderer(), []);
   const invoiceLinkRenderer = useMemo(() => createInvoiceLinkRenderer(), []);
+  const deleteActionRenderer = useMemo(() => createDeleteActionRenderer(), []);
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
@@ -1017,10 +1076,16 @@ export function TransactionsGrid({
       }
       if (field === "invoice") {
         const hasInvoice = Boolean(txn.invoice_id ?? txn.invoice_pdf_url);
+        const num = (txn.invoice_number ?? "").trim();
+        const invoiceLabel = hasInvoice ? num || "Facture" : "";
         return {
           kind: GridCellKind.Custom,
-          data: { type: "invoice_link" as const, hasLink: hasInvoice },
-          copyData: hasInvoice ? "Voir la facture" : "",
+          data: {
+            type: "invoice_link" as const,
+            hasLink: hasInvoice,
+            invoiceLabel,
+          },
+          copyData: hasInvoice ? invoiceLabel : "",
           allowOverlay: false,
           readonly: true,
           cursor: hasInvoice ? "pointer" : "default",
@@ -1028,11 +1093,12 @@ export function TransactionsGrid({
       }
       if (field === "delete") {
         return {
-          kind: GridCellKind.Text,
-          data: "Supprimer",
-          displayData: "Supprimer",
+          kind: GridCellKind.Custom,
+          data: { type: "delete_action" as const },
+          copyData: DELETE_ACTION_PILL.label,
           allowOverlay: false,
           readonly: true,
+          cursor: "pointer",
         };
       }
       return { kind: GridCellKind.Text, data: "", displayData: "", allowOverlay: false, readonly: true };
@@ -1390,6 +1456,7 @@ export function TransactionsGrid({
                   settingsClientRenderer,
                   debitStatusRenderer,
                   invoiceLinkRenderer,
+                  deleteActionRenderer,
                 ]}
               />
             </div>
