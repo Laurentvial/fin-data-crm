@@ -71,6 +71,37 @@ export async function PATCH(
       }
       updates.type = body.type;
     }
+    if (body.fournisseur_id !== undefined) {
+      const v = body.fournisseur_id;
+      if (v === null || v === "") {
+        updates.fournisseur_id = null;
+      } else if (typeof v === "string") {
+        const uuidRe =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRe.test(v)) {
+          return NextResponse.json(
+            { error: "fournisseur_id invalide (UUID attendu)" },
+            { status: 400 }
+          );
+        }
+        const found = await sql`
+          SELECT 1 AS ok FROM fournisseurs WHERE id = ${v}::uuid LIMIT 1
+        `;
+        const ok = Array.isArray(found) ? found[0] : found;
+        if (!ok) {
+          return NextResponse.json(
+            { error: "Fournisseur introuvable" },
+            { status: 400 }
+          );
+        }
+        updates.fournisseur_id = v;
+      } else {
+        return NextResponse.json(
+          { error: "fournisseur_id invalide" },
+          { status: 400 }
+        );
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -108,23 +139,60 @@ export async function PATCH(
       setClauses.push(`type = $${idx++}::transactiontype`);
       values.push(updates.type);
     }
+    if (updates.fournisseur_id !== undefined) {
+      setClauses.push(`fournisseur_id = $${idx++}::uuid`);
+      values.push(updates.fournisseur_id);
+    }
     values.push(id);
 
     const queryText = `
       UPDATE transactions
       SET ${setClauses.join(", ")}
       WHERE id = $${idx}::uuid
-      RETURNING id, bank_account_id, transaction_date, amount, description, type, created_at
     `;
 
     try {
-      const result = await sql.query(queryText, values);
-      const rows = Array.isArray(result) ? result : [result];
-      const row = rows[0];
-      if (!row) {
-        return NextResponse.json({ error: "Update failed" }, { status: 500 });
+      await sql.query(queryText, values);
+      const fullRows = await sql`
+        SELECT
+          t.id,
+          t.bank_account_id,
+          t.transaction_date,
+          t.amount,
+          t.description,
+          t.type,
+          t.raw_image_path,
+          t.extracted_data_json,
+          t.created_at,
+          t.processed_by_user_id,
+          t.fournisseur_id,
+          fn.name AS fournisseur_name,
+          COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
+          ba.name AS bank_account_name,
+          ba.company_id,
+          c.name AS company_name,
+          i.invoice_id,
+          i.invoice_pdf_url
+        FROM transactions t
+        LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
+        LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN companies c ON c.id::text = ba.company_id::text
+        LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
+        LEFT JOIN neon_auth."user" pu ON pu.id = ut.user_id
+        LEFT JOIN LATERAL (
+          SELECT id AS invoice_id, pdf_url AS invoice_pdf_url
+          FROM invoices
+          WHERE transaction_id::text = t.id::text
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) i ON true
+        WHERE t.id = ${id}::uuid
+      `;
+      const full = Array.isArray(fullRows) ? fullRows[0] : fullRows;
+      if (!full) {
+        return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
       }
-      return NextResponse.json(row);
+      return NextResponse.json(full);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("uix_bank_account_transaction") || msg.includes("uix_company_transaction") || msg.includes("unique") || msg.includes("duplicate")) {

@@ -2,14 +2,14 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummaryPanel";
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
-import type { BankAccount, Transaction } from "@/lib/types";
+import type { BankAccount, Fournisseur, Transaction } from "@/lib/types";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
   applyClientTransactionFilters,
@@ -21,6 +21,9 @@ import {
   normalizeTransactionFilters,
   type TransactionFilterValues,
 } from "@/lib/transaction-filters";
+
+/** Page size for GET /api/transactions (API max 1000 per request). */
+const TRANSACTION_PAGE_SIZE = 500;
 
 const TransactionsGrid = dynamic(
   () => import("@/components/TransactionsGrid").then((m) => ({ default: m.TransactionsGrid })),
@@ -38,9 +41,15 @@ function HomeContent() {
   const setupSuccess = searchParams.get("setup") === "1";
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingBankAccounts, setLoadingBankAccounts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
+  const transactionsLengthRef = useRef(0);
+  /** Bumps when the list is reset (filters / refetch) so stale load-more responses are ignored. */
+  const transactionsListEpochRef = useRef(0);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState<string>("");
   const [selectionStats, setSelectionStats] = useState<TransactionSelectionStats | null>(null);
@@ -151,8 +160,22 @@ function HomeContent() {
     }
   }, []);
 
+  const fetchFournisseurs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/fournisseurs");
+      if (!res.ok) return;
+      const data = await res.json();
+      setFournisseurs(Array.isArray(data) ? data : []);
+    } catch {
+      /* liste optionnelle pour le tableau */
+    }
+  }, []);
+
   const fetchTransactions = useCallback(async () => {
+    transactionsListEpochRef.current += 1;
+    const epoch = transactionsListEpochRef.current;
     setLoadingTransactions(true);
+    setHasMoreTransactions(false);
     try {
       const api = filtersToApiParams(filterValues);
       const params = new URLSearchParams();
@@ -160,19 +183,82 @@ function HomeContent() {
       if (api.date_from) params.set("date_from", api.date_from);
       if (api.date_to) params.set("date_to", api.date_to);
       if (api.type) params.set("type", api.type);
+      params.set("limit", String(TRANSACTION_PAGE_SIZE));
+      params.set("offset", "0");
       const res = await fetch(`/api/transactions?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch transactions");
       const data = await res.json();
       const txns = Array.isArray(data) ? data : data.transactions ?? [];
+      if (transactionsListEpochRef.current !== epoch) return;
       setTransactions(txns);
+      setHasMoreTransactions(
+        typeof data.has_more === "boolean" ? data.has_more : txns.length >= TRANSACTION_PAGE_SIZE
+      );
     } finally {
-      setLoadingTransactions(false);
+      if (transactionsListEpochRef.current === epoch) {
+        setLoadingTransactions(false);
+      }
     }
   }, [filterValues]);
+
+  const loadMoreTransactions = useCallback(async () => {
+    if (!hasMoreTransactions || loadingMoreTransactions || loadingTransactions) return;
+    const epoch = transactionsListEpochRef.current;
+    const offset = transactionsLengthRef.current;
+    setLoadingMoreTransactions(true);
+    try {
+      const api = filtersToApiParams(filterValues);
+      const params = new URLSearchParams();
+      if (api.bank_account_id) params.set("bank_account_id", api.bank_account_id);
+      if (api.date_from) params.set("date_from", api.date_from);
+      if (api.date_to) params.set("date_to", api.date_to);
+      if (api.type) params.set("type", api.type);
+      params.set("limit", String(TRANSACTION_PAGE_SIZE));
+      params.set("offset", String(offset));
+      const res = await fetch(`/api/transactions?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch transactions");
+      const data = await res.json();
+      const batch = Array.isArray(data) ? data : data.transactions ?? [];
+      if (transactionsListEpochRef.current !== epoch) return;
+      setHasMoreTransactions(
+        typeof data.has_more === "boolean" ? data.has_more : batch.length >= TRANSACTION_PAGE_SIZE
+      );
+      setTransactions((prev) => {
+        const seen = new Set(prev.map((t) => t.id));
+        const merged = [...prev];
+        for (const t of batch) {
+          if (t?.id && !seen.has(t.id)) {
+            seen.add(t.id);
+            merged.push(t);
+          }
+        }
+        return merged;
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      if (transactionsListEpochRef.current === epoch) {
+        setLoadingMoreTransactions(false);
+      }
+    }
+  }, [
+    filterValues,
+    hasMoreTransactions,
+    loadingMoreTransactions,
+    loadingTransactions,
+  ]);
+
+  useEffect(() => {
+    transactionsLengthRef.current = transactions.length;
+  }, [transactions.length]);
 
   useEffect(() => {
     fetchBankAccounts();
   }, [fetchBankAccounts]);
+
+  useEffect(() => {
+    fetchFournisseurs();
+  }, [fetchFournisseurs]);
 
   useEffect(() => {
     const id = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
@@ -206,6 +292,7 @@ function HomeContent() {
     async (id: string, field: string, value: unknown) => {
       const body: Record<string, unknown> = { [field]: value };
       if (field === "amount") body.amount = Number(value);
+      if (field === "fournisseur_id") body.fournisseur_id = value === "" ? null : value;
       setSaveStatus("saving");
       setSaveMessage("");
       try {
@@ -277,7 +364,17 @@ function HomeContent() {
   }, []);
 
   const handleExport = useCallback(() => {
-    const headers = ["ID", "Date", "Compte", "Société", "Montant", "Type", "Description", "Créé le"];
+    const headers = [
+      "ID",
+      "Date",
+      "Compte",
+      "Société",
+      "Montant",
+      "Type",
+      "Description",
+      "Fournisseur",
+      "Créé le",
+    ];
     const rows = filteredTransactions.map((t) => {
       const num = Number(t.amount);
       const signed = t.type === "DEBIT" ? -num : num;
@@ -289,6 +386,7 @@ function HomeContent() {
         signed,
         t.type,
         t.description ?? "",
+        t.fournisseur_name ?? "",
         t.created_at ?? "",
       ];
     });
@@ -329,6 +427,9 @@ function HomeContent() {
             <TransactionsGrid
               transactions={filteredTransactions}
               loading={loadingTransactions}
+              loadingMore={loadingMoreTransactions}
+              hasMore={hasMoreTransactions}
+              onLoadMore={loadMoreTransactions}
               zoom={zoom}
               onCellValueChanged={handleCellValueChanged}
               onSelectionStatsChange={setSelectionStats}
@@ -341,6 +442,7 @@ function HomeContent() {
               onApplyFilters={handleApplyFilters}
               bankAccounts={bankAccounts}
               transactionsForFilterOptions={sortedTransactions}
+              fournisseurs={fournisseurs}
             />
           </div>
         </div>

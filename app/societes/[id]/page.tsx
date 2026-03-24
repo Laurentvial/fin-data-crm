@@ -28,6 +28,7 @@ import type {
 const COUNTRY_LABELS: Record<string, string> = {
   FR: "France",
   BE: "Belgique",
+  CO: "Colombie",
   CH: "Suisse",
   PT: "Portugal",
   ES: "Espagne",

@@ -19,7 +19,7 @@ const EMOJI_OPTIONS = [
 ] as const;
 import { authClient } from "@/lib/auth/client";
 import { getCachedSession } from "@/lib/auth/session-cache";
-import type { AccountStatus, AccountType, Bank, InvoiceTemplate, Source } from "@/lib/types";
+import type { AccountStatus, AccountType, Bank, Fournisseur, InvoiceTemplate, Source } from "@/lib/types";
 
 type User = { id: string; email: string; name: string; role?: string; telegram_id?: number; telegram_username?: string };
 
@@ -2089,6 +2089,292 @@ function SourcesSection() {
   );
 }
 
+function FournisseursSection() {
+  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createPending, setCreatePending] = useState(false);
+  const [editingFournisseur, setEditingFournisseur] = useState<Fournisseur | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPending, setEditPending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchFournisseurs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/fournisseurs");
+      if (!res.ok) throw new Error("Échec du chargement");
+      const data = await res.json();
+      setFournisseurs(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFournisseurs();
+  }, [fetchFournisseurs]);
+
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const name = createName.trim();
+    if (!name) return;
+    setCreatePending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/fournisseurs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, sort_order: fournisseurs.length }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la création");
+      }
+      const created = await res.json();
+      setFournisseurs((prev) =>
+        [...prev, created].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+      );
+      setCreateName("");
+      setCreateModalOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setCreatePending(false);
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!editingFournisseur) return;
+    const name = editName.trim();
+    if (!name) return;
+    setEditPending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/fournisseurs/${editingFournisseur.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la mise à jour");
+      }
+      const updated = await res.json();
+      setFournisseurs((prev) =>
+        prev
+          .map((f) => (f.id === editingFournisseur.id ? { ...f, ...updated } : f))
+          .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+      );
+      setEditingFournisseur(null);
+      setEditName("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setEditPending(false);
+    }
+  };
+
+  const handleDelete = async (f: Fournisseur) => {
+    if (!confirm(`Supprimer le fournisseur « ${f.name} » ? Les transactions associées n’auront plus de fournisseur.`)) return;
+    setDeletingId(f.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/fournisseurs/${f.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la suppression");
+      }
+      setFournisseurs((prev) => prev.filter((x) => x.id !== f.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+        <h2 className="section-header mb-4 text-lg font-medium">Fournisseurs</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+      <h2 className="section-header mb-4 text-lg font-medium">Fournisseurs</h2>
+      <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+        Créez des fournisseurs pour les associer aux transactions dans le tableau (sélection dans la colonne « Fournisseur »).
+      </p>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="subsection-header text-sm font-medium">Fournisseurs enregistrés</h3>
+        <button
+          type="button"
+          onClick={() => {
+            setCreateModalOpen(true);
+            setCreateName("");
+            setError(null);
+          }}
+          className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+        >
+          Ajouter un fournisseur
+        </button>
+      </div>
+
+      <div>
+        <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-[var(--primary-muted)]">
+              <tr>
+                <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
+                <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fournisseurs.length === 0 ? (
+                <tr>
+                  <td colSpan={2} className="px-4 py-6 text-center text-[var(--muted-foreground)]">
+                    Aucun fournisseur. Créez-en un pour le tableau des transactions.
+                  </td>
+                </tr>
+              ) : (
+                fournisseurs.map((f) => (
+                  <tr key={f.id} className="border-t border-[var(--border)]">
+                    <td className="px-4 py-2 text-[var(--foreground)]">{f.name}</td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingFournisseur(f);
+                            setEditName(f.name);
+                            setError(null);
+                          }}
+                          className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(f)}
+                          disabled={deletingId === f.id}
+                          className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
+                        >
+                          {deletingId === f.id ? "…" : "Supprimer"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {createModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setCreateModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="subsection-header mb-4 text-lg font-medium">Nouveau fournisseur</h3>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="Ex. Fournisseur principal"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateModalOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={createPending || !createName.trim()}
+                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                >
+                  {createPending ? "Création…" : "Créer"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingFournisseur && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setEditingFournisseur(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="subsection-header mb-4 text-lg font-medium">Modifier {editingFournisseur.name}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Ex. Fournisseur principal"
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingFournisseur(null)}
+                className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleEdit}
+                disabled={editPending || !editName.trim()}
+                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+              >
+                {editPending ? "Enregistrement…" : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -2403,6 +2689,7 @@ function TemplatesSection() {
                 <select value={createCountry} onChange={(e) => setCreateCountry(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
                   <option value="FR">France</option>
                   <option value="BE">Belgique</option>
+                  <option value="CO">Colombie</option>
                   <option value="CH">Suisse</option>
                   <option value="PT">Portugal</option>
                   <option value="ES">Espagne</option>
@@ -2443,6 +2730,7 @@ function TemplatesSection() {
                 <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
                   <option value="FR">France</option>
                   <option value="BE">Belgique</option>
+                  <option value="CO">Colombie</option>
                   <option value="CH">Suisse</option>
                   <option value="PT">Portugal</option>
                   <option value="ES">Espagne</option>
@@ -2780,7 +3068,12 @@ export default function SettingsPage() {
         {!usersLoading && isAdmin && <AccountStatusesSection />}
 
         {/* Section Sources - visible aux admins */}
-        {!usersLoading && isAdmin && <SourcesSection />}
+        {!usersLoading && isAdmin && (
+          <>
+            <SourcesSection />
+            <FournisseursSection />
+          </>
+        )}
 
         {/* Section Connexion Telegram (session MTProto) - visible aux admins */}
         {!usersLoading && isAdmin && (

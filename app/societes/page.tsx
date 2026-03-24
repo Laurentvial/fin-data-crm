@@ -278,6 +278,7 @@ function CompanyCardMenu({
 const INVOICE_COUNTRIES = [
   { code: "FR", label: "France" },
   { code: "BE", label: "Belgique" },
+  { code: "CO", label: "Colombie" },
   { code: "CH", label: "Suisse" },
   { code: "PT", label: "Portugal" },
   { code: "ES", label: "Espagne" },

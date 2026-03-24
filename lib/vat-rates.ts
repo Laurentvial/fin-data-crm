@@ -22,6 +22,7 @@ export const VAT_RATES_BY_COUNTRY: Record<string, CountryVatRates> = {
   BG: { countryCode: "BG", standard: 20, reduced: [9] },
   HR: { countryCode: "HR", standard: 25, reduced: [5, 13] },
   CY: { countryCode: "CY", standard: 19, reduced: [5, 9] },
+  CO: { countryCode: "CO", standard: 19, reduced: [5] },
   CZ: { countryCode: "CZ", standard: 21, reduced: [12] },
   DK: { countryCode: "DK", standard: 25, reduced: [] },
   EE: { countryCode: "EE", standard: 22, reduced: [9, 5] },

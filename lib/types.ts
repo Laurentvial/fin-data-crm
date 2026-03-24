@@ -148,6 +148,15 @@ export interface Source {
   updated_at: string;
 }
 
+/** Fournisseur (catalogue Paramètres), lié aux transactions. */
+export interface Fournisseur {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IbanItem {
   iban: string;
   bic?: string | null;
@@ -224,6 +233,8 @@ export interface Transaction {
   /** Present when an invoice exists for this transaction (from GET /api/transactions) */
   invoice_id?: string | null;
   invoice_pdf_url?: string | null;
+  fournisseur_id?: string | null;
+  fournisseur_name?: string | null;
 }
 
 export interface TransactionUpdateBody {
@@ -231,6 +242,7 @@ export interface TransactionUpdateBody {
   amount?: number | string;
   description?: string;
   type?: TransactionType;
+  fournisseur_id?: string | null;
 }
 
 export interface CompanyEmail {

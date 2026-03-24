@@ -20,7 +20,7 @@ import {
   type DrawArgs,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
-import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
+import type { BankAccount, Fournisseur, Transaction, TransactionType } from "@/lib/types";
 import { TransactionColumnFilterMenu, type FilterMenuAnchor } from "@/components/TransactionColumnFilterMenu";
 import {
   DEFAULT_TRANSACTION_TABLE_SORT,
@@ -147,6 +147,12 @@ function viewportHeaderBoundsToAnchor(bounds: {
 interface TransactionsGridProps {
   transactions: Transaction[];
   loading?: boolean;
+  /** True while appending the next page (scroll end). */
+  loadingMore?: boolean;
+  /** Whether more rows can be loaded from the API. */
+  hasMore?: boolean;
+  /** Called when the user scrolls near the bottom of the grid. */
+  onLoadMore?: () => void;
   /** Zoom level in % (50–150). Scales row height and typography. */
   zoom?: number;
   onCellValueChanged?: (id: string, field: string, value: unknown) => Promise<void>;
@@ -166,6 +172,8 @@ interface TransactionsGridProps {
   bankAccounts?: BankAccount[];
   /** Données triées avant filtres client — pour les listes de valeurs. */
   transactionsForFilterOptions?: Transaction[];
+  /** Liste des fournisseurs (Paramètres) pour la colonne et l’éditeur. */
+  fournisseurs?: Fournisseur[];
 }
 
 interface DateCellData {
@@ -324,6 +332,70 @@ const dateCellRenderer: CustomRenderer<CustomCell<DateCellData>> = {
   },
 } as CustomRenderer<CustomCell<DateCellData>>;
 
+interface FournisseurCellData {
+  type: "fournisseur";
+  id: string | null;
+}
+
+function createFournisseurRenderer(
+  fournisseurs: Fournisseur[]
+): CustomRenderer<CustomCell<FournisseurCellData>> {
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<FournisseurCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<FournisseurCellData>).data?.type === "fournisseur",
+    draw: (args: DrawArgs<CustomCell<FournisseurCellData>>, cell) => {
+      const fid = cell.data.id;
+      const label = fid ? fournisseurs.find((f) => f.id === fid)?.name ?? "" : "";
+      drawTextCell(args as Parameters<typeof drawTextCell>[0], label);
+    },
+    provideEditor: () => (p) => {
+      const theme = p.theme;
+      const currentId = p.value.data.id ?? "";
+      const inputStyle: React.CSSProperties = {
+        height: 36,
+        padding: "6px 8px",
+        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+        borderRadius: 6,
+        fontSize: 14,
+        fontFamily: "inherit",
+        background: theme.bgCell ?? "#fff",
+        color: theme.textDark ?? "#171717",
+        width: "100%",
+        minWidth: 160,
+        maxWidth: 360,
+      };
+      return (
+        <select
+          autoFocus
+          value={currentId}
+          style={inputStyle}
+          className="focus:outline-none focus:border-[var(--muted)]"
+          onChange={(e) => {
+            const v = e.target.value;
+            const nextId = v === "" ? null : v;
+            const next = { ...p.value, data: { type: "fournisseur" as const, id: nextId } };
+            p.onChange(next);
+            p.onFinishedEditing(next);
+          }}
+        >
+          <option value="">—</option>
+          {fournisseurs.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      );
+    },
+    getAccessibilityString: (cell: CustomCell<FournisseurCellData>) => {
+      const fid = cell.data.id;
+      return fid ? fournisseurs.find((f) => f.id === fid)?.name ?? "" : "";
+    },
+  } as CustomRenderer<CustomCell<FournisseurCellData>>;
+}
+
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
@@ -333,6 +405,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "amount",
   "type",
   "description",
+  "fournisseur_id",
   "created_at",
   "processed_by_user_name",
   "invoice",
@@ -356,6 +429,9 @@ function formatType(value: string | undefined): string {
 export function TransactionsGrid({
   transactions,
   loading = false,
+  loadingMore = false,
+  hasMore = false,
+  onLoadMore,
   zoom = 100,
   onCellValueChanged,
   onSelectionStatsChange,
@@ -368,8 +444,13 @@ export function TransactionsGrid({
   onApplyFilters,
   bankAccounts = [],
   transactionsForFilterOptions = [],
+  fournisseurs = [],
 }: TransactionsGridProps) {
   const scale = zoom / 100;
+  const fournisseurRenderer = useMemo(
+    () => createFournisseurRenderer(fournisseurs),
+    [fournisseurs]
+  );
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
@@ -379,6 +460,8 @@ export function TransactionsGrid({
     columnId: string;
     anchor: FilterMenuAnchor;
   } | null>(null);
+
+  const loadMoreThrottleRef = useRef(0);
 
   const columnFiltersEnabled = Boolean(filterValues && onApplyFilters);
   const resolvedTheme = useResolvedTheme();
@@ -472,6 +555,11 @@ export function TransactionsGrid({
         grow: 1,
         id: "description",
       }),
+      {
+        title: "Fournisseur",
+        width: Math.round(180 * scale),
+        id: "fournisseur",
+      },
       {
         title: "Créé le",
         width: Math.round(120 * scale),
@@ -611,6 +699,14 @@ export function TransactionsGrid({
           allowOverlay: true,
         };
       }
+      if (field === "fournisseur_id") {
+        return {
+          kind: GridCellKind.Custom,
+          data: { type: "fournisseur", id: txn.fournisseur_id ?? null },
+          copyData: txn.fournisseur_name ?? "",
+          allowOverlay: true,
+        };
+      }
       if (field === "created_at") {
         const val = txn.created_at
           ? new Date(txn.created_at).toLocaleString("fr-FR", {
@@ -694,6 +790,21 @@ export function TransactionsGrid({
         field === "processed_by_user_name"
       )
         return;
+
+      if (field === "fournisseur_id") {
+        let v: unknown;
+        if (newValue.kind === GridCellKind.Custom) {
+          const d = (newValue as CustomCell<FournisseurCellData>).data;
+          if (d?.type === "fournisseur") v = d.id ?? null;
+        }
+        if (v === undefined) return;
+        try {
+          await onCellValueChanged(txn.id, "fournisseur_id", v);
+        } catch {
+          // Page handles error display
+        }
+        return;
+      }
 
       let value: unknown;
       if (field === "transaction_date") {
@@ -825,6 +936,24 @@ export function TransactionsGrid({
     [hoveredRow, resolvedTheme.bgCellMedium]
   );
 
+  const handleVisibleRegionChanged = useCallback(
+    (range: unknown) => {
+      if (!onLoadMore || !hasMore || loadingMore || loading) return;
+      const r = range as { y?: number; height?: number };
+      if (typeof r.y !== "number" || typeof r.height !== "number") return;
+      const totalRows = transactions.length;
+      if (totalRows < 1) return;
+      const visibleBottom = r.y + r.height;
+      const threshold = Math.max(5, Math.ceil(totalRows * 0.05));
+      if (visibleBottom < totalRows - threshold) return;
+      const now = Date.now();
+      if (now - loadMoreThrottleRef.current < 400) return;
+      loadMoreThrottleRef.current = now;
+      onLoadMore();
+    },
+    [onLoadMore, hasMore, loadingMore, loading, transactions.length]
+  );
+
   const drawHeader = useCallback(
     (
       args: {
@@ -876,34 +1005,52 @@ export function TransactionsGrid({
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div className="h-full min-h-[400px] w-full overflow-hidden rounded-md border border-[var(--border)]">
+      <div className="flex h-full min-h-[400px] w-full flex-col overflow-hidden rounded-md border border-[var(--border)]">
         {loading ? (
-          <div className="flex h-full min-h-[400px] items-center justify-center text-[var(--muted-foreground)]">
+          <div className="flex h-full min-h-[400px] flex-1 items-center justify-center text-[var(--muted-foreground)]">
             Chargement des transactions…
           </div>
         ) : (
-          <DataEditor
-            width="100%"
-            height="100%"
-            columns={columns}
-            rows={transactions.length}
-            getCellContent={getCellContent}
-            getCellsForSelection={true} /* requis pour Ctrl+C / copier la sélection (voir Glide DataEditor) */
-            getRowThemeOverride={getRowThemeOverride}
-            onItemHovered={onItemHovered}
-            customRenderers={[dateCellRenderer]}
-            onCellEdited={onCellValueChanged ? onCellEdited : undefined}
-            onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
-            onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
-            gridSelection={onSelectionStatsChange ? selection : undefined}
-            onGridSelectionChange={onSelectionStatsChange ? onGridSelectionChange : undefined}
-            rangeSelect={onSelectionStatsChange ? "multi-rect" : "none"}
-            rowMarkers="number"
-            rowHeight={rowHeight}
-            headerHeight={headerHeight}
-            theme={gridTheme}
-            drawHeader={drawHeader}
-          />
+          <>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <DataEditor
+                width="100%"
+                height="100%"
+                columns={columns}
+                rows={transactions.length}
+                getCellContent={getCellContent}
+                getCellsForSelection={true} /* requis pour Ctrl+C / copier la sélection (voir Glide DataEditor) */
+                getRowThemeOverride={getRowThemeOverride}
+                onItemHovered={onItemHovered}
+                onCellEdited={onCellValueChanged ? onCellEdited : undefined}
+                onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
+                onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
+                gridSelection={onSelectionStatsChange ? selection : undefined}
+                onGridSelectionChange={onSelectionStatsChange ? onGridSelectionChange : undefined}
+                rangeSelect={onSelectionStatsChange ? "multi-rect" : "none"}
+                rowMarkers="number"
+                rowHeight={rowHeight}
+                headerHeight={headerHeight}
+                theme={gridTheme}
+                drawHeader={drawHeader}
+                onVisibleRegionChanged={onLoadMore && hasMore ? handleVisibleRegionChanged : undefined}
+                customRenderers={[dateCellRenderer, fournisseurRenderer]}
+              />
+            </div>
+            {loadingMore && (
+              <div
+                className="flex shrink-0 items-center justify-center gap-2 border-t border-[var(--border)] bg-[var(--muted)]/25 py-2.5 text-sm text-[var(--muted-foreground)]"
+                role="status"
+                aria-live="polite"
+              >
+                <span
+                  className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+                  aria-hidden
+                />
+                Chargement des transactions suivantes…
+              </div>
+            )}
+          </>
         )}
       </div>
       {filterMenu && filterValues && onApplyFilters && (

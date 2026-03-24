@@ -31,6 +31,17 @@ export const COUNTRY_INVOICE_RULES: Record<string, CountryInvoiceRules> = {
     dateFormat: "DD/MM/YYYY",
     currency: "EUR",
   },
+  CO: {
+    countryCode: "CO",
+    vatLabel: "IVA",
+    defaultVatRate: 19,
+    requiredMentions: [
+      "NIT obligatoire selon la réglementation colombienne. IVA applicable. Devise COP.",
+    ],
+    invoiceNumberFormat: "FAC-YYYY-NNNN",
+    dateFormat: "DD/MM/YYYY",
+    currency: "COP",
+  },
   CH: {
     countryCode: "CH",
     vatLabel: "TVA",

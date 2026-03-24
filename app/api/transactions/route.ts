@@ -71,10 +71,12 @@ export async function POST(request: NextRequest) {
     const withAccount = await sql`
       SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
         t.raw_image_path, t.extracted_data_json, t.created_at, t.processed_by_user_id,
+        t.fournisseur_id, fn.name AS fournisseur_name,
         COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
         ba.name AS bank_account_name,
         c.name AS company_name
       FROM transactions t
+      LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
       LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
       LEFT JOIN companies c ON c.id::text = ba.company_id::text
       LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
@@ -109,7 +111,7 @@ export async function GET(request: NextRequest) {
     const date_to = searchParams.get("date_to") || null;
     const type = searchParams.get("type") || null;
     const limit = Math.min(Number(searchParams.get("limit")) || 500, 1000);
-    const offset = Number(searchParams.get("offset")) || 0;
+    const offset = Math.max(0, Number(searchParams.get("offset")) || 0);
 
     const [rows, balanceRows] = await Promise.all([
       sql`
@@ -124,6 +126,8 @@ export async function GET(request: NextRequest) {
           t.extracted_data_json,
           t.created_at,
           t.processed_by_user_id,
+          t.fournisseur_id,
+          fn.name AS fournisseur_name,
           COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
           ba.name AS bank_account_name,
           ba.company_id,
@@ -131,6 +135,7 @@ export async function GET(request: NextRequest) {
           i.invoice_id,
           i.invoice_pdf_url
         FROM transactions t
+        LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
         LEFT JOIN companies c ON c.id::text = ba.company_id::text
         LEFT JOIN user_telegram ut ON ut.telegram_id = t.processed_by_user_id
@@ -170,9 +175,13 @@ export async function GET(request: NextRequest) {
         : 0;
     const roundedBalance = Math.round(totalBalance * 100) / 100;
 
+    const rowList = Array.isArray(rows) ? rows : rows != null ? [rows] : [];
+    const hasMore = rowList.length === limit;
+
     return NextResponse.json({
       transactions: rows,
       total_balance: roundedBalance,
+      has_more: hasMore,
     });
   } catch (error) {
     console.error("GET /api/transactions error:", error);
