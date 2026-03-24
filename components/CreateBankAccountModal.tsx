@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
+import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
 import type { AccountStatus, AccountType, Bank, CardItem, Company, IbanItem } from "@/lib/types";
 
 function ChevronDownIcon({ className }: { className?: string }) {
@@ -122,16 +123,9 @@ export function CreateBankAccountModal({
   const lastAutoNameRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const typeId = (accountTypeId ?? "").toString().trim().toLowerCase();
     const statusId = (accountStatusId ?? "").toString().trim().toLowerCase();
-    const client = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
     const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
-    const clientEmoji = (client?.emoji ?? "").toString().trim().replace(/\s/g, "");
     const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
-    const clientPart = clientEmoji;
-    const statusPart = statusEmoji;
-    const prefixParts = [clientPart, statusPart].filter(Boolean);
-    const prefix = prefixParts.join(" ");
     const firstIban = ibans.find((i) => (i?.iban ?? "").trim().length > 0);
     const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
     const iban2 = rawIban.slice(0, 2);
@@ -140,17 +134,15 @@ export function CreateBankAccountModal({
     const company = companies.find((c) => c.id === effectiveCompanyId);
     const companyName = (company?.name ?? "").trim();
     const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
-    const textPart = [midPart, companyName].filter(Boolean).join(" / ").toUpperCase();
-    const autoName = textPart ? (prefix ? prefix + " " : "") + textPart : prefix || "";
+    const autoName = buildAutoBankAccountName(statusEmoji, midPart, companyName, bankName);
     if (!autoName) return;
     const nameTrimmed = name.trim();
-    const nameHasExpectedPrefix = prefix && nameTrimmed.startsWith(prefix);
-    const userEditedRest = nameHasExpectedPrefix && nameTrimmed !== lastAutoNameRef.current;
-    if (userEditedRest) return;
+    const canUpdate = !nameTrimmed || nameTrimmed === lastAutoNameRef.current;
+    if (!canUpdate) return;
     if (nameTrimmed === autoName) return;
     lastAutoNameRef.current = autoName;
     onNameChange(autoName);
-  }, [accountTypeId, accountStatusId, ibans, bankId, effectiveCompanyId, accountTypes, accountStatuses, banks, companies, onNameChange, name]);
+  }, [accountStatusId, ibans, bankId, effectiveCompanyId, accountStatuses, banks, companies, onNameChange, name]);
   const [cardsExpanded, setCardsExpanded] = useState(true);
   const [ibanLookupLoading, setIbanLookupLoading] = useState<number | null>(null);
 

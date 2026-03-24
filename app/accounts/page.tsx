@@ -9,6 +9,7 @@ import { Select } from "@/components/Select";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
 import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, CompanyEmail, CompanyPhone, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -479,19 +480,16 @@ function EditBankAccountModal({
     next[i] = { ...next[i], [field]: value || undefined };
     onCardsChange(next);
   };
-  const lastAutoNameRef = useRef<string | null>(null);
+
+  const lastSyncedNameDepsKeyRef = useRef<string>("");
+  useEffect(() => {
+    lastSyncedNameDepsKeyRef.current = "";
+  }, [bankAccount.id]);
 
   useEffect(() => {
-    const typeId = (accountTypeId ?? "").toString().trim().toLowerCase();
     const statusId = (accountStatusId ?? "").toString().trim().toLowerCase();
-    const client = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
     const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
-    const clientEmoji = (client?.emoji ?? "").toString().trim().replace(/\s/g, "");
     const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
-    const clientPart = clientEmoji;
-    const statusPart = statusEmoji;
-    const prefixParts = [clientPart, statusPart].filter(Boolean);
-    const prefix = prefixParts.join(" ");
     const firstIban = ibans.find((i) => (i?.iban ?? "").trim().length > 0);
     const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
     const iban2 = rawIban.slice(0, 2);
@@ -500,17 +498,28 @@ function EditBankAccountModal({
     const company = companies.find((c) => c.id === companyId);
     const companyName = (company?.name ?? "").trim();
     const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
-    const textPart = [midPart, companyName].filter(Boolean).join(" / ").toUpperCase();
-    const autoName = textPart ? (prefix ? prefix + " " : "") + textPart : prefix || "";
+    const autoName = buildAutoBankAccountName(statusEmoji, midPart, companyName, bankName);
     if (!autoName) return;
-    const nameTrimmed = name.trim();
-    const nameHasExpectedPrefix = prefix && nameTrimmed.startsWith(prefix);
-    const userEditedRest = nameHasExpectedPrefix && nameTrimmed !== lastAutoNameRef.current;
-    if (userEditedRest) return;
-    if (nameTrimmed === autoName) return;
-    lastAutoNameRef.current = autoName;
+    const key = JSON.stringify({
+      s: accountStatusId,
+      b: bankId,
+      c: companyId,
+      i: ibans.map((row) => (row?.iban ?? "").trim().replace(/\s/g, "").toUpperCase()),
+    });
+    if (key === lastSyncedNameDepsKeyRef.current) return;
+    lastSyncedNameDepsKeyRef.current = key;
     onNameChange(autoName);
-  }, [accountTypeId, accountStatusId, ibans, bankId, companyId, accountTypes, accountStatuses, banks, companies, onNameChange, name]);
+  }, [
+    bankAccount.id,
+    accountStatusId,
+    bankId,
+    companyId,
+    ibans,
+    accountStatuses,
+    banks,
+    companies,
+    onNameChange,
+  ]);
 
   const handleRibUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1228,44 +1237,11 @@ function AccountsPageContent() {
     router.replace("/accounts", { scroll: false });
   }, [companyFromUrl, loading, companies, openCreateModal, router]);
 
-  const createLastAutoNameRef = useRef<string | null>(null);
-
   const closeCreateModal = () => {
     setCreateModalOpen(false);
     setError(null);
     setCreateInviteWarning(null);
-    createLastAutoNameRef.current = null;
   };
-
-  useEffect(() => {
-    if (!createModalOpen) return;
-    const typeId = (createAccountTypeId ?? "").toString().trim().toLowerCase();
-    const statusId = (createAccountStatusId ?? "").toString().trim().toLowerCase();
-    const client = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
-    const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
-    const clientEmoji = (client?.emoji ?? "").toString().trim().replace(/\s/g, "");
-    const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
-    const clientPart = clientEmoji;
-    const statusPart = statusEmoji;
-    const prefix = [clientPart, statusPart].filter(Boolean).join(" ");
-    const company = companies.find((c) => c.id === createCompanyId);
-    const companyName = (company?.name ?? "").trim();
-    const firstIban = createIbans.find((i) => (i?.iban ?? "").trim().length > 0);
-    const rawIban = (firstIban?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
-    const iban2 = rawIban.slice(0, 2);
-    const bank = banks.find((b) => b.id === createBankId);
-    const bankName = (bank?.name ?? "").trim();
-    const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
-    const textPart = [midPart, companyName].filter(Boolean).join(" / ").toUpperCase();
-    const autoName = textPart ? (prefix ? prefix + " " : "") + textPart : prefix || "";
-    if (!autoName) return;
-    const nameTrimmed = createName.trim();
-    const canUpdate = !nameTrimmed || nameTrimmed === createLastAutoNameRef.current;
-    if (!canUpdate) return;
-    if (nameTrimmed === autoName) return;
-    createLastAutoNameRef.current = autoName;
-    setCreateName(autoName);
-  }, [createModalOpen, createAccountTypeId, createAccountStatusId, createCompanyId, createBankId, createIbans, createName, accountTypes, accountStatuses, companies, banks]);
 
   const handleCreate = async () => {
     const name = createName.trim();
