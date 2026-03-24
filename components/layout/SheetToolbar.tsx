@@ -1,10 +1,10 @@
 "use client";
 
 interface SheetToolbarProps {
-  onFilterClick?: () => void;
+  /** Remet à zéro tous les filtres du tableau (colonnes + période API). */
+  onResetFiltersClick?: () => void;
   onExportClick?: () => void;
   onAddClick?: () => void;
-  filterPanelOpen?: boolean;
 }
 
 function FilterIcon({ className }: { className?: string }) {
@@ -62,7 +62,7 @@ function PlusIcon({ className }: { className?: string }) {
   );
 }
 
-export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterPanelOpen }: SheetToolbarProps) {
+export function SheetToolbar({ onResetFiltersClick, onExportClick, onAddClick }: SheetToolbarProps) {
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm">
       {onAddClick && (
@@ -75,18 +75,16 @@ export function SheetToolbar({ onFilterClick, onExportClick, onAddClick, filterP
           Ajouter
         </button>
       )}
-      <button
-        type="button"
-        onClick={onFilterClick}
-        className={
-          filterPanelOpen
-            ? "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary-muted)] text-[var(--primary)] border border-[var(--primary-muted-border)]"
-            : "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-        }
-      >
-        <FilterIcon className="h-4 w-4" />
-        Filtre
-      </button>
+      {onResetFiltersClick && (
+        <button
+          type="button"
+          onClick={onResetFiltersClick}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+        >
+          <FilterIcon className="h-4 w-4" />
+          Réinitialiser filtres
+        </button>
+      )}
       <button
         type="button"
         className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--accent-muted)] hover:text-[var(--accent)]"

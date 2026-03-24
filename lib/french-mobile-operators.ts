@@ -24,7 +24,6 @@ const FR_MOBILE_OPERATORS_LIST = [
   "SFR",
   "Sosh",
   "Syma",
-  "Syma Mobile",
   "Transatel Mobile",
   "Ubigi",
   "Vectone Mobile",

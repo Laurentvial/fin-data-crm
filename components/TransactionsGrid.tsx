@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DataEditor,
   GridCellKind,
@@ -18,7 +18,12 @@ import {
   type DrawArgs,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
-import type { Transaction, TransactionType } from "@/lib/types";
+import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
+import { TransactionColumnFilterMenu, type FilterMenuAnchor } from "@/components/TransactionColumnFilterMenu";
+import {
+  columnHasActiveFilter,
+  type TransactionFilterValues,
+} from "@/lib/transaction-filters";
 
 const LIGHT_THEME: Partial<Theme> = {
   accentColor: "#0d9488",
@@ -66,12 +71,12 @@ function useResolvedTheme(): Partial<Theme> {
       bgHeader: get("--muted") || base.bgHeader,
       borderColor: get("--border") || base.borderColor,
     };
-    setTheme(resolved);
+    // Sync grid theme tokens from document CSS once on mount.
+    queueMicrotask(() => setTheme(resolved));
   }, []);
   return theme;
 }
 
-const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
 const AMOUNT_COL = 4; // Column index for amount (used for selection sum)
 
 const SORTABLE_FIELDS = new Set<string>([
@@ -82,7 +87,41 @@ const SORTABLE_FIELDS = new Set<string>([
   "type",
   "description",
   "created_at",
+  "processed_by_user_name",
 ]);
+
+const COLUMN_FILTER_IDS = new Set<string>([
+  "transaction_date",
+  "bank_account_name",
+  "amount",
+  "type",
+  "description",
+  "processed_by_user_name",
+]);
+
+const FILTER_FUNNEL_ICON = "filterFunnel";
+const FILTER_HEADER_ICONS: Record<string, (p: { fgColor: string; bgColor: string }) => string> = {
+  [FILTER_FUNNEL_ICON]: ({ fgColor }) =>
+    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" stroke="${fgColor}" stroke-width="2" stroke-linejoin="round"/></svg>`,
+};
+
+function canvasMenuBoundsToViewport(
+  wrapEl: HTMLElement | null,
+  bounds: { x: number; y: number; width: number; height: number }
+): FilterMenuAnchor | null {
+  const canvas = wrapEl?.querySelector("canvas");
+  if (!canvas) return null;
+  const cr = canvas.getBoundingClientRect();
+  const c = canvas as HTMLCanvasElement;
+  const sx = cr.width / c.width;
+  const sy = cr.height / c.height;
+  return {
+    left: cr.left + bounds.x * sx,
+    top: cr.top + bounds.y * sy,
+    width: bounds.width * sx,
+    height: bounds.height * sy,
+  };
+}
 
 interface TransactionsGridProps {
   transactions: Transaction[];
@@ -96,8 +135,16 @@ interface TransactionsGridProps {
   onGenerateInvoice?: (transaction: Transaction) => void;
   /** Called when user clicks a sortable column header. */
   onSortChange?: (field: string) => void;
+  /** Tri explicite (menus de colonne). */
+  onSortDirect?: (field: string, direction: "asc" | "desc") => void;
   /** Current sort state for visual indicator. */
   sortState?: { column: string; direction: "asc" | "desc" };
+  /** Filtres (menus type Google Sheets). */
+  filterValues?: TransactionFilterValues;
+  onApplyFilters?: (next: TransactionFilterValues) => void;
+  bankAccounts?: BankAccount[];
+  /** Données triées avant filtres client — pour les listes de valeurs. */
+  transactionsForFilterOptions?: Transaction[];
 }
 
 interface DateCellData {
@@ -293,30 +340,83 @@ export function TransactionsGrid({
   onDelete,
   onGenerateInvoice,
   onSortChange,
+  onSortDirect,
   sortState,
+  filterValues,
+  onApplyFilters,
+  bankAccounts = [],
+  transactionsForFilterOptions = [],
 }: TransactionsGridProps) {
   const scale = zoom / 100;
+  const gridWrapRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
   });
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
+  const [filterMenu, setFilterMenu] = useState<{
+    columnId: string;
+    anchor: FilterMenuAnchor;
+  } | null>(null);
+
+  const columnFiltersEnabled = Boolean(filterValues && onApplyFilters);
+  const resolvedTheme = useResolvedTheme();
 
   const columns = useMemo<GridColumn[]>(() => {
     const sortIndicator = (id: string) => {
       if (!sortState || sortState.column !== id) return "";
       return sortState.direction === "asc" ? " ⬆" : " ⬇";
     };
+    const filterActive = (id: string) =>
+      columnFiltersEnabled && filterValues && columnHasActiveFilter(id, filterValues);
+    const menuCol = (base: GridColumn & { id?: string }): GridColumn => {
+      const id = base.id ?? "";
+      const withFilter =
+        columnFiltersEnabled && COLUMN_FILTER_IDS.has(id)
+          ? {
+              ...base,
+              icon: FILTER_FUNNEL_ICON,
+              hasMenu: true,
+              ...(filterActive(id) && {
+                themeOverride: {
+                  bgHeader: resolvedTheme.accentLight ?? "#ccfbf1",
+                },
+              }),
+            }
+          : base;
+      return withFilter;
+    };
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(62 * scale), id: "rowNum" },
       { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(100 * scale), id: "id" },
-      { title: `Date${sortIndicator("transaction_date")}`, width: Math.round(130 * scale), id: "transaction_date" },
-      { title: `Compte${sortIndicator("bank_account_name")}`, width: Math.round(280 * scale), id: "bank_account_name" },
-      { title: `Montant${sortIndicator("amount")}`, width: Math.round(135 * scale), id: "amount" },
-      { title: `Type${sortIndicator("type")}`, width: Math.round(80 * scale), id: "type" },
-      { title: `Description${sortIndicator("description")}`, width: 220, grow: 1, id: "description" },
+      menuCol({
+        title: `Date${sortIndicator("transaction_date")}`,
+        width: Math.round(130 * scale),
+        id: "transaction_date",
+      }),
+      menuCol({
+        title: `Compte${sortIndicator("bank_account_name")}`,
+        width: Math.round(280 * scale),
+        id: "bank_account_name",
+      }),
+      menuCol({
+        title: `Montant${sortIndicator("amount")}`,
+        width: Math.round(135 * scale),
+        id: "amount",
+      }),
+      menuCol({ title: `Type${sortIndicator("type")}`, width: Math.round(80 * scale), id: "type" }),
+      menuCol({
+        title: `Description${sortIndicator("description")}`,
+        width: 220,
+        grow: 1,
+        id: "description",
+      }),
       { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(120 * scale), id: "created_at" },
-      { title: "Ajouté par", width: Math.round(140 * scale), id: "processed_by_user_name" },
+      menuCol({
+        title: `Ajouté par${sortIndicator("processed_by_user_name")}`,
+        width: Math.round(140 * scale),
+        id: "processed_by_user_name",
+      }),
     ];
     if (onGenerateInvoice) {
       cols.push({ title: "Facture", width: Math.round(155 * scale), id: "invoice" });
@@ -325,7 +425,24 @@ export function TransactionsGrid({
       cols.push({ title: "", width: Math.round(110 * scale), id: "delete" });
     }
     return cols;
-  }, [scale, onDelete, onGenerateInvoice, sortState]);
+  }, [scale, onDelete, onGenerateInvoice, sortState, columnFiltersEnabled, filterValues, resolvedTheme.accentLight]);
+
+  const columnsRef = useRef(columns);
+  useEffect(() => {
+    columnsRef.current = columns;
+  });
+
+  const onHeaderMenuClickHandler = useCallback(
+    (col: number, bounds: { x: number; y: number; width: number; height: number }) => {
+      if (!columnFiltersEnabled) return;
+      const columnId = columnsRef.current[col]?.id;
+      if (!columnId || !COLUMN_FILTER_IDS.has(columnId)) return;
+      const anchor = canvasMenuBoundsToViewport(gridWrapRef.current, bounds);
+      if (!anchor) return;
+      setFilterMenu({ columnId, anchor });
+    },
+    [columnFiltersEnabled]
+  );
 
   const onHeaderClicked = useCallback(
     (colIndex: number) => {
@@ -590,7 +707,6 @@ export function TransactionsGrid({
 
   const rowHeight = Math.round(56 * scale);
   const headerHeight = Math.round(52 * scale);
-  const resolvedTheme = useResolvedTheme();
   const gridTheme = useMemo(
     () => ({ ...getDefaultTheme(), ...resolvedTheme }),
     [resolvedTheme]
@@ -614,7 +730,10 @@ export function TransactionsGrid({
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div className="h-full min-h-[400px] w-full overflow-hidden rounded-md border border-[var(--border)]">
+      <div
+        ref={gridWrapRef}
+        className="h-full min-h-[400px] w-full overflow-hidden rounded-md border border-[var(--border)]"
+      >
         {loading ? (
           <div className="flex h-full min-h-[400px] items-center justify-center text-[var(--muted-foreground)]">
             Chargement des transactions…
@@ -632,6 +751,8 @@ export function TransactionsGrid({
             onCellEdited={onCellValueChanged ? onCellEdited : undefined}
             onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
             onHeaderClicked={onSortChange ? onHeaderClicked : undefined}
+            onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
+            headerIcons={columnFiltersEnabled ? FILTER_HEADER_ICONS : undefined}
             gridSelection={onSelectionSumChange ? selection : undefined}
             onGridSelectionChange={onSelectionSumChange ? onGridSelectionChange : undefined}
             rangeSelect={onSelectionSumChange ? "multi-rect" : "none"}
@@ -642,6 +763,30 @@ export function TransactionsGrid({
           />
         )}
       </div>
+      {filterMenu && filterValues && onApplyFilters && (
+        <TransactionColumnFilterMenu
+          columnId={filterMenu.columnId}
+          anchor={filterMenu.anchor}
+          sortable={SORTABLE_FIELDS.has(filterMenu.columnId)}
+          applied={filterValues}
+          transactionsForOptions={transactionsForFilterOptions}
+          bankAccounts={bankAccounts}
+          onClose={() => setFilterMenu(null)}
+          onApply={onApplyFilters}
+          onSortAsc={() => {
+            if (SORTABLE_FIELDS.has(filterMenu.columnId)) {
+              onSortDirect?.(filterMenu.columnId, "asc");
+            }
+            setFilterMenu(null);
+          }}
+          onSortDesc={() => {
+            if (SORTABLE_FIELDS.has(filterMenu.columnId)) {
+              onSortDirect?.(filterMenu.columnId, "desc");
+            }
+            setFilterMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }

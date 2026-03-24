@@ -7,8 +7,16 @@ import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
-import { TransactionFilters } from "@/components/TransactionFilters";
 import type { BankAccount, Transaction } from "@/lib/types";
+import {
+  applyClientTransactionFilters,
+  DEFAULT_TRANSACTION_FILTERS,
+  filtersToApiParams,
+  getAllBankIdsForFilter,
+  getProcessedByFilterKeys,
+  normalizeTransactionFilters,
+  type TransactionFilterValues,
+} from "@/lib/transaction-filters";
 
 const TransactionsGrid = dynamic(
   () => import("@/components/TransactionsGrid").then((m) => ({ default: m.TransactionsGrid })),
@@ -29,16 +37,16 @@ function HomeContent() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingBankAccounts, setLoadingBankAccounts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(!!bankAccountIdFromUrl);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState<string>("");
   const [selectedSum, setSelectedSum] = useState<number | null>(null);
 
-  const [bankAccountId, setBankAccountId] = useState(bankAccountIdFromUrl);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [type, setType] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [filterValues, setFilterValues] = useState<TransactionFilterValues>(() => ({
+    ...DEFAULT_TRANSACTION_FILTERS,
+    bankFilter: bankAccountIdFromUrl
+      ? { mode: "include", ids: [bankAccountIdFromUrl] }
+      : { mode: "all" },
+  }));
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [invoiceModalTransaction, setInvoiceModalTransaction] = useState<Transaction | null>(null);
   const [zoom, setZoom] = useState(100);
@@ -55,6 +63,10 @@ function HomeContent() {
       }
       return { column: field, direction: "asc" as const };
     });
+  }, []);
+
+  const handleSortDirect = useCallback((field: string, direction: "asc" | "desc") => {
+    setSortState({ column: field, direction });
   }, []);
 
   const sortedTransactions = useMemo(() => {
@@ -102,6 +114,9 @@ function HomeContent() {
         case "created_at":
           cmp = parseDate(a.created_at) - parseDate(b.created_at);
           break;
+        case "processed_by_user_name":
+          cmp = (a.processed_by_user_name ?? "").localeCompare(b.processed_by_user_name ?? "");
+          break;
         default:
           return 0;
       }
@@ -109,16 +124,10 @@ function HomeContent() {
     });
   }, [transactions, sortState]);
 
-  const filteredTransactions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return sortedTransactions;
-    return sortedTransactions.filter((t) => {
-      const desc = (t.description ?? "").toLowerCase();
-      const amt = String(t.amount ?? "");
-      const signedAmt = t.type === "DEBIT" ? `-${amt}` : amt;
-      return desc.includes(q) || amt.includes(q) || signedAmt.includes(q);
-    });
-  }, [sortedTransactions, searchQuery]);
+  const filteredTransactions = useMemo(
+    () => applyClientTransactionFilters(sortedTransactions, filterValues),
+    [sortedTransactions, filterValues]
+  );
 
   const filteredBalance = useMemo(() => {
     return filteredTransactions.reduce((sum, t) => sum + signedAmount(t), 0);
@@ -136,31 +145,24 @@ function HomeContent() {
     }
   }, []);
 
-  const [totalBalance, setTotalBalance] = useState<number>(0);
-
   const fetchTransactions = useCallback(async () => {
     setLoadingTransactions(true);
     try {
+      const api = filtersToApiParams(filterValues);
       const params = new URLSearchParams();
-      if (bankAccountId) params.set("bank_account_id", bankAccountId);
-      if (dateFrom) params.set("date_from", dateFrom);
-      if (dateTo) params.set("date_to", dateTo);
-      if (type) params.set("type", type);
+      if (api.bank_account_id) params.set("bank_account_id", api.bank_account_id);
+      if (api.date_from) params.set("date_from", api.date_from);
+      if (api.date_to) params.set("date_to", api.date_to);
+      if (api.type) params.set("type", api.type);
       const res = await fetch(`/api/transactions?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch transactions");
       const data = await res.json();
       const txns = Array.isArray(data) ? data : data.transactions ?? [];
-      const balance = typeof data.total_balance === "number" ? data.total_balance : null;
       setTransactions(txns);
-      setTotalBalance(balance ?? txns.reduce((s: number, t: Transaction) => {
-        const num = Number(t.amount);
-        const signed = t.type === "DEBIT" ? -num : num;
-        return s + (Number.isNaN(num) ? 0 : signed);
-      }, 0));
     } finally {
       setLoadingTransactions(false);
     }
-  }, [bankAccountId, dateFrom, dateTo, type]);
+  }, [filterValues]);
 
   useEffect(() => {
     fetchBankAccounts();
@@ -168,17 +170,28 @@ function HomeContent() {
 
   useEffect(() => {
     const id = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
-    setBankAccountId(id);
-    setFilterPanelOpen(!!id);
+    setFilterValues((prev) => ({
+      ...prev,
+      bankFilter: id ? { mode: "include", ids: [id] } : { mode: "all" },
+    }));
   }, [searchParams]);
 
   useEffect(() => {
     fetchTransactions();
   }, [fetchTransactions]);
 
-  const handleApplyFilters = useCallback(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
+  const handleApplyFilters = useCallback(
+    (next: TransactionFilterValues) => {
+      const allBankIds = getAllBankIdsForFilter(transactions, bankAccounts);
+      const allProcessedKeys = getProcessedByFilterKeys(transactions);
+      setFilterValues(normalizeTransactionFilters(next, { allBankIds, allProcessedKeys }));
+    },
+    [transactions, bankAccounts]
+  );
+
+  const handleResetFilters = useCallback(() => {
+    setFilterValues(DEFAULT_TRANSACTION_FILTERS);
+  }, []);
 
   const handleCellValueChanged = useCallback(
     async (id: string, field: string, value: unknown) => {
@@ -199,8 +212,6 @@ function HomeContent() {
         const updated = await res.json();
         const oldRow = transactions.find((r) => r.id === id);
         const newRow = oldRow ? { ...oldRow, ...updated } : updated;
-        const delta = signedAmount(newRow) - (oldRow ? signedAmount(oldRow) : 0);
-        setTotalBalance((b) => Math.round((b + delta) * 100) / 100);
         setTransactions((prev) =>
           prev.map((row) => (row.id === id ? newRow : row))
         );
@@ -215,7 +226,7 @@ function HomeContent() {
     [fetchTransactions, transactions]
   );
 
-  const handleInvoiceSuccess = useCallback((invoiceId: string, _pdfUrl: string, _invoiceNumber: string) => {
+  const handleInvoiceSuccess = useCallback((invoiceId: string) => {
     window.open(`/api/invoices/${invoiceId}/pdf`, "_blank");
     setInvoiceModalTransaction(null);
     fetchTransactions();
@@ -223,7 +234,6 @@ function HomeContent() {
 
   const handleAddTransaction = useCallback((newTx: Transaction) => {
     setTransactions((prev) => [newTx, ...prev]);
-    setTotalBalance((b) => Math.round((b + signedAmount(newTx)) * 100) / 100);
     setAddModalOpen(false);
     fetchTransactions();
   }, [fetchTransactions]);
@@ -231,7 +241,6 @@ function HomeContent() {
   const handleDeleteTransaction = useCallback(async (id: string) => {
     setSaveStatus("saving");
     setSaveMessage("");
-    const deleted = transactions.find((t) => t.id === id);
     try {
       const res = await fetch(`/api/transactions/${id}`, {
         method: "DELETE",
@@ -241,9 +250,6 @@ function HomeContent() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
-      if (deleted) {
-        setTotalBalance((b) => Math.round((b - signedAmount(deleted)) * 100) / 100);
-      }
       setTransactions((prev) => prev.filter((t) => t.id !== id));
       fetchTransactions();
       setSaveStatus("saved");
@@ -252,7 +258,7 @@ function HomeContent() {
       setSaveStatus("error");
       setSaveMessage(err instanceof Error ? err.message : "Erreur");
     }
-  }, [fetchTransactions, transactions]);
+  }, [fetchTransactions]);
 
   const handleZoomIn = useCallback(() => {
     setZoom((z) => Math.min(150, z + 10));
@@ -297,48 +303,14 @@ function HomeContent() {
         </div>
       )}
       <SheetToolbar
-        onFilterClick={() => setFilterPanelOpen((o) => !o)}
+        onResetFiltersClick={handleResetFilters}
         onExportClick={handleExport}
-        onAddClick={bankAccounts.length > 0 ? () => setAddModalOpen(true) : undefined}
-        filterPanelOpen={filterPanelOpen}
+        onAddClick={
+          bankAccounts.length > 0 && !loadingBankAccounts ? () => setAddModalOpen(true) : undefined
+        }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="flex min-h-full flex-1 flex-col px-4 py-4">
-          {filterPanelOpen && (
-            <div className="mb-4 shrink-0">
-              <TransactionFilters
-                bankAccounts={bankAccounts}
-                bankAccountId={bankAccountId}
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-                type={type}
-                onBankAccountIdChange={setBankAccountId}
-                onDateFromChange={setDateFrom}
-                onDateToChange={setDateTo}
-                onTypeChange={setType}
-                onApply={handleApplyFilters}
-                loading={loadingBankAccounts}
-              />
-            </div>
-          )}
-          <div className="mb-3 flex shrink-0 items-center gap-2">
-            <label htmlFor="transaction-search" className="sr-only">
-              Rechercher par description ou montant
-            </label>
-            <input
-              id="transaction-search"
-              type="search"
-              placeholder="Rechercher par description ou montant…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-sm flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
-            />
-            {searchQuery.trim() && (
-              <span className="text-xs text-[var(--muted-foreground)]">
-                {filteredTransactions.length} / {transactions.length}
-              </span>
-            )}
-          </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <TransactionsGrid
               transactions={filteredTransactions}
@@ -349,7 +321,12 @@ function HomeContent() {
               onDelete={handleDeleteTransaction}
               onGenerateInvoice={(txn) => setInvoiceModalTransaction(txn)}
               onSortChange={handleSortChange}
+              onSortDirect={handleSortDirect}
               sortState={sortState ?? { column: "transaction_date", direction: "desc" }}
+              filterValues={filterValues}
+              onApplyFilters={handleApplyFilters}
+              bankAccounts={bankAccounts}
+              transactionsForFilterOptions={sortedTransactions}
             />
           </div>
         </div>
@@ -357,7 +334,11 @@ function HomeContent() {
       {addModalOpen && (
         <AddTransactionModal
           bankAccounts={bankAccounts}
-          defaultBankAccountId={bankAccountId || undefined}
+          defaultBankAccountId={
+            filterValues.bankFilter.mode === "include" && filterValues.bankFilter.ids.length === 1
+              ? filterValues.bankFilter.ids[0]
+              : undefined
+          }
           onClose={() => setAddModalOpen(false)}
           onSuccess={handleAddTransaction}
         />

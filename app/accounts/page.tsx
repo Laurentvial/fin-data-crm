@@ -820,32 +820,44 @@ function EditBankAccountModal({
 
           <div className="col-span-3">
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Identifiants</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={login}
-                onChange={(e) => onLoginChange(e.target.value)}
-                placeholder="Login"
-                autoComplete="off"
-                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => onPasswordChange(e.target.value)}
-                placeholder="Mot de passe"
-                autoComplete="off"
-                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              />
-              <input
-                type="text"
-                value={pinCode}
-                onChange={(e) => onPinCodeChange(e.target.value)}
-                placeholder="Code PIN"
-                autoComplete="off"
-                className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              />
-            </div>
+            <form
+              className="contents"
+              autoComplete="off"
+              onSubmit={(e) => e.preventDefault()}
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
+            >
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  name="bb_bank_portal_login"
+                  value={login}
+                  onChange={(e) => onLoginChange(e.target.value)}
+                  placeholder="Login"
+                  autoComplete="off"
+                  className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+                <input
+                  type="password"
+                  name="bb_bank_portal_password"
+                  value={password}
+                  onChange={(e) => onPasswordChange(e.target.value)}
+                  placeholder="Mot de passe"
+                  autoComplete="new-password"
+                  className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  name="bb_bank_portal_pin"
+                  value={pinCode}
+                  onChange={(e) => onPinCodeChange(e.target.value)}
+                  placeholder="Code PIN"
+                  autoComplete="off"
+                  className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+              </div>
+            </form>
           </div>
 
           <div className="col-span-3">

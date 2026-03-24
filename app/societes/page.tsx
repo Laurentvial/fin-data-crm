@@ -1231,12 +1231,14 @@ function SocietesPageContent() {
               return (
                 <div
                   key={letter}
-                  className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden"
+                  className="rounded-xl border border-[var(--border)] bg-[var(--card)]"
                 >
                   <button
                     type="button"
                     onClick={() => toggleLetter(letter)}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left font-semibold text-[var(--foreground)] hover:bg-[var(--muted)]/50 transition-colors"
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left font-semibold text-[var(--foreground)] hover:bg-[var(--muted)]/50 transition-colors ${
+                      isOpen ? "rounded-t-xl" : "rounded-xl"
+                    }`}
                     aria-expanded={isOpen}
                   >
                     <span className="text-lg">
@@ -1250,7 +1252,7 @@ function SocietesPageContent() {
                     />
                   </button>
                   {isOpen && (
-                    <div className="border-t border-[var(--border)] p-4">
+                    <div className="rounded-b-xl border-t border-[var(--border)] p-4">
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
                         {list.map((c) => (
                           <CompanyCard
