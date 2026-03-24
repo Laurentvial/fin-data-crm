@@ -15,16 +15,6 @@ function FilterIcon({ className }: { className?: string }) {
   );
 }
 
-function SortIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="14" y2="12" />
-      <line x1="4" y1="18" x2="9" y2="18" />
-    </svg>
-  );
-}
-
 function DownloadIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -64,7 +54,7 @@ function PlusIcon({ className }: { className?: string }) {
 
 export function SheetToolbar({ onResetFiltersClick, onExportClick, onAddClick }: SheetToolbarProps) {
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm">
+    <div className="relative z-20 flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm">
       {onAddClick && (
         <button
           type="button"
@@ -85,13 +75,6 @@ export function SheetToolbar({ onResetFiltersClick, onExportClick, onAddClick }:
           Réinitialiser filtres
         </button>
       )}
-      <button
-        type="button"
-        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--accent-muted)] hover:text-[var(--accent)]"
-      >
-        <SortIcon className="h-4 w-4" />
-        Trier
-      </button>
       <button
         type="button"
         onClick={onExportClick}

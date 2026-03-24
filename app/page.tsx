@@ -7,6 +7,8 @@ import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
+import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummaryPanel";
+import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
 import type { BankAccount, Transaction } from "@/lib/types";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
@@ -41,7 +43,7 @@ function HomeContent() {
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState<string>("");
-  const [selectedSum, setSelectedSum] = useState<number | null>(null);
+  const [selectionStats, setSelectionStats] = useState<TransactionSelectionStats | null>(null);
 
   const [filterValues, setFilterValues] = useState<TransactionFilterValues>(() => ({
     ...DEFAULT_TRANSACTION_FILTERS,
@@ -123,6 +125,18 @@ function HomeContent() {
 
   const filteredBalance = useMemo(() => {
     return filteredTransactions.reduce((sum, t) => sum + signedAmount(t), 0);
+  }, [filteredTransactions]);
+
+  const { visibleDebitsTotal, visibleCreditsTotal } = useMemo(() => {
+    let debits = 0;
+    let credits = 0;
+    for (const t of filteredTransactions) {
+      const num = Number(t.amount);
+      if (Number.isNaN(num)) continue;
+      if (t.type === "DEBIT") debits += num;
+      else credits += num;
+    }
+    return { visibleDebitsTotal: debits, visibleCreditsTotal: credits };
   }, [filteredTransactions]);
 
   const fetchBankAccounts = useCallback(async () => {
@@ -295,6 +309,13 @@ function HomeContent() {
           Compte créé. Pour créer d&apos;autres utilisateurs, assignez le rôle admin dans la Neon Console (Auth → Users → Make admin) puis allez dans Paramètres.
         </div>
       )}
+      <TransactionsSummaryPanel
+        visibleCount={filteredTransactions.length}
+        visibleBalance={filteredBalance}
+        visibleDebitsTotal={visibleDebitsTotal}
+        visibleCreditsTotal={visibleCreditsTotal}
+        selectionStats={selectionStats}
+      />
       <SheetToolbar
         onResetFiltersClick={handleResetFilters}
         onExportClick={handleExport}
@@ -310,7 +331,7 @@ function HomeContent() {
               loading={loadingTransactions}
               zoom={zoom}
               onCellValueChanged={handleCellValueChanged}
-              onSelectionSumChange={setSelectedSum}
+              onSelectionStatsChange={setSelectionStats}
               onDelete={handleDeleteTransaction}
               onGenerateInvoice={(txn) => setInvoiceModalTransaction(txn)}
               onSortDirect={handleSortDirect}
@@ -344,11 +365,8 @@ function HomeContent() {
         />
       )}
       <SheetFooter
-        totalCount={filteredTransactions.length}
         saveStatus={saveStatus}
         saveMessage={saveMessage}
-        selectedSum={selectedSum}
-        totalBalance={filteredBalance}
         zoom={zoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}

@@ -118,6 +118,17 @@ const COLUMN_FILTER_IDS = new Set<string>([
   "processed_by_user_name",
 ]);
 
+/** Stats de sélection : somme nette, débits / crédits (cellules Montant), lignes touchées. */
+export interface TransactionSelectionStats {
+  sum: number;
+  /** Lignes dont la colonne « Montant » intersecte la sélection (aligné sur sum / débits / crédits). */
+  rowCount: number;
+  /** Somme des montants bruts des lignes DEBIT (valeurs positives). */
+  debitsTotal: number;
+  /** Somme des montants des lignes CREDIT. */
+  creditsTotal: number;
+}
+
 /** Glide `onHeaderMenuClick` reçoit le rectangle d’en-tête déjà en coordonnées viewport (voir getBoundsForItem). */
 function viewportHeaderBoundsToAnchor(bounds: {
   x: number;
@@ -139,7 +150,7 @@ interface TransactionsGridProps {
   /** Zoom level in % (50–150). Scales row height and typography. */
   zoom?: number;
   onCellValueChanged?: (id: string, field: string, value: unknown) => Promise<void>;
-  onSelectionSumChange?: (sum: number | null) => void;
+  onSelectionStatsChange?: (stats: TransactionSelectionStats | null) => void;
   onDelete?: (id: string) => Promise<void>;
   /** Called when user clicks "Facture" to generate an invoice. */
   onGenerateInvoice?: (transaction: Transaction) => void;
@@ -347,7 +358,7 @@ export function TransactionsGrid({
   loading = false,
   zoom = 100,
   onCellValueChanged,
-  onSelectionSumChange,
+  onSelectionStatsChange,
   onDelete,
   onGenerateInvoice,
   onSortDirect,
@@ -717,28 +728,38 @@ export function TransactionsGrid({
     (newSelection: GridSelection) => {
       setSelection(newSelection);
 
-      if (!onSelectionSumChange) return;
+      if (!onSelectionStatsChange) return;
 
       const current = newSelection.current;
       if (!current?.range) {
-        onSelectionSumChange(null);
+        onSelectionStatsChange(null);
         return;
       }
 
       const ranges = [current.range, ...(current.rangeStack ?? [])];
       let sum = 0;
+      let debitsTotal = 0;
+      let creditsTotal = 0;
+      const rowSet = new Set<number>();
 
       for (const rect of ranges) {
         const { x, y, width, height } = rect;
         for (let row = y; row < y + height; row++) {
+          if (row < 0 || row >= transactions.length) continue;
           const txn = transactions[row];
           if (!txn) continue;
           for (let col = x; col < x + width; col++) {
             if (col === AMOUNT_COL) {
+              rowSet.add(row);
               const num = Number(txn.amount);
               if (!Number.isNaN(num)) {
-                const signed = txn.type === "DEBIT" ? -num : num;
-                sum += signed;
+                if (txn.type === "DEBIT") {
+                  debitsTotal += num;
+                  sum -= num;
+                } else {
+                  creditsTotal += num;
+                  sum += num;
+                }
               }
               break;
             }
@@ -746,9 +767,9 @@ export function TransactionsGrid({
         }
       }
 
-      onSelectionSumChange(sum);
+      onSelectionStatsChange({ sum, rowCount: rowSet.size, debitsTotal, creditsTotal });
     },
-    [transactions, onSelectionSumChange]
+    [transactions, onSelectionStatsChange]
   );
 
   const onCellClicked = useCallback(
@@ -874,9 +895,9 @@ export function TransactionsGrid({
             onCellEdited={onCellValueChanged ? onCellEdited : undefined}
             onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
             onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
-            gridSelection={onSelectionSumChange ? selection : undefined}
-            onGridSelectionChange={onSelectionSumChange ? onGridSelectionChange : undefined}
-            rangeSelect={onSelectionSumChange ? "multi-rect" : "none"}
+            gridSelection={onSelectionStatsChange ? selection : undefined}
+            onGridSelectionChange={onSelectionStatsChange ? onGridSelectionChange : undefined}
+            rangeSelect={onSelectionStatsChange ? "multi-rect" : "none"}
             rowMarkers="number"
             rowHeight={rowHeight}
             headerHeight={headerHeight}
