@@ -6,6 +6,8 @@ import {
   GridCellKind,
   getDefaultTheme,
   drawTextCell,
+  roundedRect,
+  interpolateColors,
   type GridColumn,
   type GridCell,
   type Item,
@@ -20,6 +22,10 @@ import {
 import "@glideapps/glide-data-grid/dist/index.css";
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 import { TransactionColumnFilterMenu, type FilterMenuAnchor } from "@/components/TransactionColumnFilterMenu";
+import {
+  DEFAULT_TRANSACTION_TABLE_SORT,
+  isDefaultTransactionTableSort,
+} from "@/lib/transaction-sort";
 import {
   columnHasActiveFilter,
   type TransactionFilterValues,
@@ -51,6 +57,15 @@ const DARK_THEME: Partial<Theme> = {
   borderColor: "#334155",
 };
 
+/** Matches `app/globals.css` / Geist so canvas headers align with the rest of the UI. */
+const FONT_FAMILY_FALLBACK =
+  'Geist, "Geist Fallback", ui-sans-serif, system-ui, sans-serif';
+
+/** Glide builds `headerFontFull` from `headerFontStyle` + `fontFamily`. Size scales with grid zoom. */
+function glideHeaderFontStyle(scale: number, weight = 650): string {
+  return `${weight} ${Math.max(12, Math.round(15 * scale))}px`;
+}
+
 function useResolvedTheme(): Partial<Theme> {
   const [theme, setTheme] = useState<Partial<Theme>>(LIGHT_THEME);
   useEffect(() => {
@@ -59,17 +74,19 @@ function useResolvedTheme(): Partial<Theme> {
     const get = (v: string) => s.getPropertyValue(v).trim();
     const prefersDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
     const base = prefersDark ? DARK_THEME : LIGHT_THEME;
+    const bodyFont = getComputedStyle(document.body).fontFamily.trim();
     const resolved: Partial<Theme> = {
       ...base,
       accentColor: get("--primary") || base.accentColor,
       accentLight: get("--primary-muted") || base.accentLight,
       textDark: get("--foreground") || base.textDark,
       textMedium: get("--muted-foreground") || base.textMedium,
-      textHeader: get("--muted-foreground") || base.textHeader,
+      textHeader: get("--foreground") || base.textHeader,
       bgCell: get("--background") || base.bgCell,
       bgCellMedium: get("--muted") || base.bgCellMedium,
       bgHeader: get("--muted") || base.bgHeader,
       borderColor: get("--border") || base.borderColor,
+      fontFamily: bodyFont || FONT_FAMILY_FALLBACK,
     };
     // Sync grid theme tokens from document CSS once on mount.
     queueMicrotask(() => setTheme(resolved));
@@ -77,12 +94,13 @@ function useResolvedTheme(): Partial<Theme> {
   return theme;
 }
 
-const AMOUNT_COL = 4; // Column index for amount (used for selection sum)
+const AMOUNT_COL = 5; // Column index for amount (used for selection sum)
 
 const SORTABLE_FIELDS = new Set<string>([
   "id",
   "transaction_date",
   "bank_account_name",
+  "company_name",
   "amount",
   "type",
   "description",
@@ -93,33 +111,25 @@ const SORTABLE_FIELDS = new Set<string>([
 const COLUMN_FILTER_IDS = new Set<string>([
   "transaction_date",
   "bank_account_name",
+  "company_name",
   "amount",
   "type",
   "description",
   "processed_by_user_name",
 ]);
 
-const FILTER_FUNNEL_ICON = "filterFunnel";
-const FILTER_HEADER_ICONS: Record<string, (p: { fgColor: string; bgColor: string }) => string> = {
-  [FILTER_FUNNEL_ICON]: ({ fgColor }) =>
-    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" stroke="${fgColor}" stroke-width="2" stroke-linejoin="round"/></svg>`,
-};
-
-function canvasMenuBoundsToViewport(
-  wrapEl: HTMLElement | null,
-  bounds: { x: number; y: number; width: number; height: number }
-): FilterMenuAnchor | null {
-  const canvas = wrapEl?.querySelector("canvas");
-  if (!canvas) return null;
-  const cr = canvas.getBoundingClientRect();
-  const c = canvas as HTMLCanvasElement;
-  const sx = cr.width / c.width;
-  const sy = cr.height / c.height;
+/** Glide `onHeaderMenuClick` reçoit le rectangle d’en-tête déjà en coordonnées viewport (voir getBoundsForItem). */
+function viewportHeaderBoundsToAnchor(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): FilterMenuAnchor {
   return {
-    left: cr.left + bounds.x * sx,
-    top: cr.top + bounds.y * sy,
-    width: bounds.width * sx,
-    height: bounds.height * sy,
+    left: bounds.x,
+    top: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
   };
 }
 
@@ -133,11 +143,11 @@ interface TransactionsGridProps {
   onDelete?: (id: string) => Promise<void>;
   /** Called when user clicks "Facture" to generate an invoice. */
   onGenerateInvoice?: (transaction: Transaction) => void;
-  /** Called when user clicks a sortable column header. */
-  onSortChange?: (field: string) => void;
   /** Tri explicite (menus de colonne). */
   onSortDirect?: (field: string, direction: "asc" | "desc") => void;
-  /** Current sort state for visual indicator. */
+  /** Rétablit le tri par défaut (menu colonne). */
+  onSortDefault?: () => void;
+  /** Tri actuel (mise en évidence dans le menu filtre). */
   sortState?: { column: string; direction: "asc" | "desc" };
   /** Filtres (menus type Google Sheets). */
   filterValues?: TransactionFilterValues;
@@ -308,6 +318,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "id",
   "transaction_date",
   "bank_account_name",
+  "company_name",
   "amount",
   "type",
   "description",
@@ -339,8 +350,8 @@ export function TransactionsGrid({
   onSelectionSumChange,
   onDelete,
   onGenerateInvoice,
-  onSortChange,
   onSortDirect,
+  onSortDefault,
   sortState,
   filterValues,
   onApplyFilters,
@@ -348,7 +359,6 @@ export function TransactionsGrid({
   transactionsForFilterOptions = [],
 }: TransactionsGridProps) {
   const scale = zoom / 100;
-  const gridWrapRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
@@ -363,57 +373,102 @@ export function TransactionsGrid({
   const resolvedTheme = useResolvedTheme();
 
   const columns = useMemo<GridColumn[]>(() => {
-    const sortIndicator = (id: string) => {
-      if (!sortState || sortState.column !== id) return "";
-      return sortState.direction === "asc" ? " ⬆" : " ⬇";
-    };
     const filterActive = (id: string) =>
       columnFiltersEnabled && filterValues && columnHasActiveFilter(id, filterValues);
+    /** Tri par défaut (date ↓) sur la colonne date = pas d’effet « tri actif » sur l’en-tête (évite confusion avec un filtre). */
+    const sortActive = (id: string): boolean => {
+      if (sortState == null || !SORTABLE_FIELDS.has(id) || sortState.column !== id) return false;
+      if (
+        isDefaultTransactionTableSort(sortState) &&
+        id === DEFAULT_TRANSACTION_TABLE_SORT.column
+      ) {
+        return false;
+      }
+      return true;
+    };
+
+    /** Filtre actif, tri actif, ou les deux : en-tête distinct (couleur, puce, bord). */
+    const columnHeaderThemeOverride = (id: string): Partial<Theme> | undefined => {
+      const fa = filterActive(id);
+      const sa = sortActive(id);
+      if (!fa && !sa) return undefined;
+      const accent = resolvedTheme.accentColor ?? LIGHT_THEME.accentColor ?? "#0d9488";
+      const accentLight = resolvedTheme.accentLight ?? LIGHT_THEME.accentLight ?? "#ccfbf1";
+      const bgCell = resolvedTheme.bgCell ?? LIGHT_THEME.bgCell ?? "#ffffff";
+      const border = resolvedTheme.borderColor ?? LIGHT_THEME.borderColor ?? "#e2e8f0";
+      if (fa) {
+        return {
+          textHeader: accent,
+          headerFontStyle: glideHeaderFontStyle(scale, sa ? 750 : 700),
+          bgCell: interpolateColors(bgCell, accentLight, sa ? 0.44 : 0.38),
+          borderColor: interpolateColors(border, accent, sa ? 0.5 : 0.4),
+        };
+      }
+      return {
+        textHeader: accent,
+        headerFontStyle: glideHeaderFontStyle(scale, 650),
+        bgCell: interpolateColors(bgCell, accentLight, 0.26),
+        borderColor: interpolateColors(border, accent, 0.34),
+      };
+    };
+
     const menuCol = (base: GridColumn & { id?: string }): GridColumn => {
       const id = base.id ?? "";
-      const withFilter =
-        columnFiltersEnabled && COLUMN_FILTER_IDS.has(id)
-          ? {
-              ...base,
-              icon: FILTER_FUNNEL_ICON,
-              hasMenu: true,
-              ...(filterActive(id) && {
-                themeOverride: {
-                  bgHeader: resolvedTheme.accentLight ?? "#ccfbf1",
-                },
-              }),
-            }
-          : base;
-      return withFilter;
+      const o = columnHeaderThemeOverride(id);
+      const withMenu = columnFiltersEnabled && COLUMN_FILTER_IDS.has(id);
+      return {
+        ...base,
+        ...(withMenu && { hasMenu: true }),
+        ...(o !== undefined && { themeOverride: o }),
+      };
     };
+
+    const idHeader = columnHeaderThemeOverride("id");
+    const createdAtHeader = columnHeaderThemeOverride("created_at");
+
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(62 * scale), id: "rowNum" },
-      { title: `ID Transaction${sortIndicator("id")}`, width: Math.round(100 * scale), id: "id" },
+      {
+        title: "ID Transaction",
+        width: Math.round(124 * scale),
+        id: "id",
+        ...(idHeader !== undefined && { themeOverride: idHeader }),
+      },
       menuCol({
-        title: `Date${sortIndicator("transaction_date")}`,
+        title: "Date",
         width: Math.round(130 * scale),
         id: "transaction_date",
       }),
       menuCol({
-        title: `Compte${sortIndicator("bank_account_name")}`,
-        width: Math.round(280 * scale),
+        title: "Compte",
+        width: Math.round(200 * scale),
         id: "bank_account_name",
       }),
       menuCol({
-        title: `Montant${sortIndicator("amount")}`,
+        title: "Société",
+        width: Math.round(200 * scale),
+        id: "company_name",
+      }),
+      menuCol({
+        title: "Montant",
         width: Math.round(135 * scale),
         id: "amount",
       }),
-      menuCol({ title: `Type${sortIndicator("type")}`, width: Math.round(80 * scale), id: "type" }),
+      menuCol({ title: "Type", width: Math.round(80 * scale), id: "type" }),
       menuCol({
-        title: `Description${sortIndicator("description")}`,
+        title: "Description",
         width: 220,
         grow: 1,
         id: "description",
       }),
-      { title: `Créé le${sortIndicator("created_at")}`, width: Math.round(120 * scale), id: "created_at" },
+      {
+        title: "Créé le",
+        width: Math.round(120 * scale),
+        id: "created_at",
+        ...(createdAtHeader !== undefined && { themeOverride: createdAtHeader }),
+      },
       menuCol({
-        title: `Ajouté par${sortIndicator("processed_by_user_name")}`,
+        title: "Ajouté par",
         width: Math.round(140 * scale),
         id: "processed_by_user_name",
       }),
@@ -425,7 +480,19 @@ export function TransactionsGrid({
       cols.push({ title: "", width: Math.round(110 * scale), id: "delete" });
     }
     return cols;
-  }, [scale, onDelete, onGenerateInvoice, sortState, columnFiltersEnabled, filterValues, resolvedTheme.accentLight]);
+  }, [
+    scale,
+    onDelete,
+    onGenerateInvoice,
+    columnFiltersEnabled,
+    filterValues,
+    sortState?.column,
+    sortState?.direction,
+    resolvedTheme.accentColor,
+    resolvedTheme.accentLight,
+    resolvedTheme.bgCell,
+    resolvedTheme.borderColor,
+  ]);
 
   const columnsRef = useRef(columns);
   useEffect(() => {
@@ -437,20 +504,9 @@ export function TransactionsGrid({
       if (!columnFiltersEnabled) return;
       const columnId = columnsRef.current[col]?.id;
       if (!columnId || !COLUMN_FILTER_IDS.has(columnId)) return;
-      const anchor = canvasMenuBoundsToViewport(gridWrapRef.current, bounds);
-      if (!anchor) return;
-      setFilterMenu({ columnId, anchor });
+      setFilterMenu({ columnId, anchor: viewportHeaderBoundsToAnchor(bounds) });
     },
     [columnFiltersEnabled]
-  );
-
-  const onHeaderClicked = useCallback(
-    (colIndex: number) => {
-      const field = columns[colIndex]?.id ?? COL_FIELDS[colIndex];
-      if (!field || !SORTABLE_FIELDS.has(field) || !onSortChange) return;
-      onSortChange(field);
-    },
-    [onSortChange, columns]
   );
 
   const getCellContent = useCallback(
@@ -471,11 +527,13 @@ export function TransactionsGrid({
         };
       }
       if (field === "id") {
-        const val = txn.id ? String(txn.id).slice(0, 8) + "…" : "";
+        const full = txn.id != null && String(txn.id) !== "" ? String(txn.id) : "";
+        const val = full ? `${full.slice(0, 8)}…` : "";
         return {
           kind: GridCellKind.Text,
           data: val,
           displayData: val,
+          copyData: full,
           allowOverlay: false,
           readonly: true,
         };
@@ -489,12 +547,17 @@ export function TransactionsGrid({
         };
       }
       if (field === "bank_account_name") {
-        const account = txn.bank_account_name ?? "";
-        const company = txn.company_name ?? "";
-        const val =
-          account && company && account !== company
-            ? `${account} – ${company}`
-            : account || company || "";
+        const val = txn.bank_account_name ?? "";
+        return {
+          kind: GridCellKind.Text,
+          data: val,
+          displayData: val,
+          allowOverlay: false,
+          readonly: true,
+        };
+      }
+      if (field === "company_name") {
+        const val = txn.company_name ?? "";
         return {
           kind: GridCellKind.Text,
           data: val,
@@ -611,7 +674,15 @@ export function TransactionsGrid({
         return;
       }
 
-      if (field === "rowNum" || field === "id" || field === "bank_account_name" || field === "created_at" || field === "processed_by_user_name") return;
+      if (
+        field === "rowNum" ||
+        field === "id" ||
+        field === "bank_account_name" ||
+        field === "company_name" ||
+        field === "created_at" ||
+        field === "processed_by_user_name"
+      )
+        return;
 
       let value: unknown;
       if (field === "transaction_date") {
@@ -708,8 +779,13 @@ export function TransactionsGrid({
   const rowHeight = Math.round(56 * scale);
   const headerHeight = Math.round(52 * scale);
   const gridTheme = useMemo(
-    () => ({ ...getDefaultTheme(), ...resolvedTheme }),
-    [resolvedTheme]
+    () => ({
+      ...getDefaultTheme(),
+      ...resolvedTheme,
+      fontFamily: resolvedTheme.fontFamily ?? FONT_FAMILY_FALLBACK,
+      headerFontStyle: glideHeaderFontStyle(scale),
+    }),
+    [resolvedTheme, scale]
   );
 
   const onItemHovered = useCallback((args: { location?: Item } | undefined) => {
@@ -728,12 +804,58 @@ export function TransactionsGrid({
     [hoveredRow, resolvedTheme.bgCellMedium]
   );
 
+  const drawHeader = useCallback(
+    (
+      args: {
+        ctx: CanvasRenderingContext2D;
+        rect: { x: number; y: number; width: number; height: number };
+        theme: Theme;
+        hoverAmount: number;
+        isSelected: boolean;
+        column: GridColumn;
+      },
+      drawContent: () => void
+    ) => {
+      const { ctx, rect, theme, hoverAmount, isSelected, column } = args;
+      if ("rowMarker" in column && column.rowMarker !== undefined) {
+        drawContent();
+        return;
+      }
+      const inset = Math.max(2, Math.round(3 * scale));
+      const radius = Math.min(Math.round(8 * scale), Math.max(4, (rect.height - inset * 2) / 2));
+      const bx = rect.x + inset;
+      const by = rect.y + inset;
+      const bw = rect.width - inset * 2;
+      const bh = rect.height - inset * 2;
+      if (bw < 8 || bh < 8) {
+        drawContent();
+        return;
+      }
+      const face = theme.bgCell ?? "#ffffff";
+      const border = theme.borderColor ?? "#e2e8f0";
+      ctx.save();
+      roundedRect(ctx, bx, by, bw, bh, radius);
+      ctx.fillStyle = isSelected ? interpolateColors(face, theme.accentColor, 0.22) : face;
+      ctx.fill();
+      ctx.strokeStyle = isSelected ? interpolateColors(border, theme.accentColor, 0.35) : border;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (hoverAmount > 0) {
+        roundedRect(ctx, bx, by, bw, bh, radius);
+        ctx.fillStyle = theme.bgHeaderHovered ?? theme.textMedium;
+        ctx.globalAlpha = 0.14 * hoverAmount;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+      drawContent();
+    },
+    [scale]
+  );
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div
-        ref={gridWrapRef}
-        className="h-full min-h-[400px] w-full overflow-hidden rounded-md border border-[var(--border)]"
-      >
+      <div className="h-full min-h-[400px] w-full overflow-hidden rounded-md border border-[var(--border)]">
         {loading ? (
           <div className="flex h-full min-h-[400px] items-center justify-center text-[var(--muted-foreground)]">
             Chargement des transactions…
@@ -745,14 +867,13 @@ export function TransactionsGrid({
             columns={columns}
             rows={transactions.length}
             getCellContent={getCellContent}
+            getCellsForSelection={true} /* requis pour Ctrl+C / copier la sélection (voir Glide DataEditor) */
             getRowThemeOverride={getRowThemeOverride}
             onItemHovered={onItemHovered}
             customRenderers={[dateCellRenderer]}
             onCellEdited={onCellValueChanged ? onCellEdited : undefined}
             onCellClicked={onDelete || onGenerateInvoice ? onCellClicked : undefined}
-            onHeaderClicked={onSortChange ? onHeaderClicked : undefined}
             onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
-            headerIcons={columnFiltersEnabled ? FILTER_HEADER_ICONS : undefined}
             gridSelection={onSelectionSumChange ? selection : undefined}
             onGridSelectionChange={onSelectionSumChange ? onGridSelectionChange : undefined}
             rangeSelect={onSelectionSumChange ? "multi-rect" : "none"}
@@ -760,6 +881,7 @@ export function TransactionsGrid({
             rowHeight={rowHeight}
             headerHeight={headerHeight}
             theme={gridTheme}
+            drawHeader={drawHeader}
           />
         )}
       </div>
@@ -768,6 +890,7 @@ export function TransactionsGrid({
           columnId={filterMenu.columnId}
           anchor={filterMenu.anchor}
           sortable={SORTABLE_FIELDS.has(filterMenu.columnId)}
+          sortState={sortState}
           applied={filterValues}
           transactionsForOptions={transactionsForFilterOptions}
           bankAccounts={bankAccounts}
@@ -785,6 +908,14 @@ export function TransactionsGrid({
             }
             setFilterMenu(null);
           }}
+          onSortDefault={
+            onSortDefault
+              ? () => {
+                  onSortDefault();
+                  setFilterMenu(null);
+                }
+              : undefined
+          }
         />
       )}
     </div>

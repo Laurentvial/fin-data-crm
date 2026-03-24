@@ -8,11 +8,13 @@ import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import type { BankAccount, Transaction } from "@/lib/types";
+import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
   applyClientTransactionFilters,
   DEFAULT_TRANSACTION_FILTERS,
   filtersToApiParams,
   getAllBankIdsForFilter,
+  getCompanyFilterKeys,
   getProcessedByFilterKeys,
   normalizeTransactionFilters,
   type TransactionFilterValues,
@@ -50,27 +52,21 @@ function HomeContent() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [invoiceModalTransaction, setInvoiceModalTransaction] = useState<Transaction | null>(null);
   const [zoom, setZoom] = useState(100);
-  const [sortState, setSortState] = useState<{ column: string; direction: "asc" | "desc" } | null>({
-    column: "transaction_date",
-    direction: "desc",
-  });
-
-  const handleSortChange = useCallback((field: string) => {
-    setSortState((prev) => {
-      if (prev?.column === field) {
-        if (prev.direction === "desc") return { column: field, direction: "asc" as const };
-        return null; // asc -> reset to default
-      }
-      return { column: field, direction: "asc" as const };
-    });
-  }, []);
+  const [sortState, setSortState] = useState<{
+    column: string;
+    direction: "asc" | "desc";
+  } | null>(() => ({ ...DEFAULT_TRANSACTION_TABLE_SORT }));
 
   const handleSortDirect = useCallback((field: string, direction: "asc" | "desc") => {
     setSortState({ column: field, direction });
   }, []);
 
+  const handleSortDefault = useCallback(() => {
+    setSortState({ ...DEFAULT_TRANSACTION_TABLE_SORT });
+  }, []);
+
   const sortedTransactions = useMemo(() => {
-    const effective = sortState ?? { column: "transaction_date", direction: "desc" as const };
+    const effective = sortState ?? DEFAULT_TRANSACTION_TABLE_SORT;
     const dir = effective.direction === "asc" ? 1 : -1;
     const parseDate = (d: string | undefined | null): number => {
       if (d == null || (typeof d === "string" && d.trim() === "")) return 0;
@@ -87,16 +83,12 @@ function HomeContent() {
           cmp = parseDate(a.transaction_date) - parseDate(b.transaction_date);
           if (cmp === 0) cmp = parseDate(a.created_at) - parseDate(b.created_at);
           break;
-        case "bank_account_name": {
-          const accountA = a.bank_account_name ?? "";
-          const companyA = a.company_name ?? "";
-          const na = accountA && companyA && accountA !== companyA ? `${accountA} – ${companyA}` : accountA || companyA || "";
-          const accountB = b.bank_account_name ?? "";
-          const companyB = b.company_name ?? "";
-          const nb = accountB && companyB && accountB !== companyB ? `${accountB} – ${companyB}` : accountB || companyB || "";
-          cmp = na.localeCompare(nb);
+        case "bank_account_name":
+          cmp = (a.bank_account_name ?? "").localeCompare(b.bank_account_name ?? "");
           break;
-        }
+        case "company_name":
+          cmp = (a.company_name ?? "").localeCompare(b.company_name ?? "");
+          break;
         case "amount": {
           const na = Number(a.amount);
           const nb = Number(b.amount);
@@ -184,7 +176,10 @@ function HomeContent() {
     (next: TransactionFilterValues) => {
       const allBankIds = getAllBankIdsForFilter(transactions, bankAccounts);
       const allProcessedKeys = getProcessedByFilterKeys(transactions);
-      setFilterValues(normalizeTransactionFilters(next, { allBankIds, allProcessedKeys }));
+      const allCompanyKeys = getCompanyFilterKeys(transactions);
+      setFilterValues(
+        normalizeTransactionFilters(next, { allBankIds, allProcessedKeys, allCompanyKeys })
+      );
     },
     [transactions, bankAccounts]
   );
@@ -268,17 +263,15 @@ function HomeContent() {
   }, []);
 
   const handleExport = useCallback(() => {
-    const headers = ["ID", "Date", "Compte", "Montant", "Type", "Description", "Créé le"];
+    const headers = ["ID", "Date", "Compte", "Société", "Montant", "Type", "Description", "Créé le"];
     const rows = filteredTransactions.map((t) => {
       const num = Number(t.amount);
       const signed = t.type === "DEBIT" ? -num : num;
-      const account = t.bank_account_name ?? "";
-      const company = t.company_name ?? "";
-      const compte = account && company && account !== company ? `${account} – ${company}` : account || company || "";
       return [
         t.id,
         t.transaction_date,
-        compte,
+        t.bank_account_name ?? "",
+        t.company_name ?? "",
         signed,
         t.type,
         t.description ?? "",
@@ -320,9 +313,9 @@ function HomeContent() {
               onSelectionSumChange={setSelectedSum}
               onDelete={handleDeleteTransaction}
               onGenerateInvoice={(txn) => setInvoiceModalTransaction(txn)}
-              onSortChange={handleSortChange}
               onSortDirect={handleSortDirect}
-              sortState={sortState ?? { column: "transaction_date", direction: "desc" }}
+              onSortDefault={handleSortDefault}
+              sortState={sortState ?? DEFAULT_TRANSACTION_TABLE_SORT}
               filterValues={filterValues}
               onApplyFilters={handleApplyFilters}
               bankAccounts={bankAccounts}

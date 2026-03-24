@@ -2,6 +2,8 @@ import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
 export interface TransactionFilterValues {
   bankFilter: { mode: "all" } | { mode: "include"; ids: string[] };
+  /** null = toutes les sociétés */
+  companyFilter: null | { mode: "include"; names: string[] };
   dateFrom: string;
   dateTo: string;
   typeFilter: { mode: "all" } | { mode: "include"; types: TransactionType[] };
@@ -14,6 +16,7 @@ export interface TransactionFilterValues {
 
 export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
   bankFilter: { mode: "all" },
+  companyFilter: null,
   dateFrom: "",
   dateTo: "",
   typeFilter: { mode: "all" },
@@ -28,10 +31,7 @@ export function bankAccountDisplayName(ba: BankAccount): string {
 }
 
 export function transactionAccountLabel(t: Transaction): string {
-  const account = t.bank_account_name ?? "";
-  const company = t.company_name ?? "";
-  if (account && company && account !== company) return `${account} – ${company}`;
-  return account || company || "";
+  return t.bank_account_name ?? "";
 }
 
 /** Paramètres API : un seul compte / un seul type quand c’est possible. */
@@ -64,6 +64,14 @@ export function applyClientTransactionFilters(
       if (ids.length > 1 && !ids.includes(t.bank_account_id)) return false;
     }
 
+    if (f.companyFilter !== null) {
+      const names = f.companyFilter.names;
+      if (names.length === 0) return false;
+      const n = t.company_name ?? "";
+      const key = n === "" ? COMPANY_EMPTY_KEY : n;
+      if (!names.includes(key)) return false;
+    }
+
     if (f.typeFilter.mode === "include") {
       const types = f.typeFilter.types;
       if (types.length === 0) return false;
@@ -94,6 +102,9 @@ export function applyClientTransactionFilters(
 /** Valeur sentinelle pour « pas d’utilisateur » dans les filtres multi-sélection. */
 export const PROCESSED_BY_EMPTY_KEY = "\u2060empty\u2060";
 
+/** Valeur sentinelle pour société vide dans les filtres multi-sélection. */
+export const COMPANY_EMPTY_KEY = "\u2060company\u2060";
+
 export function getAllBankIdsForFilter(rows: Transaction[], bankAccounts: BankAccount[]): string[] {
   const s = new Set<string>();
   for (const ba of bankAccounts) s.add(ba.id);
@@ -114,9 +125,22 @@ export function getProcessedByFilterKeys(rows: Transaction[]): string[] {
   return list;
 }
 
+export function getCompanyFilterKeys(rows: Transaction[]): string[] {
+  const names = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const n = t.company_name ?? "";
+    if (n === "") hasEmpty = true;
+    else names.add(n);
+  }
+  const list = [...names].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(COMPANY_EMPTY_KEY);
+  return list;
+}
+
 export function normalizeTransactionFilters(
   f: TransactionFilterValues,
-  ctx: { allBankIds: string[]; allProcessedKeys: string[] }
+  ctx: { allBankIds: string[]; allProcessedKeys: string[]; allCompanyKeys: string[] }
 ): TransactionFilterValues {
   const out: TransactionFilterValues = { ...f };
 
@@ -132,6 +156,13 @@ export function normalizeTransactionFilters(
     const types = f.typeFilter.types;
     if (types.includes("DEBIT") && types.includes("CREDIT") && types.length === 2) {
       out.typeFilter = { mode: "all" };
+    }
+  }
+
+  if (f.companyFilter !== null && ctx.allCompanyKeys.length > 0) {
+    const n = new Set(f.companyFilter.names);
+    if (ctx.allCompanyKeys.every((k) => n.has(k)) && n.size === ctx.allCompanyKeys.length) {
+      out.companyFilter = null;
     }
   }
 
@@ -152,6 +183,8 @@ export function columnHasActiveFilter(
   switch (columnId) {
     case "bank_account_name":
       return f.bankFilter.mode === "include";
+    case "company_name":
+      return f.companyFilter !== null;
     case "transaction_date":
       return Boolean(f.dateFrom || f.dateTo);
     case "type":

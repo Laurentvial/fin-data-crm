@@ -31,6 +31,7 @@ const COUNTRY_LABELS: Record<string, string> = {
   CH: "Suisse",
   PT: "Portugal",
   ES: "Espagne",
+  LV: "Lettonie",
 };
 
 function formatDateDisplay(iso: string | null | undefined): string {

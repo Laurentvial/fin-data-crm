@@ -283,6 +283,7 @@ const INVOICE_COUNTRIES = [
   { code: "ES", label: "Espagne" },
   { code: "US", label: "États-Unis" },
   { code: "IT", label: "Italie" },
+  { code: "LV", label: "Lettonie" },
   { code: "PL", label: "Pologne" },
   { code: "RO", label: "Roumanie" },
 ];
