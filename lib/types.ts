@@ -247,6 +247,8 @@ export interface CompanyPhone {
   id: string;
   company_id: string;
   phone: string;
+  /** Opérateur / réseau mobile (ex. Orange, Free) */
+  operateur?: string | null;
   is_default?: boolean;
   created_at: string;
   updated_at: string;

@@ -31,7 +31,7 @@ export async function GET(
       );
     }
     const rows = await sql`
-      SELECT id, company_id, phone, is_default, created_at, updated_at
+      SELECT id, company_id, phone, operateur, is_default, created_at, updated_at
       FROM company_phones
       WHERE company_id = ${id}
       ORDER BY is_default DESC, phone
@@ -71,12 +71,23 @@ export async function POST(
         { status: 400 }
       );
     }
+    let operateur: string | null = null;
+    if (body?.operateur !== undefined && body?.operateur !== null) {
+      if (typeof body.operateur !== "string") {
+        return NextResponse.json(
+          { error: "Le champ opérateur doit être une chaîne." },
+          { status: 400 }
+        );
+      }
+      const t = body.operateur.trim();
+      operateur = t || null;
+    }
     const existingCount = await sql`SELECT 1 FROM company_phones WHERE company_id = ${id}`;
     const isFirst = existingCount.length === 0;
     const rows = await sql`
-      INSERT INTO company_phones (company_id, phone, is_default)
-      VALUES (${id}, ${phone}, ${isFirst})
-      RETURNING id, company_id, phone, is_default, created_at, updated_at
+      INSERT INTO company_phones (company_id, phone, operateur, is_default)
+      VALUES (${id}, ${phone}, ${operateur}, ${isFirst})
+      RETURNING id, company_id, phone, operateur, is_default, created_at, updated_at
     `;
     const row = rows[0];
     if (!row) {

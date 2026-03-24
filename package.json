@@ -20,7 +20,8 @@
     "migrate:030": "node scripts/run-migration-030.js",
     "migrate:031": "node scripts/run-migration-031.js",
     "migrate:032": "node scripts/run-migration-032.js",
-    "migrate:033": "node scripts/run-migration-033.js"
+    "migrate:033": "node scripts/run-migration-033.js",
+    "migrate:034": "node scripts/run-migration-034.js"
   },
   "dependencies": {
     "@glideapps/glide-data-grid": "^6.0.3",

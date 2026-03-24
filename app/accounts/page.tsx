@@ -799,7 +799,9 @@ function EditBankAccountModal({
                 <option value="">Aucun</option>
                 {companyPhones.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.phone}{p.is_default ? " ★" : ""}
+                    {p.phone}
+                    {p.operateur ? ` — ${p.operateur}` : ""}
+                    {p.is_default ? " ★" : ""}
                   </option>
                 ))}
               </Select>

@@ -7,6 +7,11 @@ import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
+import {
+  FR_MOBILE_OPERATORS,
+  needsLegacyOperateurOption,
+  operateurToSelectValue,
+} from "@/lib/french-mobile-operators";
 import type {
   AccountStatus,
   AccountType,
@@ -86,6 +91,7 @@ export default function SocieteDetailPage() {
   const [newPassword, setNewPassword] = useState("");
   const [addingEmail, setAddingEmail] = useState(false);
   const [newPhone, setNewPhone] = useState("");
+  const [newPhoneOperateur, setNewPhoneOperateur] = useState("");
   const [addingPhone, setAddingPhone] = useState(false);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
@@ -256,7 +262,10 @@ export default function SocieteDetailPage() {
       const res = await fetch(`/api/accounts/${id}/phones`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({
+          phone,
+          operateur: newPhoneOperateur.trim() || null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -265,6 +274,7 @@ export default function SocieteDetailPage() {
       const added = await res.json();
       setPhones((prev) => [...prev, added].sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.phone.localeCompare(b.phone)));
       setNewPhone("");
+      setNewPhoneOperateur("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -301,11 +311,35 @@ export default function SocieteDetailPage() {
         body: JSON.stringify({ is_default: true }),
       });
       if (!res.ok) throw new Error("Échec de la mise à jour");
+      const updated = (await res.json()) as CompanyPhone;
       setPhones((prev) =>
         prev
-          .map((p) => (p.id === phoneId ? { ...p, is_default: true } : { ...p, is_default: false }))
+          .map((p) => (p.id === phoneId ? updated : { ...p, is_default: false }))
           .sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.phone.localeCompare(b.phone))
       );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    }
+  };
+
+  const handlePhoneOperateurSelect = async (
+    phoneId: string,
+    current: string | null | undefined,
+    next: string
+  ) => {
+    const nextVal = next.trim() || null;
+    const prevVal = (current ?? "").trim() || null;
+    if (nextVal === prevVal) return;
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}/phones/${phoneId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operateur: nextVal }),
+      });
+      if (!res.ok) throw new Error("Échec de la mise à jour");
+      const updated = (await res.json()) as CompanyPhone;
+      setPhones((prevPhones) => prevPhones.map((p) => (p.id === phoneId ? updated : p)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     }
@@ -1133,6 +1167,19 @@ export default function SocieteDetailPage() {
                   placeholder="Numéro de téléphone"
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
+                <Select
+                  value={newPhoneOperateur}
+                  onChange={(e) => setNewPhoneOperateur(e.target.value)}
+                  className="min-w-[200px] max-w-[280px]"
+                  aria-label="Opérateur mobile"
+                >
+                  <option value="">Opérateur</option>
+                  {FR_MOBILE_OPERATORS.map((op) => (
+                    <option key={op} value={op}>
+                      {op}
+                    </option>
+                  ))}
+                </Select>
                 <button
                   type="button"
                   onClick={handleAddPhone}
@@ -1151,6 +1198,7 @@ export default function SocieteDetailPage() {
                       <tr className="border-b border-[var(--border)]">
                         <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)] w-10">Défaut</th>
                         <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)]">Numéro</th>
+                        <th className="px-4 py-2 text-left font-medium text-[var(--muted-foreground)] min-w-[160px]">Opérateur</th>
                         <th className="px-4 py-2 text-right font-medium text-[var(--muted-foreground)]">Actions</th>
                       </tr>
                     </thead>
@@ -1168,6 +1216,32 @@ export default function SocieteDetailPage() {
                             </button>
                           </td>
                           <td className="px-4 py-2">{ph.phone}</td>
+                          <td className="px-4 py-2">
+                            <Select
+                              value={operateurToSelectValue(ph.operateur)}
+                              onChange={(e) => {
+                                void handlePhoneOperateurSelect(ph.id, ph.operateur, e.target.value);
+                              }}
+                              className="min-w-[200px] max-w-[280px]"
+                              aria-label={`Opérateur pour ${ph.phone}`}
+                            >
+                              <option value="">—</option>
+                              {FR_MOBILE_OPERATORS.map((op) => (
+                                <option key={op} value={op}>
+                                  {op}
+                                </option>
+                              ))}
+                              {(() => {
+                                const legacy = ph.operateur?.trim();
+                                if (!legacy || !needsLegacyOperateurOption(ph.operateur)) return null;
+                                return (
+                                  <option value={legacy}>
+                                    {legacy} (hors liste)
+                                  </option>
+                                );
+                              })()}
+                            </Select>
+                          </td>
                           <td className="px-4 py-2 text-right">
                             <button
                               type="button"
