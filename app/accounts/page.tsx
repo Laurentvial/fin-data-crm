@@ -928,6 +928,7 @@ function AccountsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editIdFromUrl = searchParams.get("edit");
+  const companyFromUrl = searchParams.get("company");
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -1172,28 +1173,48 @@ function AccountsPageContent() {
     }
   };
 
-  const openCreateModal = () => {
-    setCreateModalOpen(true);
-    setCreateName("");
-    const firstId = companies[0]?.id ?? "";
-    setCreateCompanyId(firstId);
-    setCreateBankId("");
-    const sortedTypes = [...accountTypes].sort((a, b) => a.sort_order - b.sort_order);
-    const defaultType = sortedTypes.find((t) => t.emoji?.trim()) ?? sortedTypes[0];
-    setCreateAccountTypeId(defaultType?.id ?? "");
-    const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
-    const defaultStatus = sortedStatuses.find((s) => s.emoji?.trim()) ?? sortedStatuses[0];
-    setCreateAccountStatusId(defaultStatus?.id ?? "");
-    setCreateIbans([]);
-    setCreateLogin("");
-    setCreatePassword("");
-    setCreatePinCode("");
-    setCreatePlafondLimit("");
-    setCreateCards([]);
-    setCreateLinkExistingGroupId("");
-    setError(null);
-    setCreateInviteWarning(null);
-  };
+  const openCreateModal = useCallback(
+    (preferredCompanyId?: string) => {
+      setCreateModalOpen(true);
+      setCreateName("");
+      const cid =
+        preferredCompanyId && companies.some((c) => c.id === preferredCompanyId)
+          ? preferredCompanyId
+          : (companies[0]?.id ?? "");
+      setCreateCompanyId(cid);
+      setCreateBankId("");
+      const sortedTypes = [...accountTypes].sort((a, b) => a.sort_order - b.sort_order);
+      const defaultType = sortedTypes.find((t) => t.emoji?.trim()) ?? sortedTypes[0];
+      setCreateAccountTypeId(defaultType?.id ?? "");
+      const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
+      const defaultStatus = sortedStatuses.find((s) => s.emoji?.trim()) ?? sortedStatuses[0];
+      setCreateAccountStatusId(defaultStatus?.id ?? "");
+      setCreateIbans([]);
+      setCreateLogin("");
+      setCreatePassword("");
+      setCreatePinCode("");
+      setCreatePlafondLimit("");
+      setCreateCards([]);
+      setCreateLinkExistingGroupId("");
+      setError(null);
+      setCreateInviteWarning(null);
+    },
+    [companies, accountTypes, accountStatuses]
+  );
+
+  const createFromCompanyUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!companyFromUrl) {
+      createFromCompanyUrlRef.current = null;
+      return;
+    }
+    if (loading) return;
+    if (!companies.some((c) => c.id === companyFromUrl)) return;
+    if (createFromCompanyUrlRef.current === companyFromUrl) return;
+    createFromCompanyUrlRef.current = companyFromUrl;
+    openCreateModal(companyFromUrl);
+    router.replace("/accounts", { scroll: false });
+  }, [companyFromUrl, loading, companies, openCreateModal, router]);
 
   const createLastAutoNameRef = useRef<string | null>(null);
 
@@ -1447,7 +1468,7 @@ function AccountsPageContent() {
             {companies.length > 0 && (
               <button
                 type="button"
-                onClick={openCreateModal}
+                onClick={() => openCreateModal()}
                 className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
               >
                 <PlusIcon className="h-4 w-4" />

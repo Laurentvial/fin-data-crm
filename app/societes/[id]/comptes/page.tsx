@@ -15,6 +15,15 @@ function ChevronLeftIcon({ className }: { className?: string }) {
   );
 }
 
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
 export default function CompanyAccountsPage() {
   const params = useParams();
   const router = useRouter();
@@ -155,25 +164,48 @@ export default function CompanyAccountsPage() {
           </div>
         )}
 
-        {bankAccounts.length === 0 ? (
-          <p className="text-[var(--muted-foreground)]">
+        {bankAccounts.length === 0 && (
+          <p className="mb-4 text-[var(--muted-foreground)]">
             Aucun compte bancaire lié à cette société.
           </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {bankAccounts.map((ba) => (
-              <AccountVignette
-                key={ba.id}
-                bankAccount={ba}
-                transactions={transactionsByAccount[ba.id] ?? []}
-                hideCompanyName
-                onEdit={(ba) => router.push(`/accounts?edit=${ba.id}`)}
-                onDelete={(ba) => setBankAccountToDelete(ba)}
-                deleting={deletingBankAccountId === ba.id}
-              />
-            ))}
-          </div>
         )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {bankAccounts.map((ba) => (
+            <AccountVignette
+              key={ba.id}
+              bankAccount={ba}
+              transactions={transactionsByAccount[ba.id] ?? []}
+              hideCompanyName
+              onEdit={(ba) => router.push(`/accounts?edit=${ba.id}`)}
+              onDelete={(ba) => setBankAccountToDelete(ba)}
+              deleting={deletingBankAccountId === ba.id}
+            />
+          ))}
+          <Link
+            href={`/accounts?company=${encodeURIComponent(id)}`}
+            className="flex min-h-[200px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center shadow-[var(--card-shadow)] transition-all hover:border-[var(--primary-muted-border)] hover:bg-[var(--muted)] hover:shadow-[var(--card-hover-shadow)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+            title="Ajouter un compte bancaire pour cette société"
+          >
+            <span
+              className="mb-3 flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-[var(--primary-muted-border)] text-[var(--primary)]"
+              aria-hidden
+            >
+              <PlusIcon />
+            </span>
+            <span className="text-sm font-semibold text-[var(--foreground)]">Ajouter un compte</span>
+            <span className="mt-2 text-center text-xs leading-snug text-[var(--muted-foreground)]">
+              Raccourci vers{" "}
+              <span className="font-medium text-[var(--foreground)]">Comptes</span>
+              <span className="mx-1 text-[var(--muted-foreground)]" aria-hidden>
+                →
+              </span>
+              <kbd className="rounded border border-[var(--border)] bg-[var(--card)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--foreground)]">
+                création
+              </kbd>
+            </span>
+          </Link>
+        </div>
       </main>
 
       {bankAccountToDelete && (
