@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
+import { isDebitTransactionStatus } from "@/lib/debit-status";
 import type { TransactionType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -133,6 +134,22 @@ export async function PATCH(
         );
       }
     }
+    if (body.debit_status !== undefined) {
+      const v = body.debit_status;
+      if (v === null || v === "") {
+        updates.debit_status = null;
+      } else if (typeof v === "string") {
+        if (!isDebitTransactionStatus(v)) {
+          return NextResponse.json(
+            { error: "debit_status invalide (ok, a_verifier, annulee_bloquee ou vide)" },
+            { status: 400 }
+          );
+        }
+        updates.debit_status = v;
+      } else {
+        return NextResponse.json({ error: "debit_status invalide" }, { status: 400 });
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -142,13 +159,32 @@ export async function PATCH(
     }
 
     const existingRows = await sql`
-      SELECT bank_account_id, transaction_date, amount, description
+      SELECT bank_account_id, transaction_date, amount, description, type
       FROM transactions
       WHERE id = ${id}::uuid
     `;
     const existing = Array.isArray(existingRows) ? existingRows[0] : existingRows;
     if (!existing) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+    }
+
+    const existingType = String((existing as { type?: string }).type ?? "");
+    const effectiveType =
+      updates.type !== undefined ? String(updates.type) : existingType;
+
+    if (
+      updates.debit_status !== undefined &&
+      updates.debit_status !== null &&
+      effectiveType !== "DEBIT"
+    ) {
+      return NextResponse.json(
+        { error: "Le statut ne s'applique qu'aux débits" },
+        { status: 400 }
+      );
+    }
+
+    if (updates.type === "CREDIT") {
+      updates.debit_status = null;
     }
 
     const setClauses: string[] = [];
@@ -178,6 +214,10 @@ export async function PATCH(
       setClauses.push(`client_account_type_id = $${idx++}::uuid`);
       values.push(updates.client_account_type_id);
     }
+    if (updates.debit_status !== undefined) {
+      setClauses.push(`debit_status = $${idx++}`);
+      values.push(updates.debit_status);
+    }
     values.push(id);
 
     const queryText = `
@@ -200,6 +240,7 @@ export async function PATCH(
           t.extracted_data_json,
           t.created_at,
           t.processed_by_user_id,
+          t.debit_status,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
           t.client_account_type_id,

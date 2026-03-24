@@ -1,3 +1,5 @@
+import type { DebitTransactionStatus } from "./debit-status";
+
 export type TransactionType = "DEBIT" | "CREDIT";
 
 export interface Company {
@@ -244,6 +246,8 @@ export interface Transaction {
   bank_account_type_name?: string | null;
   /** Nom affiché : surcharge ou client du compte. */
   client_name?: string | null;
+  /** Réservé aux débits : OK, à vérifier, annulée/bloquée ; null ou absent pour crédits / vide. */
+  debit_status?: DebitTransactionStatus | null;
 }
 
 export interface TransactionUpdateBody {
@@ -253,6 +257,7 @@ export interface TransactionUpdateBody {
   type?: TransactionType;
   fournisseur_id?: string | null;
   client_account_type_id?: string | null;
+  debit_status?: DebitTransactionStatus | null;
 }
 
 export interface CompanyEmail {

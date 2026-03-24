@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
+import { isDebitTransactionStatus } from "@/lib/debit-status";
 import type { TransactionType } from "@/lib/types";
 
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
@@ -51,6 +52,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "type invalide (DEBIT ou CREDIT)" }, { status: 400 });
     }
 
+    let debitStatus: string | null = null;
+    const rawDebitStatus = body.debit_status;
+    if (rawDebitStatus !== undefined && rawDebitStatus !== null && rawDebitStatus !== "") {
+      if (typeof rawDebitStatus !== "string" || !isDebitTransactionStatus(rawDebitStatus)) {
+        return NextResponse.json(
+          { error: "debit_status invalide (ok, a_verifier, annulee_bloquee ou vide)" },
+          { status: 400 }
+        );
+      }
+      if (type !== "DEBIT") {
+        return NextResponse.json(
+          { error: "debit_status réservé aux débits" },
+          { status: 400 }
+        );
+      }
+      debitStatus = rawDebitStatus;
+    }
+
     // processed_by_user_id is bigint (Telegram ID) - shared with Python service
     const telegramRow = await sql`
       SELECT telegram_id FROM user_telegram WHERE user_id = ${session.user.id}::uuid
@@ -59,9 +78,9 @@ export async function POST(request: NextRequest) {
     const processedByUserId = telegramId != null ? Number(telegramId) : null;
 
     const rows = await sql`
-      INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id)
-      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${processedByUserId})
-      RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id
+      INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id, debit_status)
+      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${processedByUserId}, ${debitStatus})
+      RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id, debit_status
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
     if (!row) {
@@ -71,6 +90,7 @@ export async function POST(request: NextRequest) {
     const withAccount = await sql`
       SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
         t.raw_image_path, t.extracted_data_json, t.created_at, t.processed_by_user_id,
+        t.debit_status,
         t.fournisseur_id, fn.name AS fournisseur_name,
         t.client_account_type_id,
         bat.name AS bank_account_type_name,
@@ -132,6 +152,7 @@ export async function GET(request: NextRequest) {
           t.extracted_data_json,
           t.created_at,
           t.processed_by_user_id,
+          t.debit_status,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
           t.client_account_type_id,

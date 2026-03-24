@@ -575,6 +575,12 @@ export function TransactionColumnFilterMenu({
         </ul>
       </>
     );
+  } else if (columnId === "debit_status") {
+    body = (
+      <p className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+        Pas de filtre sur le statut. Les libellés s&apos;appliquent aux débits uniquement (tri A→Z ci-dessus).
+      </p>
+    );
   } else if (columnId === "client_name") {
     body = (
       <p className="px-3 py-2 text-sm text-[var(--muted-foreground)]">

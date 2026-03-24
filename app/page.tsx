@@ -9,6 +9,7 @@ import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummaryPanel";
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
+import { debitStatusLabel } from "@/lib/debit-status";
 import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
 import {
@@ -112,6 +113,12 @@ function HomeContent() {
         case "type":
           cmp = (a.type === "DEBIT" ? 0 : 1) - (b.type === "DEBIT" ? 0 : 1);
           break;
+        case "debit_status": {
+          const key = (t: Transaction) =>
+            t.type === "DEBIT" ? (t.debit_status ?? "") : "\uFFFF";
+          cmp = key(a).localeCompare(key(b), "fr");
+          break;
+        }
         case "description":
           cmp = (a.description ?? "").localeCompare(b.description ?? "");
           break;
@@ -314,6 +321,8 @@ function HomeContent() {
       if (field === "fournisseur_id") body.fournisseur_id = value === "" ? null : value;
       if (field === "client_account_type_id")
         body.client_account_type_id = value === "" || value == null ? null : value;
+      if (field === "debit_status")
+        body.debit_status = value === "" || value == null ? null : value;
       setSaveStatus("saving");
       setSaveMessage("");
       try {
@@ -392,6 +401,7 @@ function HomeContent() {
       "Société",
       "Montant",
       "Type",
+      "Statut",
       "Description",
       "Fournisseur",
       "Client",
@@ -407,6 +417,7 @@ function HomeContent() {
         t.company_name ?? "",
         signed,
         t.type,
+        t.type === "DEBIT" ? debitStatusLabel(t.debit_status ?? null) || "—" : "",
         t.description ?? "",
         t.fournisseur_name ?? "",
         t.client_name ?? "",

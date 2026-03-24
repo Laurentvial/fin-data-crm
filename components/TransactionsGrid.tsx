@@ -30,6 +30,12 @@ import {
   columnHasActiveFilter,
   type TransactionFilterValues,
 } from "@/lib/transaction-filters";
+import {
+  DEBIT_STATUS_VALUES,
+  debitStatusLabel,
+  debitStatusPillStyle,
+  type DebitTransactionStatus,
+} from "@/lib/debit-status";
 
 const LIGHT_THEME: Partial<Theme> = {
   accentColor: "#0d9488",
@@ -103,6 +109,7 @@ const SORTABLE_FIELDS = new Set<string>([
   "company_name",
   "amount",
   "type",
+  "debit_status",
   "description",
   "client_name",
   "created_at",
@@ -115,6 +122,7 @@ const COLUMN_FILTER_IDS = new Set<string>([
   "company_name",
   "amount",
   "type",
+  "debit_status",
   "description",
   "client_name",
   "processed_by_user_name",
@@ -475,6 +483,103 @@ function createSettingsClientRenderer(
   } as CustomRenderer<CustomCell<SettingsClientCellData>>;
 }
 
+interface DebitStatusCellData {
+  type: "debit_status";
+  value: "" | DebitTransactionStatus;
+  editable: boolean;
+}
+
+function createDebitStatusRenderer(): CustomRenderer<CustomCell<DebitStatusCellData>> {
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<DebitStatusCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<DebitStatusCellData>).data?.type === "debit_status",
+    draw: (args: DrawArgs<CustomCell<DebitStatusCellData>>, cell) => {
+      const v = cell.data.value;
+      if (!v) {
+        const { ctx, rect, theme } = args;
+        ctx.save();
+        ctx.fillStyle = theme.textMedium ?? theme.textLight ?? "#94a3b8";
+        ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+        ctx.textBaseline = "middle";
+        ctx.fillText("—", rect.x + 8, rect.y + rect.height / 2);
+        ctx.restore();
+        return;
+      }
+      const pill = debitStatusPillStyle(v);
+      if (!pill) {
+        drawTextCell(args as Parameters<typeof drawTextCell>[0], "");
+        return;
+      }
+      const { ctx, rect, theme } = args;
+      ctx.save();
+      const padX = 8;
+      const h = Math.min(26, Math.max(20, rect.height - 10));
+      const y = rect.y + (rect.height - h) / 2;
+      ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+      const w = ctx.measureText(pill.label).width + padX * 2;
+      const x = rect.x + 4;
+      const r = Math.min(6, h / 2);
+      roundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle = pill.bg;
+      ctx.fill();
+      ctx.fillStyle = pill.fg;
+      ctx.textBaseline = "middle";
+      ctx.fillText(pill.label, x + padX, y + h / 2);
+      ctx.restore();
+    },
+    provideEditor: () => (p) => {
+      const theme = p.theme;
+      const current = p.value.data.value === "" ? "" : p.value.data.value;
+      const inputStyle: React.CSSProperties = {
+        height: 36,
+        padding: "6px 8px",
+        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+        borderRadius: 6,
+        fontSize: 14,
+        fontFamily: "inherit",
+        background: theme.bgCell ?? "#fff",
+        color: theme.textDark ?? "#171717",
+        width: "100%",
+        minWidth: 140,
+        maxWidth: 280,
+      };
+      return (
+        <select
+          autoFocus
+          value={current}
+          style={inputStyle}
+          className="focus:outline-none focus:border-[var(--muted)]"
+          onChange={(e) => {
+            const v = e.target.value;
+            const nextVal: "" | DebitTransactionStatus =
+              v === "" ? "" : (v as DebitTransactionStatus);
+            const next = {
+              ...p.value,
+              data: { type: "debit_status" as const, value: nextVal, editable: true as const },
+            } satisfies CustomCell<DebitStatusCellData>;
+            p.onChange(next);
+            p.onFinishedEditing(next);
+          }}
+        >
+          <option value="">—</option>
+          {DEBIT_STATUS_VALUES.map((k) => (
+            <option key={k} value={k}>
+              {debitStatusLabel(k)}
+            </option>
+          ))}
+        </select>
+      );
+    },
+    getAccessibilityString: (cell: CustomCell<DebitStatusCellData>) => {
+      const v = cell.data.value;
+      if (!v) return "Aucun statut";
+      return debitStatusLabel(v);
+    },
+  } as CustomRenderer<CustomCell<DebitStatusCellData>>;
+}
+
 const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
@@ -483,6 +588,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "company_name",
   "amount",
   "type",
+  "debit_status",
   "description",
   "fournisseur_id",
   "client_account_type_id",
@@ -536,6 +642,7 @@ export function TransactionsGrid({
     () => createSettingsClientRenderer(settingsClients),
     [settingsClients]
   );
+  const debitStatusRenderer = useMemo(() => createDebitStatusRenderer(), []);
   const [selection, setSelection] = useState<GridSelection>({
     columns: CompactSelection.empty(),
     rows: CompactSelection.empty(),
@@ -634,6 +741,11 @@ export function TransactionsGrid({
         id: "amount",
       }),
       menuCol({ title: "Type", width: Math.round(80 * scale), id: "type" }),
+      menuCol({
+        title: "Statut",
+        width: Math.round(168 * scale),
+        id: "debit_status",
+      }),
       menuCol({
         title: "Description",
         width: 220,
@@ -781,6 +893,29 @@ export function TransactionsGrid({
           allowOverlay: true,
         };
       }
+      if (field === "debit_status") {
+        if (txn.type !== "DEBIT") {
+          return {
+            kind: GridCellKind.Text,
+            data: "",
+            displayData: "",
+            allowOverlay: false,
+            readonly: true,
+          };
+        }
+        const st = txn.debit_status;
+        const value =
+          st && (DEBIT_STATUS_VALUES as readonly string[]).includes(st) ? st : "";
+        return {
+          kind: GridCellKind.Custom,
+          data: { type: "debit_status", value: value as "" | DebitTransactionStatus, editable: true },
+          copyData: debitStatusLabel(st ?? null),
+          allowOverlay: true,
+          /** Glide « second-click » : sans override, l’overlay liste ne s’ouvre pas au double-clic fiable. */
+          activationBehaviorOverride: "single-click",
+          cursor: "pointer",
+        };
+      }
       if (field === "description") {
         return {
           kind: GridCellKind.Text,
@@ -925,6 +1060,22 @@ export function TransactionsGrid({
         return;
       }
 
+      if (field === "debit_status") {
+        if (txn.type !== "DEBIT") return;
+        let v: unknown;
+        if (newValue.kind === GridCellKind.Custom) {
+          const d = (newValue as CustomCell<DebitStatusCellData>).data;
+          if (d?.type === "debit_status") v = d.value === "" ? null : d.value;
+        }
+        if (v === undefined) return;
+        try {
+          await onCellValueChanged(txn.id, "debit_status", v);
+        } catch {
+          // Page handles error display
+        }
+        return;
+      }
+
       let value: unknown;
       if (field === "transaction_date") {
         if (newValue.kind === GridCellKind.Custom) {
@@ -938,6 +1089,12 @@ export function TransactionsGrid({
         if (field === "type") {
           const raw = (newValue.data as string).toUpperCase();
           value = raw === "DEBIT" || raw === "DÉBIT" ? "DEBIT" : raw === "CREDIT" || raw === "CRÉDIT" ? "CREDIT" : raw;
+          try {
+            await onCellValueChanged(txn.id, field, value);
+          } catch {
+            // Page handles error display
+          }
+          return;
         } else {
           value = newValue.data;
         }
@@ -1153,7 +1310,12 @@ export function TransactionsGrid({
                 theme={gridTheme}
                 drawHeader={drawHeader}
                 onVisibleRegionChanged={onLoadMore && hasMore ? handleVisibleRegionChanged : undefined}
-                customRenderers={[dateCellRenderer, fournisseurRenderer, settingsClientRenderer]}
+                customRenderers={[
+                  dateCellRenderer,
+                  fournisseurRenderer,
+                  settingsClientRenderer,
+                  debitStatusRenderer,
+                ]}
               />
             </div>
             {loadingMore && (

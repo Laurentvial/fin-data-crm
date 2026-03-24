@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DEBIT_STATUS_VALUES, debitStatusLabel, type DebitTransactionStatus } from "@/lib/debit-status";
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
@@ -27,6 +28,7 @@ export function AddTransactionModal({
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<TransactionType>("DEBIT");
   const [description, setDescription] = useState("");
+  const [debitStatus, setDebitStatus] = useState<"" | DebitTransactionStatus>("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -57,6 +59,7 @@ export function AddTransactionModal({
           amount: num,
           type,
           description: description.trim(),
+          ...(type === "DEBIT" && debitStatus ? { debit_status: debitStatus } : {}),
         }),
       });
       const data = await res.json();
@@ -144,13 +147,40 @@ export function AddTransactionModal({
             </label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as TransactionType)}
+              onChange={(e) => {
+                const next = e.target.value as TransactionType;
+                setType(next);
+                if (next === "CREDIT") setDebitStatus("");
+              }}
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             >
               <option value="DEBIT">Débit</option>
               <option value="CREDIT">Crédit</option>
             </select>
           </div>
+          {type === "DEBIT" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                Statut
+              </label>
+              <select
+                value={debitStatus}
+                onChange={(e) =>
+                  setDebitStatus(
+                    e.target.value === "" ? "" : (e.target.value as DebitTransactionStatus)
+                  )
+                }
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+              >
+                <option value="">—</option>
+                {DEBIT_STATUS_VALUES.map((k) => (
+                  <option key={k} value={k}>
+                    {debitStatusLabel(k)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
               Description
