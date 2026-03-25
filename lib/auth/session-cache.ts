@@ -2,8 +2,8 @@
 
 import { authClient } from "./client";
 
-/** TTL in ms - avoid hitting get-session too often (helps with Render.com rate limits) */
-const SESSION_CACHE_TTL_MS = 90_000; // 90 seconds
+/** TTL in ms - avoid hitting get-session too often (helps with Render.com / Neon Auth limits) */
+const SESSION_CACHE_TTL_MS = 120_000; // 2 minutes
 
 type SessionData = Awaited<ReturnType<typeof authClient.getSession>>["data"];
 

@@ -13,7 +13,10 @@ export const auth = createNeonAuth({
   baseUrl,
   cookies: {
     secret: cookieSecret,
-    // Longer TTL = fewer upstream /get-session calls = less 429 from Neon Auth rate limits
-    sessionDataTtl: 600, // 10 minutes (default 300)
+    // Signed session-data cookie: while valid, middleware skips upstream /get-session (fast path).
+    // On cache miss, middleware calls Neon Auth; any non-OK (429, timeout, 502) is treated as
+    // logged out and redirects to login — so longer TTL reduces spurious "disconnections".
+    // Raise further (e.g. 3600) if Neon Auth / hosting limits allow.
+    sessionDataTtl: 1800, // 30 minutes (SDK default 300; was 600)
   },
 });
