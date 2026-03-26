@@ -671,9 +671,9 @@ export default function SocieteDetailPage() {
         body: JSON.stringify(body),
       });
       const rawText = await res.text();
-      let parsed: { error?: string } = {};
+      let parsed: unknown = {};
       try {
-        parsed = rawText ? (JSON.parse(rawText) as { error?: string }) : {};
+        parsed = rawText ? JSON.parse(rawText) : {};
       } catch {
         throw new Error(
           res.ok
@@ -682,11 +682,14 @@ export default function SocieteDetailPage() {
         );
       }
       if (!res.ok) {
-        throw new Error(parsed.error ?? "Échec de l'ajout");
+        const errBody = parsed as { error?: string };
+        throw new Error(errBody.error ?? "Échec de l'ajout");
       }
-      const added = parsed;
-      setBankAccounts((prev) => [...prev, added].sort((a, b) => a.name.localeCompare(b.name)));
-      const warnings = added.telegram_invite_warnings as { telegram_id: number; name?: string; telegram_username?: string; reason: string }[] | undefined;
+      const added = parsed as BankAccount & {
+        telegram_invite_warnings?: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[];
+      };
+      setBankAccounts((prev) => [...prev, added as BankAccount].sort((a, b) => a.name.localeCompare(b.name)));
+      const warnings = added.telegram_invite_warnings;
       if (Array.isArray(warnings) && warnings.length > 0) {
         const names = warnings.map((w) => w.name || (w.telegram_username ? `@${w.telegram_username}` : `ID ${w.telegram_id}`));
         const reasonMsg =

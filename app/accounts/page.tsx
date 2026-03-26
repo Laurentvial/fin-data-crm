@@ -1292,9 +1292,9 @@ function AccountsPageContent() {
         body: JSON.stringify(body),
       });
       const rawText = await res.text();
-      let data: { error?: string } = {};
+      let data: unknown = {};
       try {
-        data = rawText ? (JSON.parse(rawText) as { error?: string }) : {};
+        data = rawText ? JSON.parse(rawText) : {};
       } catch {
         throw new Error(
           res.ok
@@ -1303,11 +1303,18 @@ function AccountsPageContent() {
         );
       }
       if (!res.ok) {
-        throw new Error(data.error ?? "Échec de la création");
+        const errBody = data as { error?: string };
+        throw new Error(errBody.error ?? "Échec de la création");
       }
-      const created = data;
-      setBankAccounts((prev) => [...prev, created].sort((a, b) => (a.company_name ?? "").localeCompare(b.company_name ?? "") || a.name.localeCompare(b.name)));
-      const warnings = created.telegram_invite_warnings as { telegram_id: number; name?: string; telegram_username?: string; reason: string }[] | undefined;
+      const created = data as BankAccount & {
+        telegram_invite_warnings?: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[];
+      };
+      setBankAccounts((prev) =>
+        [...prev, created as BankAccount].sort(
+          (a, b) => (a.company_name ?? "").localeCompare(b.company_name ?? "") || a.name.localeCompare(b.name)
+        )
+      );
+      const warnings = created.telegram_invite_warnings;
       if (Array.isArray(warnings) && warnings.length > 0) {
         const names = warnings.map((w) => w.name || (w.telegram_username ? `@${w.telegram_username}` : `ID ${w.telegram_id}`));
         const reasonMsg =
