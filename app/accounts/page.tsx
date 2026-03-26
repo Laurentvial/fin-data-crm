@@ -1291,7 +1291,17 @@ function AccountsPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: { error?: string } = {};
+      try {
+        data = rawText ? (JSON.parse(rawText) as { error?: string }) : {};
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Réponse serveur invalide (non-JSON)."
+            : `Erreur ${res.status} — le serveur n'a pas renvoyé de JSON (souvent une page HTML de proxy ou un timeout).`
+        );
+      }
       if (!res.ok) {
         throw new Error(data.error ?? "Échec de la création");
       }

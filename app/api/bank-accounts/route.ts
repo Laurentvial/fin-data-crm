@@ -30,6 +30,26 @@ function isFetchAbortOrTimeout(err: unknown): boolean {
   return false;
 }
 
+/** Telegram supergroup IDs must stay exact for Postgres bigint; accept string from Python JSON. */
+function normalizeTelegramChatIdFromService(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    return /^-?\d+$/.test(s) ? s : null;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (!Number.isSafeInteger(Math.trunc(raw))) return null;
+    return String(Math.trunc(raw));
+  }
+  return null;
+}
+
+function jsonSafeForResponse(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v))
+  );
+}
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -303,12 +323,12 @@ BANQUE : ${bankName ?? "—"}`;
       }
     }
 
-    let chat_id: number;
+    let telegramChatId: string;
     let invited: number[] = [];
     let failed: { telegram_id: number; telegram_username?: string; reason: string }[] = [];
 
     if (useExistingGroup) {
-      chat_id = existingTelegramChatId!;
+      telegramChatId = String(existingTelegramChatId!);
     } else {
       const telegramUsers = await sql`
         SELECT ut.telegram_id, ut.telegram_username
@@ -425,35 +445,52 @@ BANQUE : ${bankName ?? "—"}`;
         console.error("Telegram create-group error:", createRes.status, msg);
         return NextResponse.json({ error: msg }, { status: createRes.status >= 500 ? 502 : createRes.status });
       }
-      const createData = (await createRes.json()) as {
-        chat_id: number;
+      const responseText = await createRes.text();
+      let createData: {
+        chat_id?: unknown;
         invited?: number[];
         failed?: { telegram_id: number; telegram_username?: string; reason: string }[];
       };
-      const createResult = createData;
-      chat_id = createResult.chat_id;
-      invited = createResult.invited ?? [];
-      failed = createResult.failed ?? [];
-      if (typeof chat_id !== "number") {
+      try {
+        createData = JSON.parse(responseText) as typeof createData;
+      } catch (parseErr) {
+        console.error(
+          "Telegram create-group: JSON invalide, statut",
+          createRes.status,
+          "extrait:",
+          responseText.slice(0, 400),
+          parseErr
+        );
         return NextResponse.json(
-          { error: "Réponse invalide du service Telegram." },
+          { error: "Réponse invalide du service Telegram (JSON)." },
           { status: 502 }
         );
       }
+      const parsedChatId = normalizeTelegramChatIdFromService(createData.chat_id);
+      if (parsedChatId === null) {
+        console.error("Telegram create-group: chat_id manquant ou invalide", createData);
+        return NextResponse.json(
+          { error: "Réponse invalide du service Telegram (chat_id)." },
+          { status: 502 }
+        );
+      }
+      telegramChatId = parsedChatId;
+      invited = createData.invited ?? [];
+      failed = createData.failed ?? [];
     }
     if (useExistingGroup) {
       const [existing] = await sql`
         SELECT ba.name AS account_name, c.name AS company_name
         FROM bank_accounts ba
         JOIN companies c ON c.id = ba.company_id
-        WHERE ba.telegram_chat_id = ${chat_id} LIMIT 1
+        WHERE ba.telegram_chat_id = ${telegramChatId} LIMIT 1
       `;
       if (existing) {
         const ex = existing as { account_name?: string; company_name?: string };
         const label = [ex.company_name, ex.account_name].filter(Boolean).join(" – ") || "un autre compte";
         return NextResponse.json(
           {
-            error: `Ce groupe Telegram (ID ${chat_id}) est déjà lié à « ${label} ». Supprimez d'abord ce compte ou utilisez un autre groupe.`,
+            error: `Ce groupe Telegram (ID ${telegramChatId}) est déjà lié à « ${label} ». Supprimez d'abord ce compte ou utilisez un autre groupe.`,
           },
           { status: 409 }
         );
@@ -461,7 +498,7 @@ BANQUE : ${bankName ?? "—"}`;
     }
     const rows = await sql`
       INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, login, password, pin_code, plafond_limit, company_email_id, company_phone_id)
-      VALUES (${company_id}::uuid, ${name}, ${chat_id}, ${bank_id || null}, ${account_type_id}, ${account_status_id}::uuid, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
+      VALUES (${company_id}::uuid, ${name}, ${telegramChatId}, ${bank_id || null}, ${account_type_id}, ${account_status_id}::uuid, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
       RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, created_at, updated_at
     `;
     const row = rows[0];
@@ -531,28 +568,33 @@ BANQUE : ${bankName ?? "—"}`;
     let enrichedWarnings: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[] = failed;
     if (failed.length > 0) {
       const failedIds = failed.map((f) => f.telegram_id);
-      const userRows =
-        failedIds.length > 0
-          ? ((await sql.query(
-              `SELECT ut.telegram_id, u.name, ut.telegram_username
-               FROM user_telegram ut
-               LEFT JOIN neon_auth."user" u ON u.id = ut.user_id
-               WHERE ut.telegram_id = ANY($1::bigint[])`,
-              [failedIds]
-            )) as { rows?: unknown[] })
-          : [];
-      const userRowsList = (Array.isArray(userRows) ? userRows : (userRows as { rows?: unknown[] }).rows ?? []) as {
-        telegram_id: string | number;
-        name?: string;
-        telegram_username?: string;
-      }[];
-      const byId = new Map(userRowsList.map((r) => [Number(r.telegram_id), r]));
-      enrichedWarnings = failed.map((f) => ({
-        telegram_id: f.telegram_id,
-        name: byId.get(f.telegram_id)?.name ?? undefined,
-        telegram_username: f.telegram_username ?? byId.get(f.telegram_id)?.telegram_username ?? undefined,
-        reason: f.reason,
-      }));
+      try {
+        const userRows =
+          failedIds.length > 0
+            ? await sql.query(
+                `SELECT ut.telegram_id, u.name, ut.telegram_username
+                 FROM user_telegram ut
+                 LEFT JOIN neon_auth."user" u ON u.id = ut.user_id
+                 WHERE ut.telegram_id = ANY($1::bigint[])`,
+                [failedIds]
+              )
+            : [];
+        const userRowsList = (Array.isArray(userRows) ? userRows : (userRows as { rows?: unknown[] }).rows ?? []) as {
+          telegram_id: string | number;
+          name?: string;
+          telegram_username?: string;
+        }[];
+        const byId = new Map(userRowsList.map((r) => [Number(r.telegram_id), r]));
+        enrichedWarnings = failed.map((f) => ({
+          telegram_id: f.telegram_id,
+          name: byId.get(f.telegram_id)?.name ?? undefined,
+          telegram_username: f.telegram_username ?? byId.get(f.telegram_id)?.telegram_username ?? undefined,
+          reason: f.reason,
+        }));
+      } catch (enrichErr) {
+        console.error("POST /api/bank-accounts: enrichment des invitations Telegram ignorée:", enrichErr);
+        enrichedWarnings = failed;
+      }
     }
     const payload =
       failed.length > 0
@@ -561,7 +603,7 @@ BANQUE : ${bankName ?? "—"}`;
             telegram_invite_warnings: enrichedWarnings,
           }
         : result;
-    return NextResponse.json(payload);
+    return NextResponse.json(jsonSafeForResponse(payload));
   } catch (error) {
     console.error("POST /api/bank-accounts error:", error);
     const pgErr = error as { code?: string; constraint?: string };

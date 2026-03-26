@@ -461,7 +461,8 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
             except Exception as e:
                 logger.warning("Could not send KBIS file: %s", e)
 
-        return {"chat_id": chat_id, "invited": invited, "failed": failed}
+        # String keeps full precision (Postgres bigint); JS JSON numbers are only safe up to 2^53-1.
+        return {"chat_id": str(chat_id), "invited": invited, "failed": failed}
     except HTTPException:
         raise
     except RuntimeError as e:

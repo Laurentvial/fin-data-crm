@@ -670,11 +670,21 @@ export default function SocieteDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? "Échec de l'ajout");
+      const rawText = await res.text();
+      let parsed: { error?: string } = {};
+      try {
+        parsed = rawText ? (JSON.parse(rawText) as { error?: string }) : {};
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Réponse serveur invalide (non-JSON)."
+            : `Erreur ${res.status} — réponse non-JSON (proxy ou timeout).`
+        );
       }
-      const added = await res.json();
+      if (!res.ok) {
+        throw new Error(parsed.error ?? "Échec de l'ajout");
+      }
+      const added = parsed;
       setBankAccounts((prev) => [...prev, added].sort((a, b) => a.name.localeCompare(b.name)));
       const warnings = added.telegram_invite_warnings as { telegram_id: number; name?: string; telegram_username?: string; reason: string }[] | undefined;
       if (Array.isArray(warnings) && warnings.length > 0) {
