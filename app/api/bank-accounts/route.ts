@@ -218,7 +218,8 @@ export async function POST(request: Request) {
       );
     }
     const [company] = await sql`
-      SELECT id, name, address, siret, directeur FROM companies WHERE id = ${company_id}::uuid LIMIT 1
+      SELECT id, name, address, code_postal, ville, siret, directeur
+      FROM companies WHERE id = ${company_id}::uuid LIMIT 1
     `;
     if (!company) {
       return NextResponse.json(
@@ -295,6 +296,11 @@ export async function POST(request: Request) {
       WHERE company_id = ${company_id}::uuid AND file_type = 'kbis'
       LIMIT 1
     `;
+    const piDocRows = await sql`
+      SELECT file_type, filename, content_type, data_base64
+      FROM company_files
+      WHERE company_id = ${company_id}::uuid AND file_type IN ('pi_recto', 'pi_verso')
+    `;
     const title = name;
 
     const ibanStr =
@@ -303,6 +309,8 @@ export async function POST(request: Request) {
         : "—";
     const welcomeMessage = `NOM STE : ${company.name}
 ADRESSE : ${(company.address as string) ?? "—"}
+CP : ${(company.code_postal as string) ?? "—"}
+VILLE : ${(company.ville as string) ?? "—"}
 EMAIL : ${emailStr}
 SIRET : ${(company.siret as string) ?? "—"}
 DIRECTEUR : ${(company.directeur as string) ?? "—"}
@@ -352,6 +360,10 @@ BANQUE : ${bankName ?? "—"}`;
         kbis_base64?: string;
         kbis_content_type?: string;
         kbis_filename?: string;
+        pi_recto_base64?: string;
+        pi_recto_filename?: string;
+        pi_verso_base64?: string;
+        pi_verso_filename?: string;
       } = {
         title,
         users,
@@ -364,10 +376,10 @@ BANQUE : ${bankName ?? "—"}`;
       } else {
         console.log("No bank logo to send (bank_id=%s, hasLogo=%s)", bank_id ?? "null", !!logoBase64);
       }
+      const maxAttachB64 = maxKbisBase64Chars();
       if (kbisRow && typeof kbisRow.data_base64 === "string") {
         const kbisB64 = kbisRow.data_base64 as string;
-        const maxKbis = maxKbisBase64Chars();
-        if (kbisB64.length <= maxKbis) {
+        if (kbisB64.length <= maxAttachB64) {
           createGroupBody.kbis_base64 = kbisB64;
           createGroupBody.kbis_content_type = (kbisRow.content_type as string) || "application/pdf";
           if (typeof kbisRow.filename === "string" && kbisRow.filename) {
@@ -377,9 +389,42 @@ BANQUE : ${bankName ?? "—"}`;
           console.warn(
             "POST /api/bank-accounts: KBIS trop volumineux pour create-group (%s chars > %s), envoi sans pièce jointe Telegram.",
             kbisB64.length,
-            maxKbis
+            maxAttachB64
           );
           createGroupBody.welcome_message = `${welcomeMessage}\n\n(NB : KBIS non joint automatiquement — fichier trop volumineux. Ajoutez-le manuellement au groupe ou augmentez TELEGRAM_CREATE_MAX_KBIS_BASE64_CHARS.)`;
+        }
+      }
+      type PiRow = { file_type: string; filename?: string | null; data_base64?: string | null };
+      const piRectoRow = (piDocRows as PiRow[]).find((r) => r.file_type === "pi_recto");
+      const piVersoRow = (piDocRows as PiRow[]).find((r) => r.file_type === "pi_verso");
+      if (piRectoRow && typeof piRectoRow.data_base64 === "string") {
+        const b64 = piRectoRow.data_base64;
+        if (b64.length <= maxAttachB64) {
+          createGroupBody.pi_recto_base64 = b64;
+          if (typeof piRectoRow.filename === "string" && piRectoRow.filename) {
+            createGroupBody.pi_recto_filename = piRectoRow.filename;
+          }
+        } else {
+          console.warn(
+            "POST /api/bank-accounts: pi_recto trop volumineux pour create-group (%s chars > %s), ignoré.",
+            b64.length,
+            maxAttachB64
+          );
+        }
+      }
+      if (piVersoRow && typeof piVersoRow.data_base64 === "string") {
+        const b64 = piVersoRow.data_base64;
+        if (b64.length <= maxAttachB64) {
+          createGroupBody.pi_verso_base64 = b64;
+          if (typeof piVersoRow.filename === "string" && piVersoRow.filename) {
+            createGroupBody.pi_verso_filename = piVersoRow.filename;
+          }
+        } else {
+          console.warn(
+            "POST /api/bank-accounts: pi_verso trop volumineux pour create-group (%s chars > %s), ignoré.",
+            b64.length,
+            maxAttachB64
+          );
         }
       }
       let bodyJson: string;
@@ -390,6 +435,10 @@ BANQUE : ${bankName ?? "—"}`;
         delete createGroupBody.kbis_base64;
         delete createGroupBody.kbis_content_type;
         delete createGroupBody.kbis_filename;
+        delete createGroupBody.pi_recto_base64;
+        delete createGroupBody.pi_recto_filename;
+        delete createGroupBody.pi_verso_base64;
+        delete createGroupBody.pi_verso_filename;
         delete createGroupBody.logo_base64;
         delete createGroupBody.logo_content_type;
         createGroupBody.welcome_message = `${welcomeMessage}\n\n(NB : pièces jointes omises — erreur de sérialisation.)`;

@@ -372,6 +372,64 @@ def _parse_users(body: dict) -> list[tuple[int, str | None]]:
     return users
 
 
+async def _send_base64_file_to_channel(
+    tg: TelegramClient,
+    channel: Channel,
+    base64_data: str | None,
+    filename_hint: str | None,
+    caption: str,
+) -> None:
+    """Send one base64-encoded attachment (same decoded size cap as KBIS)."""
+    if not base64_data or not isinstance(base64_data, str):
+        return
+    path: str | None = None
+    try:
+        max_kb = _max_kbis_decoded_bytes()
+        if len(base64_data) > max_kb * 2:
+            logger.warning(
+                "%s: attachment base64 too large (%s chars); skip",
+                caption,
+                len(base64_data),
+            )
+            return
+        decoded = base64.b64decode(base64_data)
+        del base64_data
+        if len(decoded) > max_kb:
+            logger.warning(
+                "%s: file %s bytes exceeds TELEGRAM_MAX_KBIS_DECODED_BYTES; skip",
+                caption,
+                len(decoded),
+            )
+            return
+        if not decoded:
+            return
+        suffix = ".pdf"
+        if filename_hint and isinstance(filename_hint, str) and filename_hint.strip():
+            low = filename_hint.strip().lower()
+            if low.endswith(".png"):
+                suffix = ".png"
+            elif low.endswith((".jpg", ".jpeg")):
+                suffix = ".jpg"
+            elif low.endswith(".pdf"):
+                suffix = ".pdf"
+        path = _write_temp_file(decoded, suffix=suffix)
+        del decoded
+        attrs = []
+        if filename_hint and isinstance(filename_hint, str) and filename_hint.strip():
+            attrs.append(DocumentAttributeFilename(filename_hint.strip()))
+        await tg.send_file(
+            channel,
+            path,
+            caption=caption,
+            attributes=attrs if attrs else None,
+        )
+    except Exception as e:
+        logger.warning("Could not send %s: %s", caption, e)
+    finally:
+        _unlink_quiet(path)
+        gc.collect()
+
+
 @app.post("/create-group")
 async def create_group(request: Request, x_api_key: str | None = Header(None)):
     verify_api_key(x_api_key)
@@ -382,6 +440,10 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
     kbis_base64 = body.pop("kbis_base64", None)
     body.pop("kbis_content_type", None)
     kbis_filename = body.pop("kbis_filename", None)
+    pi_recto_base64 = body.pop("pi_recto_base64", None)
+    pi_recto_filename = body.pop("pi_recto_filename", None)
+    pi_verso_base64 = body.pop("pi_verso_base64", None)
+    pi_verso_filename = body.pop("pi_verso_filename", None)
 
     title = body.get("title")
     if not title or not isinstance(title, str):
@@ -610,6 +672,21 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
             finally:
                 _unlink_quiet(kbis_path)
                 gc.collect()
+
+        await _send_base64_file_to_channel(
+            tg,
+            channel,
+            pi_recto_base64,
+            pi_recto_filename,
+            "Pièce d'identité recto",
+        )
+        await _send_base64_file_to_channel(
+            tg,
+            channel,
+            pi_verso_base64,
+            pi_verso_filename,
+            "Pièce d'identité verso",
+        )
 
         # String keeps full precision (Postgres bigint); JS JSON numbers are only safe up to 2^53-1.
         return {"chat_id": str(chat_id), "invited": invited, "failed": failed}
