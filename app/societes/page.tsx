@@ -85,6 +85,12 @@ function formatDateInput(value: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
 }
 
+/** SIREN (9) or SIRET (14), non-digits ignored. */
+function siretOrSirenDigitsOk(raw: string): boolean {
+  const d = raw.replace(/\D/g, "");
+  return d.length === 9 || d.length === 14;
+}
+
 function getInitials(name: string): string {
   return name
     .trim()
@@ -356,6 +362,10 @@ function CompanyModal({
   onClose,
   saving,
   isEdit,
+  siretLookupLoading,
+  siretLookupNotice,
+  siretLookupAllowed,
+  onSiretInseeLookup,
 }: {
   title: string;
   name: string;
@@ -423,6 +433,10 @@ function CompanyModal({
   onClose: () => void;
   saving: boolean;
   isEdit: boolean;
+  siretLookupLoading: boolean;
+  siretLookupNotice: string | null;
+  siretLookupAllowed: boolean;
+  onSiretInseeLookup: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -491,16 +505,36 @@ function CompanyModal({
               ))}
             </Select>
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Siret</label>
-            <input
-              type="text"
-              value={siret}
-              onChange={(e) => onSiretChange(e.target.value)}
-              placeholder="Siret (14 chiffres)"
-              maxLength={14}
-              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-            />
+          <div className="col-span-3 sm:col-span-1">
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">SIRET / SIREN</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={siret}
+                onChange={(e) => onSiretChange(e.target.value)}
+                placeholder="14 chiffres (SIRET) ou 9 (SIREN)"
+                maxLength={22}
+                className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                onClick={onSiretInseeLookup}
+                disabled={!siretLookupAllowed}
+                className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]/80 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {siretLookupLoading ? "…" : "Remplir (Pappers)"}
+              </button>
+            </div>
+            {countryCode !== "FR" && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Le remplissage par Pappers concerne les entreprises françaises (SIREN / SIRET, pays France recommandé).
+              </p>
+            )}
+            {siretLookupNotice && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">{siretLookupNotice}</p>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Forme juridique</label>
@@ -860,6 +894,8 @@ function SocietesPageContent() {
   const [editInvoiceNextNumber, setEditInvoiceNextNumber] = useState("1");
   const [editCurrency, setEditCurrency] = useState("EUR");
   const [saving, setSaving] = useState(false);
+  const [siretLookupLoading, setSiretLookupLoading] = useState(false);
+  const [siretLookupNotice, setSiretLookupNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const filteredCompanies = useMemo(() => {
@@ -969,6 +1005,59 @@ function SocietesPageContent() {
     setEditCurrency(c.currency ?? "EUR");
   }, []);
 
+  const handleSiretInseeLookup = useCallback(async () => {
+    if (editCountryCode !== "FR" || !siretOrSirenDigitsOk(editSiret)) return;
+    setSiretLookupLoading(true);
+    setSiretLookupNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/company-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sirenOrSiret: editSiret.replace(/\D/g, "") }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof data.error === "string" ? data.error : "Échec du remplissage");
+      }
+      const d = data as {
+        name?: string | null;
+        address?: string | null;
+        code_postal?: string | null;
+        ville?: string | null;
+        country_code?: string;
+        siret?: string | null;
+        forme_juridique?: string | null;
+        activite?: string | null;
+        date_immatriculation?: string | null;
+        vat_number_suggested?: string | null;
+        directeur?: string | null;
+        capital_social?: string | null;
+        warnings?: string[];
+      };
+      if (d.name) setEditName(d.name);
+      if (d.address != null) setEditAddress(d.address);
+      if (d.code_postal != null) setEditCodePostal(d.code_postal);
+      if (d.ville != null) setEditVille(d.ville);
+      if (d.country_code && d.country_code.length === 2) setEditCountryCode(d.country_code.toUpperCase());
+      if (d.siret) setEditSiret(d.siret);
+      if (d.forme_juridique != null) setEditFormeJuridique(d.forme_juridique);
+      if (d.activite != null) setEditActivite(d.activite);
+      if (d.date_immatriculation) {
+        setEditDateImmatriculation(formatDateToDisplay(d.date_immatriculation));
+      }
+      if (d.vat_number_suggested) setEditVatNumber(d.vat_number_suggested);
+      if (d.directeur != null && d.directeur !== "") setEditDirecteur(d.directeur);
+      if (d.capital_social != null && d.capital_social !== "") setEditCapitalSocial(d.capital_social);
+      const w = Array.isArray(d.warnings) ? d.warnings.filter((x) => Boolean(x)) : [];
+      setSiretLookupNotice(w.length ? w.join(" ") : null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSiretLookupLoading(false);
+    }
+  }, [editCountryCode, editSiret]);
+
   useEffect(() => {
     if (!editIdFromUrl || companies.length === 0) return;
     const company = companies.find((c) => c.id === editIdFromUrl);
@@ -1023,12 +1112,15 @@ function SocietesPageContent() {
     setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
     setError(null);
+    setSiretLookupNotice(null);
+    setSiretLookupLoading(false);
   };
 
   const openEdit = async (company: Company) => {
     setEditingCompany(company);
     setIsAddModal(false);
     setError(null);
+    setSiretLookupNotice(null);
     populateEditForm(company);
     try {
       const res = await fetch(`/api/accounts/${company.id}`);
@@ -1077,6 +1169,8 @@ function SocietesPageContent() {
     setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
     setError(null);
+    setSiretLookupNotice(null);
+    setSiretLookupLoading(false);
     if (editIdFromUrl) router.replace("/societes");
   };
 
@@ -1368,6 +1462,12 @@ function SocietesPageContent() {
           onClose={closeModal}
           saving={saving}
           isEdit={!!editingCompany}
+          siretLookupLoading={siretLookupLoading}
+          siretLookupNotice={siretLookupNotice}
+          siretLookupAllowed={
+            editCountryCode === "FR" && siretOrSirenDigitsOk(editSiret) && !siretLookupLoading
+          }
+          onSiretInseeLookup={handleSiretInseeLookup}
         />
       )}
     </div>

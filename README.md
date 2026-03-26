@@ -23,9 +23,14 @@ L'application utilise un système d'authentification fermé :
 4. **Facturation** (optionnel) : pour générer des factures PDF, configurer Cloudinary :
    - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
 
-5. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+5. **Remplissage auto des sociétés (SIRET/SIREN, France)** (optionnel) : créer un compte sur l’[API Entreprise Pappers](https://www.pappers.fr/api), activer la clé API, puis dans `.env.local` :  
+   `PAPPERS_API_KEY=<votre clé>`  
+   (alias accepté : `PAPPERS_TOKEN`.) Les appels utilisent `GET https://api.pappers.fr/v2/entreprise` (consommation de crédits selon [la grille Pappers](https://www.pappers.fr/api)).  
+   Sans cette variable, le bouton « Remplir (Pappers) » sur **Sociétés** renvoie une erreur de configuration.
 
-6. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
+6. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+
+7. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
 
 ## Getting Started
 
