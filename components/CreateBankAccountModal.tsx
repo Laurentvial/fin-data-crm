@@ -145,10 +145,11 @@ export function CreateBankAccountModal({
   }, [accountStatusId, ibans, bankId, effectiveCompanyId, accountStatuses, banks, companies, onNameChange, name]);
   const [cardsExpanded, setCardsExpanded] = useState(true);
   const [ibanLookupLoading, setIbanLookupLoading] = useState<number | null>(null);
+  const [ibanValidation, setIbanValidation] = useState<Record<string, boolean>>({});
 
   const lookupIbanBic = async (index: number) => {
     const item = ibans[index];
-    const raw = (item?.iban ?? "").trim().replace(/\s/g, "");
+    const raw = (item?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
     if (raw.length < 15) return;
     setIbanLookupLoading(index);
     try {
@@ -156,10 +157,21 @@ export function CreateBankAccountModal({
         cache: "no-store",
         credentials: "same-origin",
       });
-      const data = (await res.json()) as { valid?: boolean; swift_code?: string | null };
-      if (!res.ok) return;
+      let data: { valid?: boolean; swift_code?: string | null } = {};
+      try {
+        data = (await res.json()) as { valid?: boolean; swift_code?: string | null };
+      } catch {
+        setIbanValidation((prev) => ({ ...prev, [raw]: false }));
+        return;
+      }
+      if (!res.ok) {
+        setIbanValidation((prev) => ({ ...prev, [raw]: false }));
+        return;
+      }
+      const valid = !!data?.valid;
+      setIbanValidation((prev) => ({ ...prev, [raw]: valid }));
       const swiftCode = typeof data?.swift_code === "string" ? data.swift_code.trim() : "";
-      if (data?.valid && swiftCode) {
+      if (valid && swiftCode) {
         setBic(index, swiftCode);
         const bic8 = swiftCode.toUpperCase().slice(0, 8);
         const matchedBank = banks.find((b) => {
@@ -322,9 +334,15 @@ export function CreateBankAccountModal({
                           placeholder="BIC (optionnel, auto-rempli si IBAN valide)"
                           className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
                         />
-                        {ibanLookupLoading === i && (
+                        {ibanLookupLoading === i ? (
                           <span className="text-xs text-[var(--muted-foreground)]">Vérification…</span>
-                        )}
+                        ) : (() => {
+                          const key = (item?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
+                          const v = key.length >= 15 ? ibanValidation[key] : undefined;
+                          if (v === true) return <span className="text-xs text-[var(--success)]">IBAN correct</span>;
+                          if (v === false) return <span className="text-xs text-[var(--destructive)]">IBAN incorrect</span>;
+                          return null;
+                        })()}
                     </div>
                   ))}
                 </div>

@@ -2,6 +2,34 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 
+/** Lets Vercel / similar run this route longer than the default (proxy still needs matching read timeout). */
+export const maxDuration = 300;
+
+function telegramCreateTimeoutMs(): number {
+  const n = Number(process.env.TELEGRAM_CREATE_GROUP_TIMEOUT_MS);
+  if (Number.isFinite(n) && n >= 5000) return Math.min(n, 290_000);
+  return 120_000;
+}
+
+function maxKbisBase64Chars(): number {
+  const n = Number(process.env.TELEGRAM_CREATE_MAX_KBIS_BASE64_CHARS);
+  if (Number.isFinite(n) && n > 10_000) return n;
+  return 6_000_000;
+}
+
+function isFetchAbortOrTimeout(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "AbortError" || err.name === "TimeoutError") return true;
+  const msg = err.message.toLowerCase();
+  if (msg.includes("aborted") || msg.includes("timeout")) return true;
+  const cause = (err as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    if (cause.name === "AbortError" || cause.name === "TimeoutError") return true;
+    if (String(cause).toLowerCase().includes("timeout")) return true;
+  }
+  return false;
+}
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -316,12 +344,37 @@ BANQUE : ${bankName ?? "—"}`;
         console.log("No bank logo to send (bank_id=%s, hasLogo=%s)", bank_id ?? "null", !!logoBase64);
       }
       if (kbisRow && typeof kbisRow.data_base64 === "string") {
-        createGroupBody.kbis_base64 = kbisRow.data_base64 as string;
-        createGroupBody.kbis_content_type = (kbisRow.content_type as string) || "application/pdf";
-        if (typeof kbisRow.filename === "string" && kbisRow.filename) {
-          createGroupBody.kbis_filename = kbisRow.filename;
+        const kbisB64 = kbisRow.data_base64 as string;
+        const maxKbis = maxKbisBase64Chars();
+        if (kbisB64.length <= maxKbis) {
+          createGroupBody.kbis_base64 = kbisB64;
+          createGroupBody.kbis_content_type = (kbisRow.content_type as string) || "application/pdf";
+          if (typeof kbisRow.filename === "string" && kbisRow.filename) {
+            createGroupBody.kbis_filename = kbisRow.filename;
+          }
+        } else {
+          console.warn(
+            "POST /api/bank-accounts: KBIS trop volumineux pour create-group (%s chars > %s), envoi sans pièce jointe Telegram.",
+            kbisB64.length,
+            maxKbis
+          );
+          createGroupBody.welcome_message = `${welcomeMessage}\n\n(NB : KBIS non joint automatiquement — fichier trop volumineux. Ajoutez-le manuellement au groupe ou augmentez TELEGRAM_CREATE_MAX_KBIS_BASE64_CHARS.)`;
         }
       }
+      let bodyJson: string;
+      try {
+        bodyJson = JSON.stringify(createGroupBody);
+      } catch (stringifyErr) {
+        console.error("POST /api/bank-accounts: JSON.stringify(create-group body) failed:", stringifyErr);
+        delete createGroupBody.kbis_base64;
+        delete createGroupBody.kbis_content_type;
+        delete createGroupBody.kbis_filename;
+        delete createGroupBody.logo_base64;
+        delete createGroupBody.logo_content_type;
+        createGroupBody.welcome_message = `${welcomeMessage}\n\n(NB : pièces jointes omises — erreur de sérialisation.)`;
+        bodyJson = JSON.stringify(createGroupBody);
+      }
+      const tmo = telegramCreateTimeoutMs();
       let createRes: Response;
       try {
         createRes = await fetch(`${serviceUrl!.replace(/\/$/, "")}/create-group`, {
@@ -330,9 +383,18 @@ BANQUE : ${bankName ?? "—"}`;
             "Content-Type": "application/json",
             "X-API-Key": apiKey!,
           },
-          body: JSON.stringify(createGroupBody),
+          body: bodyJson,
+          signal: AbortSignal.timeout(tmo),
         });
       } catch (fetchErr) {
+        if (isFetchAbortOrTimeout(fetchErr)) {
+          return NextResponse.json(
+            {
+              error: `Le service Telegram n'a pas répondu dans les délais (${Math.round(tmo / 1000)} s). Augmentez TELEGRAM_CREATE_GROUP_TIMEOUT_MS et le timeout du proxy devant Node (ex. proxy_read_timeout dans nginx) pour qu'il dépasse cette durée ; réduisez la taille du KBIS ; ou utilisez « Lier un groupe Telegram existant ». Une page HTML « 502 » sans message JSON indique en général un timeout du proxy, pas l'application.`,
+            },
+            { status: 504 }
+          );
+        }
         const err = fetchErr as NodeJS.ErrnoException & { cause?: { code?: string } };
         const code = err?.cause?.code ?? err?.code;
         if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {

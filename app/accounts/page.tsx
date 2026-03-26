@@ -440,8 +440,17 @@ function EditBankAccountModal({
         cache: "no-store",
         credentials: "same-origin",
       });
-      const data = (await res.json()) as { valid?: boolean; swift_code?: string | null };
-      if (!res.ok) return;
+      let data: { valid?: boolean; swift_code?: string | null } = {};
+      try {
+        data = (await res.json()) as { valid?: boolean; swift_code?: string | null };
+      } catch {
+        setIbanValidation((prev) => ({ ...prev, [raw]: false }));
+        return;
+      }
+      if (!res.ok) {
+        setIbanValidation((prev) => ({ ...prev, [raw]: false }));
+        return;
+      }
       const valid = !!data?.valid;
       setIbanValidation((prev) => ({ ...prev, [raw]: valid }));
       const swiftCode = typeof data?.swift_code === "string" ? data.swift_code.trim() : "";

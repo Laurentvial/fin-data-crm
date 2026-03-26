@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { isValidIbanChecksum } from "@/lib/iban-checksum";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -10,6 +11,37 @@ async function requireAuth() {
     );
   }
   return null;
+}
+
+function extractSwiftAndBankFromIbanTools(data: unknown): {
+  valid?: boolean;
+  swiftCode: string | null;
+  bankName: string | null;
+} {
+  if (!data || typeof data !== "object") {
+    return { swiftCode: null, bankName: null };
+  }
+  const d = data as Record<string, unknown>;
+  const valid = typeof d.valid === "boolean" ? d.valid : undefined;
+  let swiftCode: string | null = null;
+  let bankName: string | null = null;
+
+  const bank = d.bank;
+  if (bank && typeof bank === "object") {
+    const b = bank as Record<string, unknown>;
+    const raw = b.swift_code ?? b.bic ?? b.swift;
+    if (typeof raw === "string" && raw.trim()) {
+      swiftCode = raw.trim();
+    }
+    if (typeof b.name === "string") bankName = b.name;
+  }
+  if (!swiftCode) {
+    const top = d.swift_code ?? d.swift ?? d.bic;
+    if (typeof top === "string" && top.trim()) {
+      swiftCode = top.trim();
+    }
+  }
+  return { valid, swiftCode, bankName };
 }
 
 export async function GET(request: Request) {
@@ -33,27 +65,39 @@ export async function GET(request: Request) {
   let valid = false;
   let swiftCode: string | null = null;
   let bankName: string | null = null;
+  let ibantoolsReached = false;
 
   try {
     const res = await fetch(
       `https://ibantools.org/api/v1/iban/validate/${encodeURIComponent(cleanIban)}`,
-      { headers: { Accept: "application/json" }, cache: "no-store" }
-    );
-    if (res.ok) {
-      const data = (await res.json()) as {
-        valid?: boolean;
-        bank?: { swift_code?: string; bic?: string; name?: string };
-      };
-      valid = !!data?.valid;
-      const bank = data?.bank;
-      const rawBic = bank?.swift_code ?? bank?.bic;
-      if (rawBic && typeof rawBic === "string") {
-        swiftCode = String(rawBic).trim();
+      {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "BigBossSystem/1.0",
+        },
+        cache: "no-store",
       }
-      bankName = bank?.name ?? null;
+    );
+    ibantoolsReached = res.ok;
+    if (res.ok) {
+      const payload = (await res.json()) as unknown;
+      const extracted = extractSwiftAndBankFromIbanTools(payload);
+      if (typeof extracted.valid === "boolean") {
+        valid = extracted.valid;
+      }
+      if (extracted.swiftCode) {
+        swiftCode = extracted.swiftCode;
+      }
+      if (extracted.bankName) {
+        bankName = extracted.bankName;
+      }
     }
   } catch {
-    // ibantools failed, try fallback
+    ibantoolsReached = false;
+  }
+
+  if (!ibantoolsReached) {
+    valid = isValidIbanChecksum(cleanIban);
   }
 
   // Fallback: ibanapi.com when ibantools has no BIC (e.g. TREEZOR) and IBANAPI_API_KEY is set
