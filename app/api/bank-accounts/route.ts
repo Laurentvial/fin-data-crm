@@ -14,7 +14,8 @@ function telegramCreateTimeoutMs(): number {
 function maxKbisBase64Chars(): number {
   const n = Number(process.env.TELEGRAM_CREATE_MAX_KBIS_BASE64_CHARS);
   if (Number.isFinite(n) && n > 10_000) return n;
-  return 6_000_000;
+  // Default ~2.1 MiB binary after decode — safer for Telegram worker on 512 MB RAM (e.g. Render Starter).
+  return 2_800_000;
 }
 
 function isFetchAbortOrTimeout(err: unknown): boolean {

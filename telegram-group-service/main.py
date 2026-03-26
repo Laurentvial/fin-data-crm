@@ -7,9 +7,10 @@ Requires a user account session (not a bot).
 
 import asyncio
 import base64
-import io
+import gc
 import logging
 import os
+import tempfile
 import time
 from pathlib import Path
 from dotenv import load_dotenv
@@ -19,6 +20,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.middleware.cors import CORSMiddleware
 from telethon import TelegramClient
 from telethon.errors import (
     FileReferenceInvalidError,
@@ -40,6 +42,59 @@ TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session")
 
 client: TelegramClient | None = None
+
+
+def _temp_dir() -> str:
+    """Prefer persistent disk (e.g. Render /opt/data) so large uploads are not RAM-backed."""
+    root = os.environ.get("TELEGRAM_TEMP_DIR", "").strip()
+    if root and os.path.isdir(root):
+        return root
+    session_parent = Path(TELEGRAM_SESSION_PATH).resolve().parent
+    return str(session_parent / "tmp")
+
+
+def _max_kbis_decoded_bytes() -> int:
+    try:
+        n = int(os.environ.get("TELEGRAM_MAX_KBIS_DECODED_BYTES", "8388608"))
+        return max(512_000, min(n, 40_000_000))
+    except ValueError:
+        return 8_388_608
+
+
+def _max_logo_decoded_bytes() -> int:
+    try:
+        n = int(os.environ.get("TELEGRAM_MAX_LOGO_DECODED_BYTES", "2097152"))
+        return max(50_000, min(n, 15_000_000))
+    except ValueError:
+        return 2_097_152
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _write_temp_file(data: bytes, suffix: str) -> str:
+    Path(_temp_dir()).mkdir(parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(suffix=suffix, dir=_temp_dir())
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+    except Exception:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+    return path
+
+
+def _unlink_quiet(path: str | None) -> None:
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 # Pending auth: phone -> (client, timestamp). Cleaned up after 10 min.
 _auth_pending: dict[str, tuple[TelegramClient, float]] = {}
@@ -93,6 +148,10 @@ async def _cleanup_expired_auth() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        Path(_temp_dir()).mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.warning("Could not create temp dir %s: %s", _temp_dir(), e)
     yield
     global client
     if client:
@@ -107,6 +166,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Telegram Group Service", lifespan=lifespan)
+
+# Quiet browser OPTIONS preflight when something wrongly targets this port (e.g. another app using :8000).
+_cors_raw = os.environ.get("CORS_ALLOW_ORIGINS", "*").strip()
+_cors_origins = ["*"] if _cors_raw == "*" else [o.strip() for o in _cors_raw.split(",") if o.strip()]
+_cors_wildcard = _cors_origins == ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins or ["*"],
+    allow_credentials=not _cors_wildcard,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -305,6 +376,13 @@ def _parse_users(body: dict) -> list[tuple[int, str | None]]:
 async def create_group(request: Request, x_api_key: str | None = Header(None)):
     verify_api_key(x_api_key)
     body = await request.json()
+    # Pop large fields early so references can be released after spilling to disk (avoids OOM on 512MB hosts).
+    logo_base64 = body.pop("logo_base64", None)
+    logo_content_type = body.pop("logo_content_type", None)
+    kbis_base64 = body.pop("kbis_base64", None)
+    body.pop("kbis_content_type", None)
+    kbis_filename = body.pop("kbis_filename", None)
+
     title = body.get("title")
     if not title or not isinstance(title, str):
         raise HTTPException(status_code=400, detail="title is required")
@@ -339,53 +417,94 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                 detail="Could not extract chat_id from Telegram response",
             )
 
-        # Set group profile photo first (before invites) so the channel has its identity
-        logo_base64 = body.get("logo_base64")
-        logo_content_type = body.get("logo_content_type")
-        if logo_base64 and logo_content_type and isinstance(logo_base64, str) and isinstance(logo_content_type, str):
+        # Group photo: spill to disk so we do not hold base64 + decoded + JPEG + BytesIO in RAM at once.
+        if (
+            logo_base64
+            and logo_content_type
+            and isinstance(logo_base64, str)
+            and isinstance(logo_content_type, str)
+        ):
             logger.info("Received logo: %d bytes base64, type=%s", len(logo_base64), logo_content_type)
+            raw_path: str | None = None
+            jpeg_path: str | None = None
             try:
-                decoded = base64.b64decode(logo_base64)
-                if decoded:
-                    file_name = "logo.jpg"
-                    try:
-                        from PIL import Image
+                max_logo = _max_logo_decoded_bytes()
+                if len(logo_base64) > max_logo * 2:
+                    logger.warning("Logo base64 too large, skipping profile photo (reduce image or raise TELEGRAM_MAX_LOGO_DECODED_BYTES)")
+                else:
+                    decoded_logo = base64.b64decode(logo_base64)
+                    del logo_base64
+                    logo_base64 = None
+                    if len(decoded_logo) > max_logo:
+                        logger.warning(
+                            "Logo decoded %s bytes exceeds TELEGRAM_MAX_LOGO_DECODED_BYTES, skipping profile photo",
+                            len(decoded_logo),
+                        )
+                        del decoded_logo
+                    elif decoded_logo:
+                        raw_path = _write_temp_file(decoded_logo, suffix=".src")
+                        del decoded_logo
+                        try:
+                            from PIL import Image
 
-                        img = Image.open(io.BytesIO(decoded))
-                        if img.mode in ("RGBA", "P"):
-                            img = img.convert("RGB")
-                        elif img.mode != "RGB":
-                            img = img.convert("RGB")
-                        # Resize to 512x512 (Telegram recommended size for channel profile photos)
-                        img.thumbnail((512, 512), Image.LANCZOS)
-                        w, h = img.size
-                        if w != h:
-                            crop_size = min(w, h)
-                            left = (w - crop_size) // 2
-                            top = (h - crop_size) // 2
-                            img = img.crop((left, top, left + crop_size, top + crop_size))
-                        img = img.resize((512, 512), Image.LANCZOS)
-                        out = io.BytesIO()
-                        img.save(out, format="JPEG", quality=92)
-                        decoded = out.getvalue()
-                    except Exception as conv_err:
-                        logger.debug("Could not convert logo with PIL, using original: %s", conv_err)
-                        ext = "jpg" if "jpeg" in logo_content_type.lower() or "jpg" in logo_content_type.lower() else "png"
-                        file_name = f"logo.{ext}"
-
-                    await asyncio.sleep(1)
-                    input_channel = await tg.get_input_entity(channel)
-                    file_obj = io.BytesIO(decoded)
-                    uploaded_file = await tg.upload_file(file_obj, file_name=file_name)
-                    photo = InputChatUploadedPhoto(file=uploaded_file)
-                    await tg(EditPhotoRequest(channel=input_channel, photo=photo))
-                    logger.info("Group profile photo set successfully (%d bytes)", len(decoded))
+                            Image.MAX_IMAGE_PIXELS = 20_000_000
+                            fd_j, jpeg_path = tempfile.mkstemp(suffix=".jpg", dir=_temp_dir())
+                            os.close(fd_j)
+                            with Image.open(raw_path) as img:
+                                im = img
+                                if im.mode in ("RGBA", "P"):
+                                    im = im.convert("RGB")
+                                elif im.mode != "RGB":
+                                    im = im.convert("RGB")
+                                im.thumbnail((512, 512), Image.LANCZOS)
+                                w, h = im.size
+                                if w != h:
+                                    crop_size = min(w, h)
+                                    left = (w - crop_size) // 2
+                                    top = (h - crop_size) // 2
+                                    im = im.crop((left, top, left + crop_size, top + crop_size))
+                                im = im.resize((512, 512), Image.LANCZOS)
+                                im.save(jpeg_path, format="JPEG", quality=92)
+                        except Exception as conv_err:
+                            logger.debug("PIL/JPEG encode failed, trying raw upload: %s", conv_err)
+                            _unlink_quiet(jpeg_path)
+                            jpeg_path = None
+                            if raw_path:
+                                ext = (
+                                    "jpg"
+                                    if "jpeg" in logo_content_type.lower() or "jpg" in logo_content_type.lower()
+                                    else "png"
+                                )
+                                file_name = f"logo.{ext}"
+                                await asyncio.sleep(1)
+                                input_channel = await tg.get_input_entity(channel)
+                                uploaded_file = await tg.upload_file(raw_path, file_name=file_name)
+                                photo = InputChatUploadedPhoto(file=uploaded_file)
+                                await tg(EditPhotoRequest(channel=input_channel, photo=photo))
+                                logger.info("Group profile photo set (raw from disk)")
+                        else:
+                            _unlink_quiet(raw_path)
+                            raw_path = None
+                            await asyncio.sleep(1)
+                            input_channel = await tg.get_input_entity(channel)
+                            uploaded_file = await tg.upload_file(jpeg_path, file_name="logo.jpg")
+                            photo = InputChatUploadedPhoto(file=uploaded_file)
+                            await tg(EditPhotoRequest(channel=input_channel, photo=photo))
+                            logger.info("Group profile photo set (JPEG from disk)")
             except (PhotoInvalidError, FileReferenceInvalidError) as e:
                 logger.warning("Could not set group photo: %s", e)
             except Exception as e:
                 logger.warning("Could not set group photo: %s", e)
+            finally:
+                _unlink_quiet(raw_path)
+                _unlink_quiet(jpeg_path)
+                gc.collect()
         else:
-            logger.info("No logo in request (logo_base64=%s, logo_content_type=%s)", bool(logo_base64), bool(logo_content_type))
+            logger.info(
+                "No logo in request (logo_base64=%s, logo_content_type=%s)",
+                bool(logo_base64),
+                bool(logo_content_type),
+            )
 
         invited: list[int] = []
         failed: list[dict] = []
@@ -443,23 +562,54 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
             except Exception as e:
                 logger.warning("Could not send welcome message: %s", e)
 
-        kbis_base64 = body.get("kbis_base64")
-        if kbis_base64 and isinstance(kbis_base64, str):
+        if (
+            kbis_base64
+            and isinstance(kbis_base64, str)
+            and not _env_truthy("TELEGRAM_DISABLE_KBIS_ON_CREATE")
+        ):
+            kbis_path: str | None = None
             try:
-                decoded = base64.b64decode(kbis_base64)
-                if decoded:
-                    attrs = []
-                    kbis_filename = body.get("kbis_filename")
-                    if kbis_filename and isinstance(kbis_filename, str) and kbis_filename.strip():
-                        attrs.append(DocumentAttributeFilename(kbis_filename.strip()))
-                    await tg.send_file(
-                        channel,
-                        io.BytesIO(decoded),
-                        caption="KBIS",
-                        attributes=attrs if attrs else None,
+                max_kb = _max_kbis_decoded_bytes()
+                if len(kbis_base64) > max_kb * 2:
+                    logger.warning(
+                        "KBIS base64 too large (%s chars); skip attach (raise TELEGRAM_MAX_KBIS_DECODED_BYTES or use a smaller file)",
+                        len(kbis_base64),
                     )
+                else:
+                    decoded_kbis = base64.b64decode(kbis_base64)
+                    del kbis_base64
+                    kbis_base64 = None
+                    if len(decoded_kbis) > max_kb:
+                        logger.warning(
+                            "KBIS file %s bytes exceeds TELEGRAM_MAX_KBIS_DECODED_BYTES; skip attach to avoid OOM",
+                            len(decoded_kbis),
+                        )
+                    elif decoded_kbis:
+                        suffix = ".pdf"
+                        if kbis_filename and isinstance(kbis_filename, str) and kbis_filename.strip():
+                            low = kbis_filename.strip().lower()
+                            if low.endswith(".png"):
+                                suffix = ".png"
+                            elif low.endswith((".jpg", ".jpeg")):
+                                suffix = ".jpg"
+                            elif low.endswith(".pdf"):
+                                suffix = ".pdf"
+                        kbis_path = _write_temp_file(decoded_kbis, suffix=suffix)
+                        del decoded_kbis
+                        attrs = []
+                        if kbis_filename and isinstance(kbis_filename, str) and kbis_filename.strip():
+                            attrs.append(DocumentAttributeFilename(kbis_filename.strip()))
+                        await tg.send_file(
+                            channel,
+                            kbis_path,
+                            caption="KBIS",
+                            attributes=attrs if attrs else None,
+                        )
             except Exception as e:
                 logger.warning("Could not send KBIS file: %s", e)
+            finally:
+                _unlink_quiet(kbis_path)
+                gc.collect()
 
         # String keeps full precision (Postgres bigint); JS JSON numbers are only safe up to 2^53-1.
         return {"chat_id": str(chat_id), "invited": invited, "failed": failed}

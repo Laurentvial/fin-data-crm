@@ -61,6 +61,8 @@ services:
     envVars:
       - key: TELEGRAM_SESSION_PATH
         value: /opt/data/telegram_session
+      - key: TELEGRAM_TEMP_DIR
+        value: /opt/data/tmp
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH
