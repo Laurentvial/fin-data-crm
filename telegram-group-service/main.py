@@ -18,7 +18,7 @@ load_dotenv()
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from telethon import TelegramClient
 from telethon.errors import (
     FileReferenceInvalidError,
@@ -107,6 +107,28 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Telegram Group Service", lifespan=lifespan)
+
+
+@app.get("/health")
+async def health_get():
+    """Render and proxies expect a 2xx here; avoids 404 on GET /health."""
+    return {"status": "ok"}
+
+
+@app.head("/health")
+async def health_head():
+    return Response(status_code=200)
+
+
+@app.get("/")
+async def root_get():
+    return {"service": "telegram-group-service", "status": "ok"}
+
+
+@app.head("/")
+async def root_head():
+    """Many load balancers probe HEAD /; without this they get 404 and may mark the instance bad (502)."""
+    return Response(status_code=200)
 
 
 @app.get("/auth/status")
