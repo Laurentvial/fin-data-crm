@@ -1087,30 +1087,42 @@ export default function SocieteDetailPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
               <h2 className="section-header mb-4 text-lg font-medium">Emails</h2>
-              <div className="mb-4 flex flex-wrap gap-2">
+              <form
+                className="mb-4 flex flex-wrap gap-2"
+                autoComplete="off"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleAddEmail();
+                }}
+              >
                 <input
                   type="email"
+                  name="societe-smtp-email"
+                  id={`societe-email-${id}`}
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="Email"
+                  autoComplete="off"
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
                 <input
                   type="password"
+                  name="societe-smtp-secret"
+                  id={`societe-email-secret-${id}`}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Mot de passe"
+                  autoComplete="new-password"
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
                 <button
-                  type="button"
-                  onClick={handleAddEmail}
+                  type="submit"
                   disabled={addingEmail || !newEmail.trim()}
                   className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
                 >
                   {addingEmail ? "Ajout…" : "Ajouter"}
                 </button>
-              </div>
+              </form>
               {emails.length === 0 ? (
                 <p className="text-sm text-[var(--muted-foreground)]">Aucun email enregistré.</p>
               ) : (
