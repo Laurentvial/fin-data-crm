@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
+import { IbanCopyRows } from "@/components/IbanCopyRows";
 import type { BankAccount, IbanItem, Transaction } from "@/lib/types";
 
 function formatIbanForDisplay(iban: string): string {
@@ -268,15 +269,7 @@ export function AccountVignette({
           emoji={bankAccount.account_status_emoji}
         />
       </p>
-      {fullIbans.length > 0 && (
-        <div className="mt-0.5 space-y-0.5">
-          {fullIbans.map((iban, i) => (
-            <p key={i} className="text-xs font-mono text-[var(--foreground)]">
-              {iban}
-            </p>
-          ))}
-        </div>
-      )}
+      <IbanCopyRows lines={fullIbans} />
       <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
         {new Intl.NumberFormat("fr-FR", {
           minimumFractionDigits: 2,

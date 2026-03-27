@@ -553,12 +553,9 @@ export default function SocieteDetailPage() {
     setCreateAccountModalOpen(true);
     setCreateAccountName("");
     setCreateAccountBankId("");
-    const sortedTypes = [...accountTypes].sort((a, b) => a.sort_order - b.sort_order);
-    const defaultType = sortedTypes.find((t) => t.emoji?.trim()) ?? sortedTypes[0];
-    setCreateAccountTypeId(defaultType?.id ?? "");
+    setCreateAccountTypeId("");
     const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
-    const defaultStatus = sortedStatuses.find((s) => s.emoji?.trim()) ?? sortedStatuses[0];
-    setCreateAccountStatusId(defaultStatus?.id ?? "");
+    setCreateAccountStatusId(sortedStatuses[3]?.id ?? "");
     setCreateAccountIbans([]);
     setCreateAccountLogin("");
     setCreateAccountPassword("");

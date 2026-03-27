@@ -8,6 +8,7 @@ import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
 import { AccountStatusBadge } from "@/components/AccountStatusBadge";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
+import { IbanCopyRows } from "@/components/IbanCopyRows";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
 import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, CompanyEmail, CompanyPhone, IbanItem } from "@/lib/types";
@@ -228,15 +229,7 @@ function AccountCard({
             emoji={bankAccount.account_status_emoji}
           />
         </p>
-        {fullIbans.length > 0 && (
-          <div className="mt-0.5 space-y-0.5">
-            {fullIbans.map((iban, i) => (
-              <p key={i} className="text-xs font-mono text-[var(--foreground)]">
-                {iban}
-              </p>
-            ))}
-          </div>
-        )}
+        <IbanCopyRows lines={fullIbans} />
         <p className="mt-1 text-lg font-medium tabular-nums text-[var(--foreground)]">
           {new Intl.NumberFormat("fr-FR", {
             minimumFractionDigits: 2,
@@ -1213,12 +1206,9 @@ function AccountsPageContent() {
           : (companies[0]?.id ?? "");
       setCreateCompanyId(cid);
       setCreateBankId("");
-      const sortedTypes = [...accountTypes].sort((a, b) => a.sort_order - b.sort_order);
-      const defaultType = sortedTypes.find((t) => t.emoji?.trim()) ?? sortedTypes[0];
-      setCreateAccountTypeId(defaultType?.id ?? "");
+      setCreateAccountTypeId("");
       const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
-      const defaultStatus = sortedStatuses.find((s) => s.emoji?.trim()) ?? sortedStatuses[0];
-      setCreateAccountStatusId(defaultStatus?.id ?? "");
+      setCreateAccountStatusId(sortedStatuses[3]?.id ?? "");
       setCreateIbans([]);
       setCreateLogin("");
       setCreatePassword("");
@@ -1229,7 +1219,7 @@ function AccountsPageContent() {
       setError(null);
       setCreateInviteWarning(null);
     },
-    [companies, accountTypes, accountStatuses]
+    [companies, accountStatuses]
   );
 
   const createFromCompanyUrlRef = useRef<string | null>(null);
