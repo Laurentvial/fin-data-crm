@@ -308,6 +308,8 @@ const INVOICE_COUNTRIES = [
   { code: "TR", label: "Turquie" },
 ];
 
+const PAYS_NAISSANCE_OPTIONS = [...INVOICE_COUNTRIES, { code: "DZ", label: "Algérie" }];
+
 function CompanyModal({
   title,
   name,
@@ -750,7 +752,7 @@ function CompanyModal({
                   onChange={(e) => onGerantPaysNaissanceChange(e.target.value || "")}
                 >
                   <option value="">—</option>
-                  {INVOICE_COUNTRIES.map((c) => (
+                  {PAYS_NAISSANCE_OPTIONS.map((c) => (
                     <option key={c.code} value={c.code}>{c.label}</option>
                   ))}
                 </Select>
