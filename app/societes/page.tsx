@@ -7,6 +7,7 @@ import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
 import type { Bank, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
+import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -56,6 +57,14 @@ function ChevronDownIcon({ className }: { className?: string }) {
   );
 }
 
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
 /** Convert ISO date (yyyy-mm-dd) to display format (dd/mm/yyyy) */
 function formatDateToDisplay(iso: string): string {
   if (!iso?.trim()) return "";
@@ -90,6 +99,9 @@ function siretOrSirenDigitsOk(raw: string): boolean {
   const d = raw.replace(/\D/g, "");
   return d.length === 9 || d.length === 14;
 }
+
+type CompanyCreateEmailRow = { email: string; password: string };
+type CompanyCreatePhoneRow = { phone: string; operateur: string };
 
 function getInitials(name: string): string {
   return name
@@ -366,6 +378,10 @@ function CompanyModal({
   siretLookupNotice,
   siretLookupAllowed,
   onSiretInseeLookup,
+  createEmailRows = [],
+  onCreateEmailRowsChange = () => {},
+  createPhoneRows = [],
+  onCreatePhoneRowsChange = () => {},
 }: {
   title: string;
   name: string;
@@ -437,12 +453,39 @@ function CompanyModal({
   siretLookupNotice: string | null;
   siretLookupAllowed: boolean;
   onSiretInseeLookup: () => void;
+  createEmailRows?: CompanyCreateEmailRow[];
+  onCreateEmailRowsChange?: (rows: CompanyCreateEmailRow[]) => void;
+  createPhoneRows?: CompanyCreatePhoneRow[];
+  onCreatePhoneRowsChange?: (rows: CompanyCreatePhoneRow[]) => void;
 }) {
+  const [emailsExpanded, setEmailsExpanded] = useState(true);
+  const [phonesExpanded, setPhonesExpanded] = useState(true);
+
+  const addCreateEmail = () =>
+    onCreateEmailRowsChange([...createEmailRows, { email: "", password: "" }]);
+  const removeCreateEmail = (i: number) =>
+    onCreateEmailRowsChange(createEmailRows.filter((_, idx) => idx !== i));
+  const setCreateEmailField = (i: number, field: keyof CompanyCreateEmailRow, value: string) => {
+    const next = [...createEmailRows];
+    next[i] = { ...next[i], [field]: value };
+    onCreateEmailRowsChange(next);
+  };
+
+  const addCreatePhone = () =>
+    onCreatePhoneRowsChange([...createPhoneRows, { phone: "", operateur: "" }]);
+  const removeCreatePhone = (i: number) =>
+    onCreatePhoneRowsChange(createPhoneRows.filter((_, idx) => idx !== i));
+  const setCreatePhoneField = (i: number, field: keyof CompanyCreatePhoneRow, value: string) => {
+    const next = [...createPhoneRows];
+    next[i] = { ...next[i], [field]: value };
+    onCreatePhoneRowsChange(next);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/50"
-        onClick={onClose}
+        onClick={(e) => modalBackdropClose(e, onClose)}
         aria-hidden="true"
       />
       <div
@@ -826,6 +869,160 @@ function CompanyModal({
                   </div>
                 </div>
           </div>
+          {!isEdit && (
+            <>
+              <div className="col-span-3">
+                <div className="rounded-lg border border-[var(--border)]">
+                  <button
+                    type="button"
+                    onClick={() => setEmailsExpanded((e) => !e)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--muted)]/50"
+                  >
+                    <span className="text-sm font-medium text-[var(--foreground)]">
+                      Emails{" "}
+                      {createEmailRows.length > 0 && (
+                        <span className="text-[var(--muted-foreground)]">({createEmailRows.length})</span>
+                      )}
+                    </span>
+                    <span className="text-[var(--muted-foreground)]">
+                      {emailsExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon />}
+                    </span>
+                  </button>
+                  {emailsExpanded && (
+                    <div className="border-t border-[var(--border)] p-3">
+                      <div className="mb-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={addCreateEmail}
+                          className="text-xs text-[var(--primary)] hover:underline"
+                        >
+                          + Ajouter un email
+                        </button>
+                      </div>
+                      {createEmailRows.length === 0 ? (
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          Aucun email. Cliquez sur « + Ajouter un email » si besoin.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {createEmailRows.map((row, i) => (
+                            <div
+                              key={i}
+                              className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-2"
+                            >
+                              <form
+                                className="contents"
+                                autoComplete="off"
+                                onSubmit={(e) => e.preventDefault()}
+                              >
+                                <div className="flex gap-2">
+                                  <input
+                                    type="email"
+                                    name={`societe-create-email-${i}`}
+                                    value={row.email}
+                                    onChange={(e) => setCreateEmailField(i, "email", e.target.value)}
+                                    placeholder="Email"
+                                    autoComplete="off"
+                                    className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeCreateEmail(i)}
+                                    className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <input
+                                  type="password"
+                                  name={`societe-create-email-secret-${i}`}
+                                  value={row.password}
+                                  onChange={(e) => setCreateEmailField(i, "password", e.target.value)}
+                                  placeholder="Mot de passe"
+                                  autoComplete="new-password"
+                                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                                />
+                              </form>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="col-span-3">
+                <div className="rounded-lg border border-[var(--border)]">
+                  <button
+                    type="button"
+                    onClick={() => setPhonesExpanded((e) => !e)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--muted)]/50"
+                  >
+                    <span className="text-sm font-medium text-[var(--foreground)]">
+                      Téléphones{" "}
+                      {createPhoneRows.length > 0 && (
+                        <span className="text-[var(--muted-foreground)]">({createPhoneRows.length})</span>
+                      )}
+                    </span>
+                    <span className="text-[var(--muted-foreground)]">
+                      {phonesExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon />}
+                    </span>
+                  </button>
+                  {phonesExpanded && (
+                    <div className="border-t border-[var(--border)] p-3">
+                      <div className="mb-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={addCreatePhone}
+                          className="text-xs text-[var(--primary)] hover:underline"
+                        >
+                          + Ajouter un numéro
+                        </button>
+                      </div>
+                      {createPhoneRows.length === 0 ? (
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          Aucun numéro. Cliquez sur « + Ajouter un numéro » si besoin.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {createPhoneRows.map((row, i) => (
+                            <div
+                              key={i}
+                              className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-2"
+                            >
+                              <div className="flex gap-2">
+                                <input
+                                  type="tel"
+                                  value={row.phone}
+                                  onChange={(e) => setCreatePhoneField(i, "phone", e.target.value)}
+                                  placeholder="Numéro (ex. 06 12 34 56 78)"
+                                  className="block flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeCreatePhone(i)}
+                                  className="rounded-lg border border-[var(--border)] px-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                value={row.operateur}
+                                onChange={(e) => setCreatePhoneField(i, "operateur", e.target.value)}
+                                placeholder="Opérateur (optionnel)"
+                                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -897,6 +1094,8 @@ function SocietesPageContent() {
   const [siretLookupLoading, setSiretLookupLoading] = useState(false);
   const [siretLookupNotice, setSiretLookupNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [createEmailRows, setCreateEmailRows] = useState<CompanyCreateEmailRow[]>([]);
+  const [createPhoneRows, setCreatePhoneRows] = useState<CompanyCreatePhoneRow[]>([]);
 
   const filteredCompanies = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -959,6 +1158,18 @@ function SocietesPageContent() {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  /** Refetch full companies list (emails/phones aggregates). Returns false on failure — caller should rely on local state if already updated. */
+  const refreshAccountsList = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/accounts");
+      if (!res.ok) return false;
+      setCompanies(await res.json());
+      return true;
+    } catch {
+      return false;
     }
   }, []);
 
@@ -1064,6 +1275,8 @@ function SocietesPageContent() {
     if (!company) return;
     setEditingCompany(company);
     setIsAddModal(false);
+    setCreateEmailRows([]);
+    setCreatePhoneRows([]);
     setError(null);
     populateEditForm(company);
     let cancelled = false;
@@ -1111,6 +1324,8 @@ function SocietesPageContent() {
     setEditInvoicePrefix("FAC-");
     setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
+    setCreateEmailRows([]);
+    setCreatePhoneRows([]);
     setError(null);
     setSiretLookupNotice(null);
     setSiretLookupLoading(false);
@@ -1119,6 +1334,8 @@ function SocietesPageContent() {
   const openEdit = async (company: Company) => {
     setEditingCompany(company);
     setIsAddModal(false);
+    setCreateEmailRows([]);
+    setCreatePhoneRows([]);
     setError(null);
     setSiretLookupNotice(null);
     populateEditForm(company);
@@ -1168,6 +1385,8 @@ function SocietesPageContent() {
     setEditInvoicePrefix("FAC-");
     setEditInvoiceNextNumber("1");
     setEditCurrency("EUR");
+    setCreateEmailRows([]);
+    setCreatePhoneRows([]);
     setError(null);
     setSiretLookupNotice(null);
     setSiretLookupLoading(false);
@@ -1223,7 +1442,60 @@ function SocietesPageContent() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Échec de la création");
-        setCompanies((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+        const newCompany = data as Company;
+        const postErrors: string[] = [];
+        for (const row of createEmailRows) {
+          const email = row.email.trim();
+          if (!email) continue;
+          const er = await fetch(`/api/accounts/${newCompany.id}/emails`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password: row.password }),
+          });
+          if (!er.ok) {
+            const ed = await er.json().catch(() => ({}));
+            postErrors.push(typeof ed.error === "string" ? ed.error : email);
+          }
+        }
+        for (const row of createPhoneRows) {
+          const phone = row.phone.trim();
+          if (!phone) continue;
+          const pr = await fetch(`/api/accounts/${newCompany.id}/phones`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phone,
+              operateur: row.operateur.trim() || null,
+            }),
+          });
+          if (!pr.ok) {
+            const pd = await pr.json().catch(() => ({}));
+            postErrors.push(typeof pd.error === "string" ? pd.error : phone);
+          }
+        }
+        const addedEmails = createEmailRows.map((r) => r.email.trim()).filter((e) => e.length > 0);
+        const addedPhones = createPhoneRows.map((r) => r.phone.trim()).filter((p) => p.length > 0);
+        const companyForList: Company = {
+          ...newCompany,
+          bank_ids: newCompany.bank_ids ?? [],
+          ...(addedEmails.length > 0 ? { emails: addedEmails } : {}),
+          ...(addedPhones.length > 0 ? { phones: addedPhones } : {}),
+        };
+        setCompanies((prev) =>
+          [...prev, companyForList].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+        );
+        closeModal();
+        const listRefreshed = await refreshAccountsList();
+        const warnParts: string[] = [];
+        if (!listRefreshed) {
+          warnParts.push(
+            "Société enregistrée. La liste n’a pas pu être resynchronisée (réseau ou serveur) : les données affichées peuvent être incomplètes jusqu’au prochain rechargement de la page."
+          );
+        }
+        if (postErrors.length > 0) {
+          warnParts.push(`Certains contacts n’ont pas été enregistrés : ${postErrors.join(" · ")}`);
+        }
+        if (warnParts.length > 0) setError(warnParts.join(" "));
       } else if (editingCompany) {
         const res = await fetch(`/api/accounts/${editingCompany.id}`, {
           method: "PATCH",
@@ -1240,8 +1512,8 @@ function SocietesPageContent() {
             .map((c) => (c.id === editingCompany.id ? { ...c, ...updated } : c))
             .sort((a, b) => a.name.localeCompare(b.name))
         );
+        closeModal();
       }
-      closeModal();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -1468,6 +1740,10 @@ function SocietesPageContent() {
             editCountryCode === "FR" && siretOrSirenDigitsOk(editSiret) && !siretLookupLoading
           }
           onSiretInseeLookup={handleSiretInseeLookup}
+          createEmailRows={createEmailRows}
+          onCreateEmailRowsChange={setCreateEmailRows}
+          createPhoneRows={createPhoneRows}
+          onCreatePhoneRowsChange={setCreatePhoneRows}
         />
       )}
     </div>

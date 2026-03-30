@@ -11,6 +11,7 @@ import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { IbanCopyRows } from "@/components/IbanCopyRows";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
+import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, CompanyEmail, CompanyPhone, IbanItem } from "@/lib/types";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
@@ -546,7 +547,10 @@ function EditBankAccountModal({
     }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => modalBackdropClose(e, onClose)}
+    >
       <div
         className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg"
         onClick={(e) => e.stopPropagation()}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountNameField } from "@/components/AccountNameField";
 import { Select } from "@/components/Select";
+import { modalBackdropClose, suppressNextModalBackdropClose } from "@/lib/modal-backdrop-close";
 
 const EMOJI_OPTIONS = [
   { value: "", label: "Aucun" },
@@ -292,7 +293,10 @@ function EditUserModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={(e) => modalBackdropClose(e, onClose)}
+    >
       <div
         className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
@@ -913,7 +917,10 @@ function BanksSection() {
       )}
 
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -994,7 +1001,10 @@ function BanksSection() {
       )}
 
       {editingBank && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingBank(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setEditingBank(null))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -1274,7 +1284,10 @@ function AccountTypesSection() {
       </div>
 
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -1327,7 +1340,10 @@ function AccountTypesSection() {
       )}
 
       {editingType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingType(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setEditingType(null))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -1647,7 +1663,10 @@ function AccountStatusesSection() {
       </div>
 
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -1751,7 +1770,10 @@ function AccountStatusesSection() {
       )}
 
       {editingStatus && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingStatus(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setEditingStatus(null))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -2038,7 +2060,10 @@ function SourcesSection() {
       </div>
 
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -2083,7 +2108,10 @@ function SourcesSection() {
       )}
 
       {editingSource && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingSource(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setEditingSource(null))}
+        >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
@@ -2325,7 +2353,7 @@ function FournisseursSection() {
       {createModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setCreateModalOpen(false)}
+          onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
         >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
@@ -2368,7 +2396,7 @@ function FournisseursSection() {
       {editingFournisseur && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setEditingFournisseur(null)}
+          onClick={(e) => modalBackdropClose(e, () => setEditingFournisseur(null))}
         >
           <div
             className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
@@ -2705,7 +2733,10 @@ function TemplatesSection() {
       </div>
 
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateModalOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
+        >
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <h3 className="subsection-header mb-4 text-lg font-medium">Nouveau template</h3>
             <form onSubmit={handleCreate} className="space-y-4">
@@ -2722,7 +2753,15 @@ function TemplatesSection() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Pays</label>
-                <select value={createCountry} onChange={(e) => setCreateCountry(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                <select
+                  value={createCountry}
+                  onChange={(e) => {
+                    suppressNextModalBackdropClose();
+                    setCreateCountry(e.target.value);
+                  }}
+                  onBlur={() => suppressNextModalBackdropClose()}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                >
                   <option value="FR">France</option>
                   <option value="BE">Belgique</option>
                   <option value="CO">Colombie</option>
@@ -2753,7 +2792,10 @@ function TemplatesSection() {
       )}
 
       {editingTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingTemplate(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => modalBackdropClose(e, () => setEditingTemplate(null))}
+        >
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <h3 className="subsection-header mb-4 text-lg font-medium">Modifier {editingTemplate.name}</h3>
             <div className="space-y-4">
@@ -2763,7 +2805,15 @@ function TemplatesSection() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Pays</label>
-                <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+                <select
+                  value={editCountry}
+                  onChange={(e) => {
+                    suppressNextModalBackdropClose();
+                    setEditCountry(e.target.value);
+                  }}
+                  onBlur={() => suppressNextModalBackdropClose()}
+                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                >
                   <option value="FR">France</option>
                   <option value="BE">Belgique</option>
                   <option value="CO">Colombie</option>

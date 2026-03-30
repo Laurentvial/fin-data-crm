@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DEBIT_STATUS_VALUES, debitStatusLabel, type DebitTransactionStatus } from "@/lib/debit-status";
+import { modalBackdropClose, suppressNextModalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
@@ -78,7 +79,7 @@ export function AddTransactionModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={onClose}
+      onClick={(e) => modalBackdropClose(e, onClose)}
     >
       <div
         className="w-full max-w-md rounded-xl border border-[var(--primary-muted-border)] bg-[var(--card)] p-6 shadow-lg"
@@ -102,7 +103,11 @@ export function AddTransactionModal({
             </label>
             <select
               value={bankAccountId}
-              onChange={(e) => setBankAccountId(e.target.value)}
+              onChange={(e) => {
+                suppressNextModalBackdropClose();
+                setBankAccountId(e.target.value);
+              }}
+              onBlur={() => suppressNextModalBackdropClose()}
               required
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             >
@@ -148,10 +153,12 @@ export function AddTransactionModal({
             <select
               value={type}
               onChange={(e) => {
+                suppressNextModalBackdropClose();
                 const next = e.target.value as TransactionType;
                 setType(next);
                 if (next === "CREDIT") setDebitStatus("");
               }}
+              onBlur={() => suppressNextModalBackdropClose()}
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
             >
               <option value="DEBIT">Débit</option>
@@ -165,11 +172,13 @@ export function AddTransactionModal({
               </label>
               <select
                 value={debitStatus}
-                onChange={(e) =>
+                onChange={(e) => {
+                  suppressNextModalBackdropClose();
                   setDebitStatus(
                     e.target.value === "" ? "" : (e.target.value as DebitTransactionStatus)
-                  )
-                }
+                  );
+                }}
+                onBlur={() => suppressNextModalBackdropClose()}
                 className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
               >
                 <option value="">—</option>

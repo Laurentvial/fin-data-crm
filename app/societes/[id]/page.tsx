@@ -12,6 +12,7 @@ import {
   needsLegacyOperateurOption,
   operateurToSelectValue,
 } from "@/lib/french-mobile-operators";
+import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import type {
   AccountStatus,
   AccountType,
@@ -1370,7 +1371,13 @@ export default function SocieteDetailPage() {
       )}
 
       {addDocModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !uploadingDocType && setAddDocModalOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (uploadingDocType) return;
+            modalBackdropClose(e, () => setAddDocModalOpen(false));
+          }}
+        >
           <div
             className="flex w-full max-w-md flex-col rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}

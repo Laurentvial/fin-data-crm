@@ -48,6 +48,30 @@ from telethon.tl.types import (
 )
 from telethon.utils import get_peer_id
 
+# Shown when Telegram blocks the MTProto user from creating channels/supergroups.
+_TELEGRAM_ACCOUNT_CANNOT_CREATE_GROUPS_FR = (
+    "Telegram a restreint le compte utilisé par le serveur : il ne peut plus créer de groupes ou de supergroupes "
+    "(souvent après un signalement pour spam). "
+    "Que faire : (1) Paramètres de l’application (admin) → Session Telegram / création de groupes : reconnectez un autre numéro "
+    "Telegram qui n’a pas cette limitation ; "
+    "(2) Créez le groupe à la main avec un autre compte, puis à la création du compte bancaire cochez « Lier un groupe Telegram existant » "
+    "et saisissez l’ID du groupe (ex. -100…) ; "
+    "(3) Contacter le support Telegram depuis l’app si la restriction vous semble incorrecte."
+)
+
+
+def _is_telegram_create_channel_blocked(exc: BaseException) -> bool:
+    s = str(exc).lower()
+    if "spamreport" in s or "spam reported" in s:
+        return True
+    if "can't create channels" in s or "cannot create channels" in s:
+        return True
+    if "can't create chats" in s or "cannot create chats" in s:
+        return True
+    if "you can't create" in s and ("channel" in s or "chat" in s):
+        return True
+    return False
+
 logger = logging.getLogger(__name__)
 
 API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
@@ -892,6 +916,11 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Error creating Telegram group: %s", e)
+        if _is_telegram_create_channel_blocked(e):
+            raise HTTPException(
+                status_code=403,
+                detail=_TELEGRAM_ACCOUNT_CANNOT_CREATE_GROUPS_FR,
+            )
         raise HTTPException(
             status_code=502,
             detail=f"Impossible de créer le groupe Telegram: {e!s}",

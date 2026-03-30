@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 
 export interface DeleteConfirmationModalProps {
   /** Texte exact que l'utilisateur doit taper pour confirmer */
@@ -40,7 +41,10 @@ export function DeleteConfirmationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={(e) => modalBackdropClose(e, onClose)}
+    >
       <div
         className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}

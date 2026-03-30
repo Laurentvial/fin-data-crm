@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Bank } from "@/lib/types";
+import { suppressNextModalBackdropClose } from "@/lib/modal-backdrop-close";
 
 function ChevronDownIcon({ className }: { className?: string }) {
   return (
@@ -70,6 +71,7 @@ export function BankSelect({
           <button
             type="button"
             onClick={() => {
+              suppressNextModalBackdropClose();
               onChange("");
               setOpen(false);
             }}
@@ -82,6 +84,7 @@ export function BankSelect({
               key={b.id}
               type="button"
               onClick={() => {
+                suppressNextModalBackdropClose();
                 onChange(b.id);
                 setOpen(false);
               }}

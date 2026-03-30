@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Customer, Transaction } from "@/lib/types";
 import type { InvoiceLineItemInput } from "@/lib/types";
 import { Select } from "@/components/Select";
+import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 
 interface LineItemRow {
   id: string;
@@ -243,7 +244,7 @@ export function GenerateInvoiceModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={onClose}
+      onClick={(e) => modalBackdropClose(e, onClose)}
     >
       <div
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"

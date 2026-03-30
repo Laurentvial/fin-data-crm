@@ -51,6 +51,31 @@ function jsonSafeForResponse(value: unknown): unknown {
   );
 }
 
+/** Telegram MTProto user cannot create groups (spam report, UserRestricted, etc.) — user-facing French guidance. */
+function friendlyTelegramCreateGroupError(raw: string): string {
+  const low = raw.toLowerCase();
+  if (
+    low.includes("spamreport") ||
+    low.includes("spam reported") ||
+    low.includes("can't create channels") ||
+    low.includes("cannot create channels") ||
+    low.includes("can't create chats") ||
+    low.includes("cannot create chats") ||
+    (low.includes("you can't create") && (low.includes("channel") || low.includes("chat")))
+  ) {
+    return (
+      "Telegram a restreint le compte utilisé par le serveur : il ne peut plus créer de groupes ou de supergroupes " +
+      "(souvent après un signalement pour spam). " +
+      "Que faire : (1) Paramètres de l'application (admin) → Session Telegram / création de groupes : reconnectez un autre numéro " +
+      "Telegram qui n'a pas cette limitation ; " +
+      "(2) Créez le groupe à la main avec un autre compte, puis à la création du compte bancaire cochez « Lier un groupe Telegram existant » " +
+      "et saisissez l'ID du groupe (ex. -100…) ; " +
+      "(3) Contacter le support Telegram depuis l'app si la restriction vous semble incorrecte."
+    );
+  }
+  return raw;
+}
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -494,9 +519,15 @@ export async function POST(request: Request) {
         try {
           const errData = JSON.parse(errText) as { detail?: string | Array<string | { msg?: string }> };
           const d = errData?.detail;
-          msg = typeof d === "string" ? d : Array.isArray(d) && d[0] ? String((d[0] as { msg?: string }).msg ?? d[0]) : msg;
+          const raw =
+            typeof d === "string"
+              ? d
+              : Array.isArray(d) && d[0]
+                ? String((d[0] as { msg?: string }).msg ?? d[0])
+                : msg;
+          msg = friendlyTelegramCreateGroupError(raw);
         } catch {
-          if (errText.trim()) msg = errText.slice(0, 200);
+          if (errText.trim()) msg = friendlyTelegramCreateGroupError(errText.slice(0, 2000));
         }
         console.error("Telegram create-group error:", createRes.status, msg);
         return NextResponse.json({ error: msg }, { status: createRes.status >= 500 ? 502 : createRes.status });

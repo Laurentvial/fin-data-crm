@@ -5,6 +5,7 @@ import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
+import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { AccountStatus, AccountType, Bank, CardItem, Company, IbanItem } from "@/lib/types";
 
 function ChevronDownIcon({ className }: { className?: string }) {
@@ -186,7 +187,10 @@ export function CreateBankAccountModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => modalBackdropClose(e, onClose)}
+    >
       <div
         className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
@@ -196,7 +200,7 @@ export function CreateBankAccountModal({
         <p className="mb-4 text-sm text-[var(--muted-foreground)]">
           {linkExistingGroupId !== ""
             ? "Liez un groupe Telegram existant en entrant son ID (ex. -5186500052)."
-            : "Un groupe Telegram sera créé automatiquement et lié à ce compte."}
+            : "Un groupe Telegram sera créé automatiquement et lié à ce compte. Si Telegram refuse la création (compte serveur limité ou signalé), créez le groupe à la main puis cochez « Lier un groupe Telegram existant »."}
         </p>
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
