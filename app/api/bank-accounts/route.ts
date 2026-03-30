@@ -307,15 +307,21 @@ export async function POST(request: Request) {
       ibanItems.length > 0
         ? ibanItems.map((i) => (i.bic ? `${i.iban} (BIC: ${i.bic})` : i.iban)).join(", ")
         : "—";
-    const welcomeMessage = `NOM STE : ${company.name}
-ADRESSE : ${(company.address as string) ?? "—"}
-CP : ${(company.code_postal as string) ?? "—"}
-VILLE : ${(company.ville as string) ?? "—"}
-EMAIL : ${emailStr}
-SIRET : ${(company.siret as string) ?? "—"}
-DIRECTEUR : ${(company.directeur as string) ?? "—"}
-IBAN : ${ibanStr}
-BANQUE : ${bankName ?? "—"}`;
+    const addrParts = [
+      typeof company.address === "string" ? company.address.trim() : "",
+      typeof company.code_postal === "string" ? company.code_postal.trim() : "",
+      typeof company.ville === "string" ? company.ville.trim() : "",
+    ].filter(Boolean);
+    const addressLine = addrParts.length > 0 ? addrParts.join(", ") : "—";
+    const welcomeMessage = [
+      `NOM STE : ${company.name}`,
+      `ADRESSE : ${addressLine}`,
+      `EMAIL : ${emailStr}`,
+      `SIRET : ${(company.siret as string) ?? "—"}`,
+      `DIRECTEUR : ${(company.directeur as string) ?? "—"}`,
+      `IBAN : ${ibanStr}`,
+      `BANQUE : ${bankName ?? "—"}`,
+    ].join("\n\n");
 
     let logoBase64: string | null = null;
     let logoContentType: string | null = null;

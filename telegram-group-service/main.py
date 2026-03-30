@@ -30,8 +30,20 @@ from telethon.errors import (
     UserNotMutualContactError,
     UserPrivacyRestrictedError,
 )
-from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest, InviteToChannelRequest
-from telethon.tl.types import Channel, DocumentAttributeFilename, InputChatUploadedPhoto, InputUser, User
+from telethon.tl.functions.channels import (
+    CreateChannelRequest,
+    EditAdminRequest,
+    EditPhotoRequest,
+    InviteToChannelRequest,
+)
+from telethon.tl.types import (
+    Channel,
+    ChatAdminRights,
+    DocumentAttributeFilename,
+    InputChatUploadedPhoto,
+    InputUser,
+    User,
+)
 from telethon.utils import get_peer_id
 
 logger = logging.getLogger(__name__)
@@ -372,6 +384,76 @@ def _parse_users(body: dict) -> list[tuple[int, str | None]]:
     return users
 
 
+def _invited_member_admin_rights() -> ChatAdminRights:
+    """Admin preset for members invited at group creation (change group info, invite users, moderation, etc.)."""
+    return ChatAdminRights(
+        change_info=True,
+        post_messages=True,
+        edit_messages=True,
+        delete_messages=True,
+        ban_users=True,
+        invite_users=True,
+        pin_messages=True,
+        add_admins=True,
+        manage_call=True,
+        manage_topics=True,
+        post_stories=True,
+        edit_stories=True,
+        delete_stories=True,
+    )
+
+
+async def _promote_invited_user_to_admin(
+    tg: TelegramClient,
+    input_channel,
+    input_user: InputUser,
+    telegram_id: int,
+    username: str | None,
+    admin_promote_failed: list[dict],
+    max_flood_wait_sec: int,
+) -> None:
+    rights = _invited_member_admin_rights()
+    await asyncio.sleep(0.4)
+    try:
+        await tg(
+            EditAdminRequest(
+                channel=input_channel,
+                user_id=input_user,
+                admin_rights=rights,
+                rank="",
+            )
+        )
+    except FloodWaitError as e:
+        wait_sec = getattr(e, "seconds", None)
+        if wait_sec is None:
+            wait_sec = getattr(e, "value", 0) or 0
+        if wait_sec <= max_flood_wait_sec:
+            logger.info("FloodWait %ds for admin promotion, retrying...", wait_sec)
+            await asyncio.sleep(wait_sec)
+            await tg(
+                EditAdminRequest(
+                    channel=input_channel,
+                    user_id=input_user,
+                    admin_rights=rights,
+                    rank="",
+                )
+            )
+        else:
+            admin_promote_failed.append(
+                {
+                    "telegram_id": telegram_id,
+                    "telegram_username": username,
+                    "reason": f"FloodWaitError:{wait_sec}s",
+                }
+            )
+            await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.warning("Could not promote user %s to channel admin: %s", telegram_id, e)
+        admin_promote_failed.append(
+            {"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)}
+        )
+
+
 async def _send_base64_file_to_channel(
     tg: TelegramClient,
     channel: Channel,
@@ -570,8 +652,10 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
 
         invited: list[int] = []
         failed: list[dict] = []
+        admin_promote_failed: list[dict] = []
         input_channel = await tg.get_input_entity(channel)
         max_flood_wait_sec = 60
+        promote_admins = not _env_truthy("TELEGRAM_SKIP_ADMIN_PROMOTE_ON_INVITE")
 
         for telegram_id, username in users_to_invite:
             try:
@@ -597,6 +681,16 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                 try:
                     await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
                     invited.append(telegram_id)
+                    if promote_admins:
+                        await _promote_invited_user_to_admin(
+                            tg,
+                            input_channel,
+                            input_user,
+                            telegram_id,
+                            username,
+                            admin_promote_failed,
+                            max_flood_wait_sec,
+                        )
                 except FloodWaitError as e:
                     wait_sec = getattr(e, "seconds", None)
                     if wait_sec is None:
@@ -606,6 +700,16 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                         await asyncio.sleep(wait_sec)
                         await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
                         invited.append(telegram_id)
+                        if promote_admins:
+                            await _promote_invited_user_to_admin(
+                                tg,
+                                input_channel,
+                                input_user,
+                                telegram_id,
+                                username,
+                                admin_promote_failed,
+                                max_flood_wait_sec,
+                            )
                     else:
                         failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": f"FloodWaitError:{wait_sec}s"})
                         await asyncio.sleep(0.5)
@@ -689,7 +793,10 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         )
 
         # String keeps full precision (Postgres bigint); JS JSON numbers are only safe up to 2^53-1.
-        return {"chat_id": str(chat_id), "invited": invited, "failed": failed}
+        out: dict = {"chat_id": str(chat_id), "invited": invited, "failed": failed}
+        if admin_promote_failed:
+            out["admin_promote_failed"] = admin_promote_failed
+        return out
     except HTTPException:
         raise
     except RuntimeError as e:
