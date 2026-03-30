@@ -27,6 +27,8 @@ from telethon.errors import (
     FloodWaitError,
     PhotoInvalidError,
     SessionPasswordNeededError,
+    UserAlreadyInvitedError,
+    UserAlreadyParticipantError,
     UserNotMutualContactError,
     UserPrivacyRestrictedError,
 )
@@ -430,14 +432,28 @@ async def _promote_invited_user_to_admin(
         if wait_sec <= max_flood_wait_sec:
             logger.info("FloodWait %ds for admin promotion, retrying...", wait_sec)
             await asyncio.sleep(wait_sec)
-            await tg(
-                EditAdminRequest(
-                    channel=input_channel,
-                    user_id=input_user,
-                    admin_rights=rights,
-                    rank="",
+            try:
+                await tg(
+                    EditAdminRequest(
+                        channel=input_channel,
+                        user_id=input_user,
+                        admin_rights=rights,
+                        rank="",
+                    )
                 )
-            )
+            except Exception as retry_err:
+                logger.warning(
+                    "Could not promote user %s to channel admin after FloodWait retry: %s",
+                    telegram_id,
+                    retry_err,
+                )
+                admin_promote_failed.append(
+                    {
+                        "telegram_id": telegram_id,
+                        "telegram_username": username,
+                        "reason": str(retry_err),
+                    }
+                )
         else:
             admin_promote_failed.append(
                 {
@@ -452,6 +468,57 @@ async def _promote_invited_user_to_admin(
         admin_promote_failed.append(
             {"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)}
         )
+
+
+async def _invite_bot_to_channel_by_username(
+    tg: TelegramClient,
+    input_channel,
+    bot_username: str,
+    max_flood_wait_sec: int,
+) -> tuple[bool, str | None]:
+    """Invite a bot to the megagroup by username (with or without @). Returns (success, error_detail)."""
+    uname = bot_username.strip().lstrip("@")
+    if not uname:
+        return False, "empty_username"
+    try:
+        entity = await tg.get_entity(uname)
+    except Exception as e:
+        logger.warning("Could not resolve sync bot @%s: %s", uname, e)
+        return False, str(e)
+    if not isinstance(entity, User) or not getattr(entity, "bot", False):
+        logger.warning("TELEGRAM_GROUP_SYNC_BOT_USERNAME %s is not a bot", uname)
+        return False, "not_a_bot"
+
+    input_bot = InputUser(entity.id, entity.access_hash)
+
+    async def _do_invite() -> None:
+        await tg(InviteToChannelRequest(channel=input_channel, users=[input_bot]))
+
+    try:
+        await _do_invite()
+        return True, None
+    except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+        return True, None
+    except FloodWaitError as e:
+        wait_sec = getattr(e, "seconds", None)
+        if wait_sec is None:
+            wait_sec = getattr(e, "value", 0) or 0
+        if wait_sec <= max_flood_wait_sec:
+            logger.info("FloodWait %ds for sync bot invite, retrying...", wait_sec)
+            await asyncio.sleep(wait_sec)
+            try:
+                await _do_invite()
+                return True, None
+            except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+                return True, None
+            except Exception as retry_err:
+                logger.warning("Sync bot invite failed after FloodWait retry: %s", retry_err)
+                return False, str(retry_err)
+        logger.warning("Sync bot invite FloodWait too long: %ss", wait_sec)
+        return False, f"FloodWaitError:{wait_sec}s"
+    except Exception as e:
+        logger.warning("Could not invite sync bot @%s: %s", uname, e)
+        return False, str(e)
 
 
 async def _send_base64_file_to_channel(
@@ -657,6 +724,21 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         max_flood_wait_sec = 60
         promote_admins = not _env_truthy("TELEGRAM_SKIP_ADMIN_PROMOTE_ON_INVITE")
 
+        sync_bot_invited: bool | None = None
+        sync_bot_skipped = False
+        sync_bot_error: str | None = None
+        sync_bot_uname = os.environ.get("TELEGRAM_GROUP_SYNC_BOT_USERNAME", "SYNC_RO_BOT").strip()
+        if sync_bot_uname and not _env_truthy("TELEGRAM_SKIP_SYNC_BOT"):
+            await asyncio.sleep(0.3)
+            sync_bot_invited, sync_bot_error = await _invite_bot_to_channel_by_username(
+                tg,
+                input_channel,
+                sync_bot_uname,
+                max_flood_wait_sec,
+            )
+        else:
+            sync_bot_skipped = True
+
         for telegram_id, username in users_to_invite:
             try:
                 if username and str(username).strip().startswith("@"):
@@ -796,6 +878,12 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         out: dict = {"chat_id": str(chat_id), "invited": invited, "failed": failed}
         if admin_promote_failed:
             out["admin_promote_failed"] = admin_promote_failed
+        if sync_bot_skipped:
+            out["sync_bot_skipped"] = True
+        elif sync_bot_invited is not None:
+            out["sync_bot_invited"] = sync_bot_invited
+            if sync_bot_error:
+                out["sync_bot_error"] = sync_bot_error
         return out
     except HTTPException:
         raise
