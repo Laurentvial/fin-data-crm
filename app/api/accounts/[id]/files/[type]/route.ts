@@ -75,3 +75,51 @@ export async function GET(
     );
   }
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string; type: string }> }
+) {
+  const authError = await requireAuth();
+  if (authError) return authError;
+  const { id, type } = await params;
+
+  if (!isValidFileType(type)) {
+    return NextResponse.json(
+      { error: "Type invalide." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const companyCheck = await sql`
+      SELECT 1 FROM companies WHERE id = ${id} LIMIT 1
+    `;
+    if (companyCheck.length === 0) {
+      return NextResponse.json(
+        { error: "Société introuvable." },
+        { status: 404 }
+      );
+    }
+
+    const deleted = await sql`
+      DELETE FROM company_files
+      WHERE company_id = ${id} AND file_type = ${type}
+      RETURNING id
+    `;
+    if (deleted.length === 0) {
+      return NextResponse.json(
+        { error: "Fichier introuvable." },
+        { status: 404 }
+      );
+    }
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    console.error("DELETE /api/accounts/[id]/files/[type] error:", error);
+    return NextResponse.json(
+      { error: "Échec de la suppression." },
+      { status: 500 }
+    );
+  }
+}

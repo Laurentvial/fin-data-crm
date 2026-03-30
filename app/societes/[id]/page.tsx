@@ -34,6 +34,7 @@ const COUNTRY_LABELS: Record<string, string> = {
   PT: "Portugal",
   ES: "Espagne",
   LV: "Lettonie",
+  TR: "Turquie",
 };
 
 function formatDateDisplay(iso: string | null | undefined): string {
@@ -117,6 +118,7 @@ export default function SocieteDetailPage() {
   const [deletingBankAccountId, setDeletingBankAccountId] = useState<string | null>(null);
   const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -451,6 +453,25 @@ export default function SocieteDetailPage() {
     }
   };
 
+  const handleDeleteLogo = async () => {
+    if (!confirm("Supprimer le logo ?")) return;
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}/files/logo`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const msg = typeof data?.error === "string" ? data.error : "Échec de la suppression";
+        throw new Error(msg);
+      }
+      setHasLogo(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    }
+  };
+
   const DOC_TYPE_LABELS: Record<string, string> = {
     kbis: "Kbis",
     statut: "Statut de la société",
@@ -548,6 +569,28 @@ export default function SocieteDetailPage() {
       .finally(() => {
         setUploadingDocType(null);
       });
+  };
+
+  const handleDeleteDoc = async (fileType: string) => {
+    if (!confirm(`Supprimer le document « ${getDocLabel(fileType)} » ?`)) return;
+    setDeletingDocType(fileType);
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}/files/${encodeURIComponent(fileType)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const msg = typeof data?.error === "string" ? data.error : "Échec de la suppression";
+        throw new Error(msg);
+      }
+      setDocuments((prev) => prev.filter((d) => d.file_type !== fileType));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingDocType(null);
+    }
   };
 
   const openCreateAccountModal = () => {
@@ -767,38 +810,54 @@ export default function SocieteDetailPage() {
             <div className="flex flex-col gap-6">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
               <h2 className="section-header mb-2 text-base font-medium">Logo</h2>
-              <label className="group flex cursor-pointer flex-col items-start gap-2 rounded-lg py-2 min-h-[80px] w-full">
-                {hasLogo ? (
-                  <div className="relative w-full h-[64px] flex-1">
-                    <div className="w-full h-full overflow-hidden rounded-lg bg-[var(--muted)]">
-                      <img
-                        src={`/api/accounts/${id}/files/logo?t=${Date.now()}`}
-                        alt="Logo"
-                        className="h-full w-full object-contain"
-                      />
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                      <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
-                        {uploadingLogo ? "Upload…" : "Remplacer"}
-                      </span>
-                    </div>
+              {hasLogo ? (
+                <div className="group relative w-full min-h-[80px] rounded-lg py-2">
+                  <div className="h-[64px] w-full overflow-hidden rounded-lg bg-[var(--muted)]">
+                    <img
+                      src={`/api/accounts/${id}/files/logo?t=${Date.now()}`}
+                      alt="Logo"
+                      className="h-full w-full object-contain"
+                    />
                   </div>
-                ) : (
-                  <>
-                    <UploadIcon className="text-[var(--muted-foreground)]" />
-                    <span className="text-sm text-[var(--muted-foreground)]">
-                      {uploadingLogo ? "Upload…" : "Choisir un fichier"}
-                    </span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={uploadingLogo}
-                  onChange={handleUploadLogo}
-                />
-              </label>
+                  <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                    <label className="cursor-pointer rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
+                      {uploadingLogo ? "Upload…" : "Remplacer"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadingLogo}
+                        onChange={handleUploadLogo}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={uploadingLogo}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void handleDeleteLogo();
+                      }}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="group flex min-h-[80px] w-full cursor-pointer flex-col items-start gap-2 rounded-lg py-2">
+                  <UploadIcon className="text-[var(--muted-foreground)]" />
+                  <span className="text-sm text-[var(--muted-foreground)]">
+                    {uploadingLogo ? "Upload…" : "Choisir un fichier"}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingLogo}
+                    onChange={handleUploadLogo}
+                  />
+                </label>
+              )}
             </section>
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
@@ -810,7 +869,7 @@ export default function SocieteDetailPage() {
                     className="group relative flex cursor-pointer flex-col items-center justify-center gap-0 rounded-lg border border-[var(--border)] bg-[var(--background)] py-2 min-h-[44px] w-full"
                   >
                     <p className="text-xs font-medium text-[var(--muted-foreground)]">{getDocLabel(doc.file_type)}</p>
-                    <div className="absolute inset-0 flex flex-row items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="absolute inset-0 flex flex-row flex-wrap items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
                           <a
                             href={`/api/accounts/${id}/files/${encodeURIComponent(doc.file_type)}`}
                             target="_blank"
@@ -823,12 +882,24 @@ export default function SocieteDetailPage() {
                           <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
                             {uploadingDocType === doc.file_type ? "Upload…" : "Remplacer"}
                           </span>
+                          <button
+                            type="button"
+                            disabled={!!uploadingDocType || !!deletingDocType}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              void handleDeleteDoc(doc.file_type);
+                            }}
+                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                          >
+                            {deletingDocType === doc.file_type ? "…" : "Supprimer"}
+                          </button>
                     </div>
                     <input
                       type="file"
                       accept="application/pdf,image/*"
                       className="hidden"
-                      disabled={!!uploadingDocType}
+                      disabled={!!uploadingDocType || !!deletingDocType}
                       onChange={(e) => handleUploadDoc(e, doc.file_type)}
                     />
                   </label>

@@ -11,6 +11,12 @@ const ZOOM_STEP = 10;
 interface SheetFooterProps {
   saveStatus?: SaveStatus;
   saveMessage?: string;
+  /** Nombre de transactions visibles dans le tableau (filtres appliqués). */
+  visibleTransactionCount?: number;
+  /** Libellé du décompte de lignes lié à la sélection (cochées ou plage avec montant). */
+  selectionRowsLabel?: string;
+  /** Nombre de lignes comptées pour la sélection active. */
+  selectionRowsCount?: number;
   /** Niveau de zoom en % (50-150) */
   zoom?: number;
   onZoomIn?: () => void;
@@ -35,7 +41,16 @@ function CloudIcon({ className }: { className?: string }) {
   );
 }
 
-export function SheetFooter({ saveStatus = "idle", saveMessage, zoom = 100, onZoomIn, onZoomOut }: SheetFooterProps) {
+export function SheetFooter({
+  saveStatus = "idle",
+  saveMessage,
+  visibleTransactionCount,
+  selectionRowsLabel,
+  selectionRowsCount,
+  zoom = 100,
+  onZoomIn,
+  onZoomOut,
+}: SheetFooterProps) {
   const sidebar = useSidebar();
   const statusText =
     saveStatus === "saving"
@@ -57,6 +72,25 @@ export function SheetFooter({ saveStatus = "idle", saveMessage, zoom = 100, onZo
         >
           <MenuIcon className="h-4 w-4" />
         </button>
+        {visibleTransactionCount !== undefined ? (
+          <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums text-[var(--foreground)]">
+            <span>
+              Transactions affichées{" "}
+              <span className="font-medium">{visibleTransactionCount.toLocaleString("fr-FR")}</span>
+            </span>
+            {selectionRowsLabel !== undefined && selectionRowsCount !== undefined ? (
+              <>
+                <span className="text-[var(--muted-foreground)]" aria-hidden>
+                  ·
+                </span>
+                <span>
+                  {selectionRowsLabel}{" "}
+                  <span className="font-medium">{selectionRowsCount.toLocaleString("fr-FR")}</span>
+                </span>
+              </>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         <span

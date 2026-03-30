@@ -33,10 +33,12 @@ function StatBlock({
 }
 
 interface TransactionsSummaryPanelProps {
-  visibleCount: number;
-  visibleBalance: number;
-  visibleDebitsTotal: number;
-  visibleCreditsTotal: number;
+  /** Somme nette (débits négatifs, crédits positifs) des transactions du jour, filtres appliqués. */
+  todayNetTotal: number;
+  todayDebitsTotal: number;
+  todayCreditsTotal: number;
+  /** Si true, les montants portent uniquement sur les lignes qui passent les filtres du tableau. */
+  filtersNarrowingView: boolean;
   selectionStats: TransactionSelectionStats | null;
 }
 
@@ -45,16 +47,20 @@ const summaryRowClass =
 
 /** Indicateurs d’un bloc sur une ligne (wrap si besoin). À partir de `md`, vue actuelle et sélection sont côte à côte. */
 export function TransactionsSummaryPanel({
-  visibleCount,
-  visibleBalance,
-  visibleDebitsTotal,
-  visibleCreditsTotal,
+  todayNetTotal,
+  todayDebitsTotal,
+  todayCreditsTotal,
+  filtersNarrowingView,
   selectionStats,
 }: TransactionsSummaryPanelProps) {
   return (
     <section
       className="relative z-30 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-4 py-5 shadow-[0_6px_20px_rgba(13,148,136,0.08)] md:h-56 md:max-h-56 md:overflow-y-auto md:py-4"
-      aria-label="Transactions affichées et totaux"
+      aria-label={
+        filtersNarrowingView
+          ? "Totaux du jour (filtres actifs) et sélection"
+          : "Totaux du jour sur les lignes affichées et sélection"
+      }
     >
       <div
         className={
@@ -63,25 +69,39 @@ export function TransactionsSummaryPanel({
             : "flex min-h-0 items-stretch md:h-full md:items-center"
         }
       >
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-            Vue actuelle (filtres appliqués)
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col justify-center ${
+            filtersNarrowingView
+              ? "rounded-r-lg border-l-[3px] border-l-[var(--primary)] pl-3"
+              : ""
+          }`}
+        >
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+            {filtersNarrowingView ? (
+              <>Aujourd&apos;hui — selon les filtres du tableau</>
+            ) : (
+              <>Aujourd&apos;hui — toutes les lignes affichées</>
+            )}
+          </p>
+          <p className="mb-3 text-[11px] font-normal normal-case tracking-normal text-[var(--muted-foreground)]">
+            {filtersNarrowingView
+              ? "Les totaux du jour ne comptent que les transactions visibles après filtrage."
+              : "Aucun filtre actif : les totaux du jour suivent tout le tableau tel qu’affiché."}
           </p>
           <div className={summaryRowClass}>
-            <StatBlock label="Transactions affichées" value={visibleCount.toLocaleString("fr-FR")} />
             <StatBlock
-              label="Solde total"
-              value={`${formatEur(visibleBalance)} €`}
+              label="Total aujourd'hui"
+              value={`${formatEur(todayNetTotal)} €`}
               valueClassName="text-[var(--primary)]"
             />
             <StatBlock
-              label="Total des débits"
-              value={`${formatEur(visibleDebitsTotal)} €`}
+              label="Total des débits aujourd'hui"
+              value={`-${formatEur(todayDebitsTotal)} €`}
               valueClassName="text-[var(--destructive)]"
             />
             <StatBlock
-              label="Total des crédits"
-              value={`${formatEur(visibleCreditsTotal)} €`}
+              label="Total des crédits aujourd'hui"
+              value={`${formatEur(todayCreditsTotal)} €`}
               valueClassName="text-[var(--success)]"
             />
           </div>
@@ -91,14 +111,6 @@ export function TransactionsSummaryPanel({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center border-t border-[var(--border)] pt-5 md:border-t-0 md:border-l md:pl-8 md:pt-0 md:overflow-y-auto lg:pl-10">
             <p className="mb-3 shrink-0 text-sm font-medium text-[var(--muted-foreground)]">Sélection dans le tableau</p>
             <div className={`${summaryRowClass} shrink-0`}>
-              <StatBlock
-                label={
-                  selectionStats.selectedTransactionIds.length > 0
-                    ? "Lignes cochées"
-                    : "Lignes avec montant dans la sélection"
-                }
-                value={selectionStats.rowCount.toLocaleString("fr-FR")}
-              />
               <StatBlock
                 label="Somme des montants (net)"
                 value={`${formatEur(selectionStats.sum)} €`}

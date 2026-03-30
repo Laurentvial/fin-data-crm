@@ -247,6 +247,11 @@ export interface Transaction {
   bank_account_type_name?: string | null;
   /** Nom affiché : surcharge ou client du compte. */
   client_name?: string | null;
+  /** Banque du compte (table banks), depuis les jointures API. */
+  bank_name?: string | null;
+  /** Statut du compte bancaire (account_statuses), depuis les jointures API. */
+  account_status_name?: string | null;
+  account_status_emoji?: string | null;
   /** Réservé aux débits : OK, à vérifier, annulée/bloquée ; null ou absent pour crédits / vide. */
   debit_status?: DebitTransactionStatus | null;
 }

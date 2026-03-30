@@ -2,6 +2,10 @@ import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
 export interface TransactionFilterValues {
   bankFilter: { mode: "all" } | { mode: "include"; ids: string[] };
+  /** null = toutes les banques (noms d’établissement) */
+  bankNameFilter: null | { mode: "include"; names: string[] };
+  /** null = tous les statuts de compte */
+  accountStatusFilter: null | { mode: "include"; names: string[] };
   /** null = toutes les sociétés */
   companyFilter: null | { mode: "include"; names: string[] };
   dateFrom: string;
@@ -16,6 +20,8 @@ export interface TransactionFilterValues {
 
 export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
   bankFilter: { mode: "all" },
+  bankNameFilter: null,
+  accountStatusFilter: null,
   companyFilter: null,
   dateFrom: "",
   dateTo: "",
@@ -64,6 +70,20 @@ export function applyClientTransactionFilters(
       if (ids.length > 1 && !ids.includes(t.bank_account_id)) return false;
     }
 
+    if (f.bankNameFilter !== null) {
+      const names = f.bankNameFilter.names;
+      if (names.length === 0) return false;
+      const key = transactionBankNameFilterKey(t);
+      if (!names.includes(key)) return false;
+    }
+
+    if (f.accountStatusFilter !== null) {
+      const names = f.accountStatusFilter.names;
+      if (names.length === 0) return false;
+      const key = transactionAccountStatusFilterKey(t);
+      if (!names.includes(key)) return false;
+    }
+
     if (f.companyFilter !== null) {
       const names = f.companyFilter.names;
       if (names.length === 0) return false;
@@ -105,6 +125,51 @@ export const PROCESSED_BY_EMPTY_KEY = "\u2060empty\u2060";
 /** Valeur sentinelle pour société vide dans les filtres multi-sélection. */
 export const COMPANY_EMPTY_KEY = "\u2060company\u2060";
 
+/** Valeur sentinelle pour banque (nom) vide. */
+export const BANK_EMPTY_KEY = "\u2060bank\u2060";
+
+/** Valeur sentinelle pour statut de compte vide. */
+export const ACCOUNT_STATUS_EMPTY_KEY = "\u2060acctst\u2060";
+
+export function transactionBankNameFilterKey(t: Transaction): string {
+  const n = (t.bank_name ?? "").trim();
+  return n === "" ? BANK_EMPTY_KEY : n;
+}
+
+/** Clé alignée sur l’affichage tableau (emoji + nom). */
+export function transactionAccountStatusFilterKey(t: Transaction): string {
+  const emoji = (t.account_status_emoji ?? "").trim();
+  const name = (t.account_status_name ?? "").trim();
+  if (!name && !emoji) return ACCOUNT_STATUS_EMPTY_KEY;
+  return [emoji, name].filter(Boolean).join(" ").trim();
+}
+
+export function getBankNameFilterKeys(rows: Transaction[]): string[] {
+  const names = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const k = transactionBankNameFilterKey(t);
+    if (k === BANK_EMPTY_KEY) hasEmpty = true;
+    else names.add(k);
+  }
+  const list = [...names].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(BANK_EMPTY_KEY);
+  return list;
+}
+
+export function getAccountStatusFilterKeys(rows: Transaction[]): string[] {
+  const keys = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const k = transactionAccountStatusFilterKey(t);
+    if (k === ACCOUNT_STATUS_EMPTY_KEY) hasEmpty = true;
+    else keys.add(k);
+  }
+  const list = [...keys].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(ACCOUNT_STATUS_EMPTY_KEY);
+  return list;
+}
+
 export function getAllBankIdsForFilter(rows: Transaction[], bankAccounts: BankAccount[]): string[] {
   const s = new Set<string>();
   for (const ba of bankAccounts) s.add(ba.id);
@@ -140,7 +205,13 @@ export function getCompanyFilterKeys(rows: Transaction[]): string[] {
 
 export function normalizeTransactionFilters(
   f: TransactionFilterValues,
-  ctx: { allBankIds: string[]; allProcessedKeys: string[]; allCompanyKeys: string[] }
+  ctx: {
+    allBankIds: string[];
+    allBankNameKeys: string[];
+    allAccountStatusKeys: string[];
+    allProcessedKeys: string[];
+    allCompanyKeys: string[];
+  }
 ): TransactionFilterValues {
   const out: TransactionFilterValues = { ...f };
 
@@ -156,6 +227,23 @@ export function normalizeTransactionFilters(
     const types = f.typeFilter.types;
     if (types.includes("DEBIT") && types.includes("CREDIT") && types.length === 2) {
       out.typeFilter = { mode: "all" };
+    }
+  }
+
+  if (f.bankNameFilter !== null && ctx.allBankNameKeys.length > 0) {
+    const n = new Set(f.bankNameFilter.names);
+    if (ctx.allBankNameKeys.every((k) => n.has(k)) && n.size === ctx.allBankNameKeys.length) {
+      out.bankNameFilter = null;
+    }
+  }
+
+  if (f.accountStatusFilter !== null && ctx.allAccountStatusKeys.length > 0) {
+    const n = new Set(f.accountStatusFilter.names);
+    if (
+      ctx.allAccountStatusKeys.every((k) => n.has(k)) &&
+      n.size === ctx.allAccountStatusKeys.length
+    ) {
+      out.accountStatusFilter = null;
     }
   }
 
@@ -176,13 +264,29 @@ export function normalizeTransactionFilters(
   return out;
 }
 
+/** Indique si au moins un filtre du tableau restreint les lignes affichées (hors tri). */
+export function hasActiveTransactionFilters(f: TransactionFilterValues): boolean {
+  if (f.bankFilter.mode === "include") return true;
+  if (f.bankNameFilter !== null) return true;
+  if (f.accountStatusFilter !== null) return true;
+  if (f.companyFilter !== null) return true;
+  if (Boolean(f.dateFrom.trim() || f.dateTo.trim())) return true;
+  if (f.typeFilter.mode === "include") return true;
+  if (Boolean(f.descriptionContains.trim())) return true;
+  if (Boolean(f.amountMin.trim() || f.amountMax.trim())) return true;
+  if (f.processedByFilter !== null) return true;
+  return false;
+}
+
 export function columnHasActiveFilter(
   columnId: string,
   f: TransactionFilterValues
 ): boolean {
   switch (columnId) {
-    case "bank_account_name":
-      return f.bankFilter.mode === "include";
+    case "bank_name":
+      return f.bankNameFilter !== null;
+    case "account_status_name":
+      return f.accountStatusFilter !== null;
     case "company_name":
       return f.companyFilter !== null;
     case "transaction_date":

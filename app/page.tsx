@@ -20,9 +20,12 @@ import {
   applyClientTransactionFilters,
   DEFAULT_TRANSACTION_FILTERS,
   filtersToApiParams,
+  getAccountStatusFilterKeys,
   getAllBankIdsForFilter,
+  getBankNameFilterKeys,
   getCompanyFilterKeys,
   getProcessedByFilterKeys,
+  hasActiveTransactionFilters,
   normalizeTransactionFilters,
   type TransactionFilterValues,
 } from "@/lib/transaction-filters";
@@ -38,6 +41,38 @@ const TransactionsGrid = dynamic(
 function signedAmount(t: Transaction): number {
   const num = Number(t.amount);
   return (Number.isNaN(num) ? 0 : t.type === "DEBIT" ? -num : num);
+}
+
+/** Jour courant en fuseau local (YYYY-MM-DD). */
+function localTodayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Jour calendaire d’une transaction, aligné sur « aujourd’hui » local.
+ * - Si l’API envoie uniquement `YYYY-MM-DD`, on garde telle quelle (jour comptable).
+ * - Si c’est un instant ISO (avec T / Z), on prend année-mois-jour dans le fuseau du navigateur.
+ */
+function transactionCalendarDayLocal(transactionDate: string | undefined | null): string {
+  if (transactionDate == null) return "";
+  const s = String(transactionDate).trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
+  }
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) {
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1]! : "";
+  }
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
 }
 
 function HomeContent() {
@@ -100,8 +135,14 @@ function HomeContent() {
           cmp = parseDate(a.transaction_date) - parseDate(b.transaction_date);
           if (cmp === 0) cmp = parseDate(a.created_at) - parseDate(b.created_at);
           break;
-        case "bank_account_name":
-          cmp = (a.bank_account_name ?? "").localeCompare(b.bank_account_name ?? "");
+        case "account_status_name":
+          cmp = (a.account_status_name ?? "").localeCompare(b.account_status_name ?? "");
+          if (cmp === 0) {
+            cmp = (a.account_status_emoji ?? "").localeCompare(b.account_status_emoji ?? "");
+          }
+          break;
+        case "bank_name":
+          cmp = (a.bank_name ?? "").localeCompare(b.bank_name ?? "");
           break;
         case "company_name":
           cmp = (a.company_name ?? "").localeCompare(b.company_name ?? "");
@@ -147,6 +188,14 @@ function HomeContent() {
     [sortedTransactions, filterValues]
   );
 
+  /** Sous-ensemble du jour courant (après filtres) pour les totaux du bandeau. */
+  const filteredTransactionsToday = useMemo(() => {
+    const today = localTodayISO();
+    return filteredTransactions.filter(
+      (t) => transactionCalendarDayLocal(t.transaction_date) === today
+    );
+  }, [filteredTransactions]);
+
   const selectedTransactionsFromGrid = useMemo(() => {
     const ids = selectionStats?.selectedTransactionIds;
     if (!ids?.length) return [];
@@ -154,21 +203,21 @@ function HomeContent() {
     return ids.map((id) => byId.get(id)).filter((t): t is Transaction => t != null);
   }, [selectionStats, filteredTransactions]);
 
-  const filteredBalance = useMemo(() => {
-    return filteredTransactions.reduce((sum, t) => sum + signedAmount(t), 0);
-  }, [filteredTransactions]);
+  const todayNetTotal = useMemo(() => {
+    return filteredTransactionsToday.reduce((sum, t) => sum + signedAmount(t), 0);
+  }, [filteredTransactionsToday]);
 
-  const { visibleDebitsTotal, visibleCreditsTotal } = useMemo(() => {
+  const { todayDebitsTotal, todayCreditsTotal } = useMemo(() => {
     let debits = 0;
     let credits = 0;
-    for (const t of filteredTransactions) {
+    for (const t of filteredTransactionsToday) {
       const num = Number(t.amount);
       if (Number.isNaN(num)) continue;
       if (t.type === "DEBIT") debits += num;
       else credits += num;
     }
-    return { visibleDebitsTotal: debits, visibleCreditsTotal: credits };
-  }, [filteredTransactions]);
+    return { todayDebitsTotal: debits, todayCreditsTotal: credits };
+  }, [filteredTransactionsToday]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoadingBankAccounts(true);
@@ -312,10 +361,18 @@ function HomeContent() {
   const handleApplyFilters = useCallback(
     (next: TransactionFilterValues) => {
       const allBankIds = getAllBankIdsForFilter(transactions, bankAccounts);
+      const allBankNameKeys = getBankNameFilterKeys(transactions);
+      const allAccountStatusKeys = getAccountStatusFilterKeys(transactions);
       const allProcessedKeys = getProcessedByFilterKeys(transactions);
       const allCompanyKeys = getCompanyFilterKeys(transactions);
       setFilterValues(
-        normalizeTransactionFilters(next, { allBankIds, allProcessedKeys, allCompanyKeys })
+        normalizeTransactionFilters(next, {
+          allBankIds,
+          allBankNameKeys,
+          allAccountStatusKeys,
+          allProcessedKeys,
+          allCompanyKeys,
+        })
       );
     },
     [transactions, bankAccounts]
@@ -439,6 +496,8 @@ function HomeContent() {
       "ID",
       "Date",
       "Compte",
+      "Statut du compte",
+      "Banque",
       "Société",
       "Montant",
       "Type",
@@ -451,10 +510,13 @@ function HomeContent() {
     const rows = filteredTransactions.map((t) => {
       const num = Number(t.amount);
       const signed = t.type === "DEBIT" ? -num : num;
+      const statusDisplay = [t.account_status_emoji, t.account_status_name].filter(Boolean).join(" ").trim();
       return [
         t.id,
         t.transaction_date,
         t.bank_account_name ?? "",
+        statusDisplay,
+        t.bank_name ?? "",
         t.company_name ?? "",
         signed,
         t.type,
@@ -483,10 +545,10 @@ function HomeContent() {
         </div>
       )}
       <TransactionsSummaryPanel
-        visibleCount={filteredTransactions.length}
-        visibleBalance={filteredBalance}
-        visibleDebitsTotal={visibleDebitsTotal}
-        visibleCreditsTotal={visibleCreditsTotal}
+        todayNetTotal={todayNetTotal}
+        todayDebitsTotal={todayDebitsTotal}
+        todayCreditsTotal={todayCreditsTotal}
+        filtersNarrowingView={hasActiveTransactionFilters(filterValues)}
         selectionStats={selectionStats}
       />
       <SheetToolbar
@@ -547,6 +609,15 @@ function HomeContent() {
       <SheetFooter
         saveStatus={saveStatus}
         saveMessage={saveMessage}
+        visibleTransactionCount={filteredTransactions.length}
+        selectionRowsLabel={
+          selectionStats
+            ? selectionStats.selectedTransactionIds.length > 0
+              ? "Lignes cochées"
+              : "Lignes avec montant dans la sélection"
+            : undefined
+        }
+        selectionRowsCount={selectionStats?.rowCount}
         zoom={zoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}

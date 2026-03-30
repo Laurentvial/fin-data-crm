@@ -2,17 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
+import type { Transaction, TransactionType } from "@/lib/types";
 import {
   DEFAULT_TRANSACTION_TABLE_SORT,
   isDefaultTransactionTableSort,
 } from "@/lib/transaction-sort";
 import {
-  bankAccountDisplayName,
+  ACCOUNT_STATUS_EMPTY_KEY,
+  BANK_EMPTY_KEY,
   COMPANY_EMPTY_KEY,
+  getAccountStatusFilterKeys,
+  getBankNameFilterKeys,
   type TransactionFilterValues,
   PROCESSED_BY_EMPTY_KEY,
-  transactionAccountLabel,
 } from "@/lib/transaction-filters";
 
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
@@ -36,7 +38,6 @@ interface TransactionColumnFilterMenuProps {
   sortState?: { column: string; direction: "asc" | "desc" } | null;
   applied: TransactionFilterValues;
   transactionsForOptions: Transaction[];
-  bankAccounts: BankAccount[];
   onClose: () => void;
   onApply: (next: TransactionFilterValues) => void;
   onSortAsc: () => void;
@@ -69,7 +70,6 @@ export function TransactionColumnFilterMenu({
   sortState = null,
   applied,
   transactionsForOptions,
-  bankAccounts,
   onClose,
   onApply,
   onSortAsc,
@@ -90,20 +90,15 @@ export function TransactionColumnFilterMenu({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const bankOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const ba of bankAccounts) {
-      map.set(ba.id, bankAccountDisplayName(ba));
-    }
-    for (const t of transactionsForOptions) {
-      if (!map.has(t.bank_account_id)) {
-        map.set(t.bank_account_id, transactionAccountLabel(t) || t.bank_account_id);
-      }
-    }
-    return [...map.entries()]
-      .map(([id, label]) => ({ id, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, "fr"));
-  }, [bankAccounts, transactionsForOptions]);
+  const bankNameOptions = useMemo(
+    () => getBankNameFilterKeys(transactionsForOptions),
+    [transactionsForOptions]
+  );
+
+  const accountStatusOptions = useMemo(
+    () => getAccountStatusFilterKeys(transactionsForOptions),
+    [transactionsForOptions]
+  );
 
   const processedOptions = useMemo(() => {
     const names = new Set<string>();
@@ -131,11 +126,23 @@ export function TransactionColumnFilterMenu({
     return list;
   }, [transactionsForOptions]);
 
-  const filteredBankOptions = useMemo(() => {
+  const filteredBankNameOptions = useMemo(() => {
     const q = valueSearch.trim().toLowerCase();
-    if (!q) return bankOptions;
-    return bankOptions.filter((o) => o.label.toLowerCase().includes(q));
-  }, [bankOptions, valueSearch]);
+    if (!q) return bankNameOptions;
+    return bankNameOptions.filter((n) => {
+      if (n === BANK_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      return n.toLowerCase().includes(q);
+    });
+  }, [bankNameOptions, valueSearch]);
+
+  const filteredAccountStatusOptions = useMemo(() => {
+    const q = valueSearch.trim().toLowerCase();
+    if (!q) return accountStatusOptions;
+    return accountStatusOptions.filter((n) => {
+      if (n === ACCOUNT_STATUS_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      return n.toLowerCase().includes(q);
+    });
+  }, [accountStatusOptions, valueSearch]);
 
   const filteredProcessedOptions = useMemo(() => {
     const q = valueSearch.trim().toLowerCase();
@@ -176,7 +183,8 @@ export function TransactionColumnFilterMenu({
 
   /** Colonnes avec liste de valeurs : le panneau prend la hauteur dispo, seule la liste défile. */
   const valueListColumn =
-    columnId === "bank_account_name" ||
+    columnId === "bank_name" ||
+    columnId === "account_status_name" ||
     columnId === "company_name" ||
     columnId === "type" ||
     columnId === "processed_by_user_name";
@@ -244,36 +252,38 @@ export function TransactionColumnFilterMenu({
 
   let body: ReactNode = null;
 
-  if (columnId === "bank_account_name") {
+  if (columnId === "bank_name") {
+    const allNames = bankNameOptions;
     const selected =
-      draft.bankFilter.mode === "include" ? new Set(draft.bankFilter.ids) : new Set(bankOptions.map((o) => o.id));
-    const allIds = bankOptions.map((o) => o.id);
-    const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
-    const toggle = (id: string) => {
+      draft.bankNameFilter === null ? new Set(allNames) : new Set(draft.bankNameFilter.names);
+    const toggle = (name: string) => {
       const next = new Set(selected);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       setDraft({
         ...draft,
-        bankFilter: { mode: "include", ids: [...next] },
+        bankNameFilter: { mode: "include", names: [...next] },
       });
     };
     const selectAll = () =>
-      setDraft({ ...draft, bankFilter: { mode: "include", ids: [...allIds] } });
-    const clearAll = () => setDraft({ ...draft, bankFilter: { mode: "include", ids: [] } });
+      setDraft({ ...draft, bankNameFilter: { mode: "include", names: [...allNames] } });
+    const clearAll = () => setDraft({ ...draft, bankNameFilter: { mode: "include", names: [] } });
+    const displayBank = (n: string) => (n === BANK_EMPTY_KEY ? "(Vide)" : n);
     body = (
       <>
         <div className="shrink-0">
-          {sectionTitle("Filtrer par valeurs")}
+          {sectionTitle("Filtrer par banque")}
           <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
             <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
-              Tout sélectionner ({allIds.length})
+              Tout sélectionner ({allNames.length})
             </button>
             <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
               Effacer
             </button>
           </div>
-          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">Affichage de {filteredBankOptions.length}</p>
+          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">
+            Affichage de {filteredBankNameOptions.length}
+          </p>
           <div className="px-3 pb-2">
             <div className="relative">
               <input
@@ -290,25 +300,93 @@ export function TransactionColumnFilterMenu({
           </div>
         </div>
         <ul className={valueListUlClass}>
-          {filteredBankOptions.map((o) => (
-            <li key={o.id}>
+          {filteredBankNameOptions.map((n) => (
+            <li key={n}>
               <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
                 <input
                   type="checkbox"
-                  checked={selected.has(o.id)}
-                  onChange={() => toggle(o.id)}
+                  checked={selected.has(n)}
+                  onChange={() => toggle(n)}
                   className="rounded border-[var(--border)]"
                 />
-                <span className="truncate">{o.label}</span>
+                <span className="truncate">{displayBank(n)}</span>
               </label>
             </li>
           ))}
         </ul>
-        {!allSelected && (
-          <p className="shrink-0 px-3 pb-2 text-[11px] text-[var(--muted-foreground)]">
-            Plusieurs comptes : filtrage sur les lignes chargées. Un seul compte : requête serveur optimisée.
+        <p className="shrink-0 px-3 pb-2 text-[11px] text-[var(--muted-foreground)]">
+          Établissements présents dans les lignes chargées (pas les comptes individuels).
+        </p>
+      </>
+    );
+  } else if (columnId === "account_status_name") {
+    const allNames = accountStatusOptions;
+    const selected =
+      draft.accountStatusFilter === null
+        ? new Set(allNames)
+        : new Set(draft.accountStatusFilter.names);
+    const toggle = (name: string) => {
+      const next = new Set(selected);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setDraft({
+        ...draft,
+        accountStatusFilter: { mode: "include", names: [...next] },
+      });
+    };
+    const selectAll = () =>
+      setDraft({ ...draft, accountStatusFilter: { mode: "include", names: [...allNames] } });
+    const clearAll = () =>
+      setDraft({ ...draft, accountStatusFilter: { mode: "include", names: [] } });
+    const displayStatus = (n: string) => (n === ACCOUNT_STATUS_EMPTY_KEY ? "(Vide)" : n);
+    body = (
+      <>
+        <div className="shrink-0">
+          {sectionTitle("Filtrer par statut du compte")}
+          <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
+              Tout sélectionner ({allNames.length})
+            </button>
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
+              Effacer
+            </button>
+          </div>
+          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">
+            Affichage de {filteredAccountStatusOptions.length}
           </p>
-        )}
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <input
+                type="search"
+                value={valueSearch}
+                onChange={(e) => setValueSearch(e.target.value)}
+                placeholder="Rechercher…"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2 pl-3 pr-9 text-sm"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                ⌕
+              </span>
+            </div>
+          </div>
+        </div>
+        <ul className={valueListUlClass}>
+          {filteredAccountStatusOptions.map((n) => (
+            <li key={n}>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={selected.has(n)}
+                  onChange={() => toggle(n)}
+                  className="rounded border-[var(--border)]"
+                />
+                <span className="truncate">{displayStatus(n)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <p className="shrink-0 px-3 pb-2 text-[11px] text-[var(--muted-foreground)]">
+          Statuts issus du compte bancaire (lignes chargées).
+        </p>
       </>
     );
   } else if (columnId === "company_name") {

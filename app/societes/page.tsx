@@ -305,6 +305,7 @@ const INVOICE_COUNTRIES = [
   { code: "LV", label: "Lettonie" },
   { code: "PL", label: "Pologne" },
   { code: "RO", label: "Roumanie" },
+  { code: "TR", label: "Turquie" },
 ];
 
 function CompanyModal({

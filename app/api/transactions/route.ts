@@ -96,12 +96,17 @@ export async function POST(request: NextRequest) {
         bat.name AS bank_account_type_name,
         atc.name AS client_name,
         COALESCE(pu.name, ut.telegram_username) AS processed_by_user_name,
-        ba.name AS bank_account_name,
-        ba.company_id,
-        c.name AS company_name
+          ba.name AS bank_account_name,
+          ba.company_id,
+          c.name AS company_name,
+          b.name AS bank_name,
+          acc_st.name AS account_status_name,
+          acc_st.emoji AS account_status_emoji
       FROM transactions t
       LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
       LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+      LEFT JOIN banks b ON b.id = ba.bank_id
+      LEFT JOIN account_statuses acc_st ON acc_st.id = ba.account_status_id
       LEFT JOIN account_types atc ON atc.id = COALESCE(t.client_account_type_id, ba.account_type_id)
       LEFT JOIN account_types bat ON bat.id = ba.account_type_id
       LEFT JOIN companies c ON c.id::text = ba.company_id::text
@@ -162,12 +167,17 @@ export async function GET(request: NextRequest) {
           ba.name AS bank_account_name,
           ba.company_id,
           c.name AS company_name,
+          b.name AS bank_name,
+          acc_st.name AS account_status_name,
+          acc_st.emoji AS account_status_emoji,
           i.invoice_id,
           i.invoice_pdf_url,
           i.invoice_number
         FROM transactions t
         LEFT JOIN fournisseurs fn ON fn.id = t.fournisseur_id
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN banks b ON b.id = ba.bank_id
+        LEFT JOIN account_statuses acc_st ON acc_st.id = ba.account_status_id
         LEFT JOIN account_types atc ON atc.id = COALESCE(t.client_account_type_id, ba.account_type_id)
         LEFT JOIN account_types bat ON bat.id = ba.account_type_id
         LEFT JOIN companies c ON c.id::text = ba.company_id::text

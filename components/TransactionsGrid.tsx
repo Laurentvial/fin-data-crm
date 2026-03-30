@@ -18,6 +18,7 @@ import {
   type CustomCell,
   type CustomRenderer,
   type DrawArgs,
+  type HeaderClickedEventArgs,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
 import type { AccountType, BankAccount, Fournisseur, Transaction, TransactionType } from "@/lib/types";
@@ -100,12 +101,13 @@ function useResolvedTheme(): Partial<Theme> {
   return theme;
 }
 
-const AMOUNT_COL = 5; // Column index for amount (used for selection sum)
+const AMOUNT_COL = 6; // Column index for amount (used for selection sum)
 
 const SORTABLE_FIELDS = new Set<string>([
   "id",
   "transaction_date",
-  "bank_account_name",
+  "account_status_name",
+  "bank_name",
   "company_name",
   "amount",
   "type",
@@ -118,7 +120,8 @@ const SORTABLE_FIELDS = new Set<string>([
 
 const COLUMN_FILTER_IDS = new Set<string>([
   "transaction_date",
-  "bank_account_name",
+  "account_status_name",
+  "bank_name",
   "company_name",
   "amount",
   "type",
@@ -689,7 +692,8 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "rowNum",
   "id",
   "transaction_date",
-  "bank_account_name",
+  "account_status_name",
+  "bank_name",
   "company_name",
   "amount",
   "type",
@@ -760,6 +764,7 @@ export function TransactionsGrid({
   } | null>(null);
 
   const loadMoreThrottleRef = useRef(0);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
 
   const columnFiltersEnabled = Boolean(filterValues && onApplyFilters);
   const resolvedTheme = useResolvedTheme();
@@ -832,9 +837,14 @@ export function TransactionsGrid({
         id: "transaction_date",
       }),
       menuCol({
-        title: "Compte",
-        width: Math.round(200 * scale),
-        id: "bank_account_name",
+        title: "Statut du compte",
+        width: Math.round(160 * scale),
+        id: "account_status_name",
+      }),
+      menuCol({
+        title: "Banque",
+        width: Math.round(160 * scale),
+        id: "bank_name",
       }),
       menuCol({
         title: "Société",
@@ -950,8 +960,20 @@ export function TransactionsGrid({
           allowOverlay: true,
         };
       }
-      if (field === "bank_account_name") {
-        const val = txn.bank_account_name ?? "";
+      if (field === "account_status_name") {
+        const emoji = (txn.account_status_emoji ?? "").trim();
+        const name = txn.account_status_name ?? "";
+        const val = [emoji, name].filter(Boolean).join(" ").trim();
+        return {
+          kind: GridCellKind.Text,
+          data: val,
+          displayData: val,
+          allowOverlay: false,
+          readonly: true,
+        };
+      }
+      if (field === "bank_name") {
+        const val = txn.bank_name ?? "";
         return {
           kind: GridCellKind.Text,
           data: val,
@@ -1126,7 +1148,8 @@ export function TransactionsGrid({
       if (
         field === "rowNum" ||
         field === "id" ||
-        field === "bank_account_name" ||
+        field === "account_status_name" ||
+        field === "bank_name" ||
         field === "company_name" ||
         field === "created_at" ||
         field === "processed_by_user_name"
@@ -1214,7 +1237,7 @@ export function TransactionsGrid({
     [transactions, onCellValueChanged, onDelete]
   );
 
-  const onGridSelectionChange = useCallback(
+  const updateSelectionAndStats = useCallback(
     (newSelection: GridSelection) => {
       setSelection(newSelection);
 
@@ -1246,20 +1269,12 @@ export function TransactionsGrid({
         }
       };
 
-      if (checkedRows.length > 0) {
-        for (const row of checkedRows) {
-          if (row < 0 || row >= transactions.length) continue;
-          const txn = transactions[row];
-          if (!txn) continue;
-          rowCount += 1;
-          addTxnTotals(txn);
-        }
-      } else if (hasRect && current?.range) {
-        const ranges = [current.range, ...(current.rangeStack ?? [])];
+      const accumulateFromColumnRects = (
+        rects: readonly { x: number; y: number; width: number; height: number }[]
+      ) => {
         const rowSet = new Set<number>();
         const numCols = COL_FIELDS.length;
-
-        for (const rect of ranges) {
+        for (const rect of rects) {
           const { x, y, width, height } = rect;
           for (let row = y; row < y + height; row++) {
             if (row < 0 || row >= transactions.length) continue;
@@ -1280,9 +1295,30 @@ export function TransactionsGrid({
           }
         }
         rowCount = rowSet.size;
+      };
+
+      if (checkedRows.length > 0) {
+        for (const row of checkedRows) {
+          if (row < 0 || row >= transactions.length) continue;
+          const txn = transactions[row];
+          if (!txn) continue;
+          rowCount += 1;
+          addTxnTotals(txn);
+        }
+      } else if (hasRect && current?.range) {
+        const ranges = [current.range, ...(current.rangeStack ?? [])];
+        accumulateFromColumnRects(ranges);
+      } else if (newSelection.columns.length > 0) {
+        const ranges = newSelection.columns.toArray().map((x) => ({
+          x,
+          y: 0,
+          width: 1,
+          height: transactions.length,
+        }));
+        accumulateFromColumnRects(ranges);
       }
 
-      if (checkedRows.length === 0 && !hasRect) {
+      if (checkedRows.length === 0 && !hasRect && newSelection.columns.length === 0) {
         onSelectionStatsChange(null);
         return;
       }
@@ -1296,6 +1332,63 @@ export function TransactionsGrid({
       });
     },
     [transactions, onSelectionStatsChange]
+  );
+
+  const onGridSelectionChange = useCallback(
+    (newSelection: GridSelection) => {
+      updateSelectionAndStats(newSelection);
+    },
+    [updateSelectionAndStats]
+  );
+
+  /** Clic en dehors du tableau (comme Google Sheets) : réinitialiser la sélection. */
+  useEffect(() => {
+    if (!onSelectionStatsChange) return;
+    const empty: GridSelection = {
+      columns: CompactSelection.empty(),
+      rows: CompactSelection.empty(),
+      current: undefined,
+    };
+    const onDocMouseDown = (e: MouseEvent) => {
+      const root = gridContainerRef.current;
+      if (!root) return;
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (root.contains(t)) return;
+      const el = t instanceof Element ? t : null;
+      if (el?.closest("#portal")) return;
+      if (el?.closest('[role="dialog"]')) return;
+
+      updateSelectionAndStats(empty);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [onSelectionStatsChange, updateSelectionAndStats]);
+
+  /** Sélection type tableur : tout le corps de la colonne (rectangle), pas seulement l’en-tête. */
+  const onHeaderClicked = useCallback(
+    (colIndex: number, event: HeaderClickedEventArgs) => {
+      if (!onSelectionStatsChange || event.button !== 0) return;
+      const n = transactions.length;
+      const next: GridSelection =
+        n === 0
+          ? {
+              columns: CompactSelection.empty(),
+              rows: CompactSelection.empty(),
+              current: undefined,
+            }
+          : {
+              columns: CompactSelection.empty(),
+              rows: CompactSelection.empty(),
+              current: {
+                cell: [colIndex, 0],
+                range: { x: colIndex, y: 0, width: 1, height: n },
+                rangeStack: [],
+              },
+            };
+      updateSelectionAndStats(next);
+    },
+    [transactions.length, onSelectionStatsChange, updateSelectionAndStats]
   );
 
   const onCellClicked = useCallback(
@@ -1418,7 +1511,7 @@ export function TransactionsGrid({
   );
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col">
+    <div ref={gridContainerRef} className="flex min-h-0 w-full flex-1 flex-col">
       <div className="flex h-full min-h-[400px] w-full flex-col overflow-hidden rounded-md border border-[var(--border)]">
         {loading ? (
           <div className="flex h-full min-h-[400px] flex-1 items-center justify-center text-[var(--muted-foreground)]">
@@ -1438,6 +1531,7 @@ export function TransactionsGrid({
                 onItemHovered={onItemHovered}
                 onCellEdited={onCellValueChanged ? onCellEdited : undefined}
                 onCellClicked={onCellClicked}
+                onHeaderClicked={onSelectionStatsChange ? onHeaderClicked : undefined}
                 onHeaderMenuClick={columnFiltersEnabled ? onHeaderMenuClickHandler : undefined}
                 gridSelection={onSelectionStatsChange ? selection : undefined}
                 onGridSelectionChange={onSelectionStatsChange ? onGridSelectionChange : undefined}
@@ -1484,7 +1578,6 @@ export function TransactionsGrid({
           sortState={sortState}
           applied={filterValues}
           transactionsForOptions={transactionsForFilterOptions}
-          bankAccounts={bankAccounts}
           onClose={() => setFilterMenu(null)}
           onApply={onApplyFilters}
           onSortAsc={() => {
