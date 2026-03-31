@@ -699,12 +699,12 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "company_name",
   "amount",
   "type",
-  "debit_status",
   "description",
   "fournisseur_id",
   "client_account_type_id",
   "created_at",
   "processed_by_user_name",
+  "debit_status",
   "invoice",
   "delete",
 ];
@@ -862,11 +862,6 @@ export function TransactionsGrid({
       }),
       menuCol({ title: "Type", width: Math.round(80 * scale), id: "type" }),
       menuCol({
-        title: "Statut",
-        width: Math.round(168 * scale),
-        id: "debit_status",
-      }),
-      menuCol({
         title: "Description",
         width: 220,
         grow: 1,
@@ -892,6 +887,11 @@ export function TransactionsGrid({
         title: "Ajouté par",
         width: Math.round(140 * scale),
         id: "processed_by_user_name",
+      }),
+      menuCol({
+        title: "État",
+        width: Math.round(168 * scale),
+        id: "debit_status",
       }),
     ];
     cols.push({ title: "Facture", width: Math.round(118 * scale), id: "invoice" });

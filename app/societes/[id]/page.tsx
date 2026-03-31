@@ -13,6 +13,7 @@ import {
   operateurToSelectValue,
 } from "@/lib/french-mobile-operators";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
+import { COUNTRY_LABELS_FR } from "@/lib/countries-fr";
 import type {
   AccountStatus,
   AccountType,
@@ -25,20 +26,6 @@ import type {
   Transaction,
   IbanItem,
 } from "@/lib/types";
-
-const COUNTRY_LABELS: Record<string, string> = {
-  FR: "France",
-  BE: "Belgique",
-  CO: "Colombie",
-  CH: "Suisse",
-  PT: "Portugal",
-  ES: "Espagne",
-  LV: "Lettonie",
-  TR: "Turquie",
-  DZ: "Algérie",
-  TN: "Tunisie",
-  AO: "Angola",
-};
 
 function formatDateDisplay(iso: string | null | undefined): string {
   if (!iso?.trim()) return "—";
@@ -958,7 +945,7 @@ export default function SocieteDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays</dt>
-                      <dd className="text-base">{company?.country_code ? (COUNTRY_LABELS[company.country_code] ?? company.country_code) : "—"}</dd>
+                      <dd className="text-base">{company?.country_code ? (COUNTRY_LABELS_FR[company.country_code] ?? company.country_code) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Siret</dt>
@@ -1007,7 +994,7 @@ export default function SocieteDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays</dt>
-                      <dd className="text-base">{company?.gerant_pays ? (COUNTRY_LABELS[company.gerant_pays] ?? company.gerant_pays) : "—"}</dd>
+                      <dd className="text-base">{company?.gerant_pays ? (COUNTRY_LABELS_FR[company.gerant_pays] ?? company.gerant_pays) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Date de naissance</dt>
@@ -1023,7 +1010,7 @@ export default function SocieteDetailPage() {
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays de naissance</dt>
-                      <dd className="text-base">{company?.gerant_pays_naissance ? (COUNTRY_LABELS[company.gerant_pays_naissance] ?? company.gerant_pays_naissance) : "—"}</dd>
+                      <dd className="text-base">{company?.gerant_pays_naissance ? (COUNTRY_LABELS_FR[company.gerant_pays_naissance] ?? company.gerant_pays_naissance) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° fiscal</dt>

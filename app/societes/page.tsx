@@ -8,6 +8,7 @@ import { Select } from "@/components/Select";
 import type { Bank, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
+import { PAYS_NAISSANCE_OPTIONS } from "@/lib/countries-fr";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -293,28 +294,6 @@ function CompanyCardMenu({
   );
 }
 
-const INVOICE_COUNTRIES = [
-  { code: "FR", label: "France" },
-  { code: "BE", label: "Belgique" },
-  { code: "CO", label: "Colombie" },
-  { code: "CH", label: "Suisse" },
-  { code: "PT", label: "Portugal" },
-  { code: "ES", label: "Espagne" },
-  { code: "US", label: "États-Unis" },
-  { code: "IT", label: "Italie" },
-  { code: "LV", label: "Lettonie" },
-  { code: "PL", label: "Pologne" },
-  { code: "RO", label: "Roumanie" },
-  { code: "TR", label: "Turquie" },
-];
-
-const PAYS_NAISSANCE_OPTIONS = [
-  ...INVOICE_COUNTRIES,
-  { code: "DZ", label: "Algérie" },
-  { code: "TN", label: "Tunisie" },
-  { code: "AO", label: "Angola" },
-];
-
 function CompanyModal({
   title,
   name,
@@ -551,7 +530,7 @@ function CompanyModal({
               value={countryCode}
               onChange={(e) => onCountryCodeChange?.(e.target.value)}
             >
-              {INVOICE_COUNTRIES.map((c) => (
+              {PAYS_NAISSANCE_OPTIONS.map((c) => (
                 <option key={c.code} value={c.code}>{c.label}</option>
               ))}
             </Select>
@@ -713,7 +692,7 @@ function CompanyModal({
                   onChange={(e) => onGerantPaysChange(e.target.value || "")}
                 >
                   <option value="">—</option>
-                  {INVOICE_COUNTRIES.map((c) => (
+                  {PAYS_NAISSANCE_OPTIONS.map((c) => (
                     <option key={c.code} value={c.code}>{c.label}</option>
                   ))}
                 </Select>

@@ -211,6 +211,11 @@ export interface BankAccount {
   company_phone_id?: string | null;
   company_email?: string | null;
   company_phone?: string | null;
+  /** @deprecated Ancien champ texte société ; préférer `company_source_id`. */
+  company_fournisseur?: string | null;
+  /** Source (fiche société) liée à la société du compte — catalogue `sources`. */
+  company_source_id?: string | null;
+  company_source_name?: string | null;
   balance?: number;
   created_at: string;
   updated_at: string;

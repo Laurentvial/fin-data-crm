@@ -53,6 +53,9 @@ export async function GET(
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
+        c.source_id AS company_source_id,
+        src.name AS company_source_name,
+        c.fournisseur AS company_fournisseur,
         COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
         EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = ba.bank_id AND bf.file_type = 'logo') AS has_logo,
         EXISTS(SELECT 1 FROM bank_account_files baf WHERE baf.bank_account_id = ba.id AND baf.file_type = 'rib') AS has_rib,
@@ -75,7 +78,7 @@ export async function GET(
       LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.company_id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, at.emoji, ast.name, ast.emoji, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, b.name, at.name, at.emoji, ast.name, ast.emoji, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name, c.source_id, src.name, c.fournisseur
       ORDER BY ba.name
     `;
     return NextResponse.json(rows);

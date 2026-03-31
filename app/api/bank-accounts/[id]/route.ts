@@ -49,6 +49,9 @@ export async function GET(
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
+        c.source_id AS company_source_id,
+        src.name AS company_source_name,
+        c.fournisseur AS company_fournisseur,
         COALESCE(SUM(CASE WHEN t.type = 'DEBIT' THEN -t.amount ELSE t.amount END), 0)::float AS balance,
         EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = ba.bank_id AND bf.file_type = 'logo') AS has_logo,
         EXISTS(SELECT 1 FROM bank_account_files baf WHERE baf.bank_account_id = ba.id AND baf.file_type = 'rib') AS has_rib,
@@ -66,6 +69,7 @@ export async function GET(
         ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN sources src ON src.id = c.source_id
       LEFT JOIN company_emails ce ON ce.id = ba.company_email_id
       LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id
@@ -73,7 +77,7 @@ export async function GET(
       LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id
       LEFT JOIN transactions t ON t.bank_account_id = ba.id
       WHERE ba.id = ${id}
-      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, at.emoji, ast.name, ast.emoji, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name
+      GROUP BY ba.id, ba.company_id, ba.name, ba.telegram_chat_id, ba.bank_id, ba.account_type_id, ba.account_status_id, ba.login, ba.password, ba.pin_code, ba.plafond_limit, ba.company_email_id, ba.company_phone_id, ce.email, cp.phone, b.name, b.url, at.name, at.emoji, ast.name, ast.emoji, ast.background_color, ast.background_opacity, ba.created_at, ba.updated_at, c.name, c.source_id, src.name, c.fournisseur
     `;
     if (!row) {
       return NextResponse.json(
@@ -329,6 +333,9 @@ export async function PATCH(
         ba.created_at,
         ba.updated_at,
         c.name AS company_name,
+        c.source_id AS company_source_id,
+        src.name AS company_source_name,
+        c.fournisseur AS company_fournisseur,
         EXISTS(SELECT 1 FROM bank_account_files baf WHERE baf.bank_account_id = ba.id AND baf.file_type = 'rib') AS has_rib,
         COALESCE(
           (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)
@@ -344,6 +351,7 @@ export async function PATCH(
         ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN sources src ON src.id = c.source_id
       LEFT JOIN company_emails ce ON ce.id = ba.company_email_id
       LEFT JOIN company_phones cp ON cp.id = ba.company_phone_id
       LEFT JOIN banks b ON b.id = ba.bank_id

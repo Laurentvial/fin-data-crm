@@ -111,6 +111,103 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
+const BALANCE_FILTER_EPS = 1e-6;
+
+/** Filtre société : source (catalogue) ou ancien champ texte `fournisseur`. */
+function bankAccountFournisseurFacetKey(ba: BankAccount): string {
+  if (ba.company_source_id) return `s:${ba.company_source_id}`;
+  const leg = (ba.company_fournisseur ?? "").trim();
+  if (leg) return `l:${encodeURIComponent(leg)}`;
+  return "";
+}
+
+function bankAccountFournisseurFacetLabel(ba: BankAccount): string {
+  const src = (ba.company_source_name ?? "").trim();
+  if (src) return src;
+  return (ba.company_fournisseur ?? "").trim();
+}
+
+function formatBalanceFilterEur(n: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "auto",
+  }).format(n);
+}
+
+function balanceSliderStepFromSpan(span: number): number {
+  const s = Math.abs(span);
+  if (!Number.isFinite(s) || s < 1e-9) return 0.01;
+  if (s > 500_000) return 1000;
+  if (s > 50_000) return 100;
+  if (s > 5_000) return 10;
+  if (s > 500) return 1;
+  return 0.01;
+}
+
+function BalanceAmountRangeControls({
+  extent,
+  rangeMin,
+  rangeMax,
+  step,
+  onMinChange,
+  onMaxChange,
+}: {
+  extent: { min: number; max: number };
+  rangeMin: number;
+  rangeMax: number;
+  step: number;
+  onMinChange: (v: number) => void;
+  onMaxChange: (v: number) => void;
+}) {
+  if (extent.max - extent.min < 1e-9) return null;
+  return (
+    <div className="mt-4 w-full border-t border-[var(--border)] pt-4">
+      <p className="mb-3 text-xs font-medium text-[var(--foreground)]">
+        Fourchette de solde (€)
+      </p>
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 flex justify-between gap-2 text-xs text-[var(--muted-foreground)]">
+            <span>Minimum</span>
+            <span className="tabular-nums text-[var(--foreground)]">
+              {formatBalanceFilterEur(rangeMin)}
+            </span>
+          </label>
+          <input
+            type="range"
+            min={extent.min}
+            max={extent.max}
+            step={step}
+            value={rangeMin}
+            onChange={(e) => onMinChange(Number(e.target.value))}
+            className="h-2 w-full cursor-pointer accent-[var(--primary)]"
+            aria-label="Solde minimum"
+          />
+        </div>
+        <div>
+          <label className="mb-1 flex justify-between gap-2 text-xs text-[var(--muted-foreground)]">
+            <span>Maximum</span>
+            <span className="tabular-nums text-[var(--foreground)]">
+              {formatBalanceFilterEur(rangeMax)}
+            </span>
+          </label>
+          <input
+            type="range"
+            min={extent.min}
+            max={extent.max}
+            step={step}
+            value={rangeMax}
+            onChange={(e) => onMaxChange(Number(e.target.value))}
+            className="h-2 w-full cursor-pointer accent-[var(--primary)]"
+            aria-label="Solde maximum"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function displayName(ba: BankAccount): string {
   return ba.company_name !== ba.name ? `${ba.name} – ${ba.company_name}` : ba.name;
 }
@@ -1001,7 +1098,86 @@ function AccountsPageContent() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [search, setSearch] = useState("");
+  const [accountsSortMode, setAccountsSortMode] = useState<
+    "alpha" | "balance_asc" | "balance_desc" | "status"
+  >("alpha");
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+  const [accountsFilterPanel, setAccountsFilterPanel] = useState<
+    "hub" | "banks" | "status" | "fournisseur" | "client" | "balance"
+  >("hub");
+  const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
+  /** Type de compte (« Client » dans création / édition compte) = `account_type_id`. */
+  const [selectedAccountTypeFilterId, setSelectedAccountTypeFilterId] = useState<string | null>(
+    null
+  );
+  /** null = tous ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent(texte) */
+  const [selectedFournisseurKey, setSelectedFournisseurKey] = useState<string | null>(null);
+  const [balanceBucket, setBalanceBucket] = useState<"all" | "negative" | "zero" | "positive">("all");
+
+  const balanceExtent = useMemo(() => {
+    if (bankAccounts.length === 0) return { min: 0, max: 0 };
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (const ba of bankAccounts) {
+      const b = ba.balance ?? 0;
+      if (b < minV) minV = b;
+      if (b > maxV) maxV = b;
+    }
+    if (!Number.isFinite(minV) || !Number.isFinite(maxV)) return { min: 0, max: 0 };
+    if (Math.abs(maxV - minV) < BALANCE_FILTER_EPS) {
+      const pad = Math.max(100, Math.abs(minV) * 0.05 + 1);
+      minV -= pad;
+      maxV += pad;
+    }
+    return { min: minV, max: maxV };
+  }, [bankAccounts]);
+
+  const [balanceRangeMin, setBalanceRangeMin] = useState(0);
+  const [balanceRangeMax, setBalanceRangeMax] = useState(0);
+
+  useEffect(() => {
+    setBalanceRangeMin(balanceExtent.min);
+    setBalanceRangeMax(balanceExtent.max);
+  }, [balanceExtent.min, balanceExtent.max]);
+
+  const balanceSliderStep = useMemo(
+    () => balanceSliderStepFromSpan(balanceExtent.max - balanceExtent.min),
+    [balanceExtent.min, balanceExtent.max]
+  );
+
+  const balanceRangeFilterActive = useMemo(() => {
+    if (bankAccounts.length === 0) return false;
+    const span = balanceExtent.max - balanceExtent.min;
+    const tol = Math.max(0.01, span * 1e-9);
+    return (
+      balanceRangeMin > balanceExtent.min + tol ||
+      balanceRangeMax < balanceExtent.max - tol
+    );
+  }, [
+    bankAccounts.length,
+    balanceExtent.min,
+    balanceExtent.max,
+    balanceRangeMin,
+    balanceRangeMax,
+  ]);
+
+  const onBalanceRangeMinChange = useCallback(
+    (v: number) => {
+      const x = Math.min(Math.max(v, balanceExtent.min), balanceExtent.max);
+      setBalanceRangeMin(x);
+      setBalanceRangeMax((prev) => (x > prev ? x : prev));
+    },
+    [balanceExtent.min, balanceExtent.max]
+  );
+
+  const onBalanceRangeMaxChange = useCallback(
+    (v: number) => {
+      const x = Math.min(Math.max(v, balanceExtent.min), balanceExtent.max);
+      setBalanceRangeMax(x);
+      setBalanceRangeMin((prev) => (x < prev ? x : prev));
+    },
+    [balanceExtent.min, balanceExtent.max]
+  );
 
   const filteredBankAccounts = useMemo(() => {
     let list = bankAccounts;
@@ -1020,8 +1196,121 @@ function AccountsPageContent() {
         list = list.filter((ba) => ba.bank_id === selectedBankId);
       }
     }
+    if (selectedStatusId !== null) {
+      list = list.filter((ba) => ba.account_status_id === selectedStatusId);
+    }
+    if (selectedAccountTypeFilterId !== null) {
+      if (selectedAccountTypeFilterId === "") {
+        list = list.filter((ba) => !ba.account_type_id);
+      } else {
+        list = list.filter((ba) => ba.account_type_id === selectedAccountTypeFilterId);
+      }
+    }
+    if (selectedFournisseurKey !== null) {
+      if (selectedFournisseurKey === "") {
+        list = list.filter((ba) => bankAccountFournisseurFacetKey(ba) === "");
+      } else if (selectedFournisseurKey.startsWith("s:")) {
+        const id = selectedFournisseurKey.slice(2);
+        list = list.filter((ba) => ba.company_source_id === id);
+      } else if (selectedFournisseurKey.startsWith("l:")) {
+        let raw: string;
+        try {
+          raw = decodeURIComponent(selectedFournisseurKey.slice(2));
+        } catch {
+          raw = selectedFournisseurKey.slice(2);
+        }
+        list = list.filter(
+          (ba) =>
+            !ba.company_source_id &&
+            (ba.company_fournisseur ?? "").trim() === raw
+        );
+      }
+    }
+    if (balanceBucket !== "all") {
+      list = list.filter((ba) => {
+        const bal = ba.balance ?? 0;
+        if (balanceBucket === "negative") return bal < -BALANCE_FILTER_EPS;
+        if (balanceBucket === "zero") return Math.abs(bal) < BALANCE_FILTER_EPS;
+        if (balanceBucket === "positive") return bal > BALANCE_FILTER_EPS;
+        return true;
+      });
+    }
+    if (balanceRangeFilterActive) {
+      list = list.filter((ba) => {
+        const bal = ba.balance ?? 0;
+        return bal >= balanceRangeMin - 1e-9 && bal <= balanceRangeMax + 1e-9;
+      });
+    }
     return list;
-  }, [bankAccounts, search, selectedBankId]);
+  }, [
+    bankAccounts,
+    search,
+    selectedBankId,
+    selectedStatusId,
+    selectedAccountTypeFilterId,
+    selectedFournisseurKey,
+    balanceBucket,
+    balanceRangeFilterActive,
+    balanceRangeMin,
+    balanceRangeMax,
+  ]);
+
+  const accountStatusSortOrder = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of accountStatuses) {
+      m.set(s.id, s.sort_order);
+    }
+    return m;
+  }, [accountStatuses]);
+
+  const sortedBankAccounts = useMemo(() => {
+    const list = [...filteredBankAccounts];
+    const cmpName = (a: BankAccount, b: BankAccount) => {
+      const na = displayName(a).toLowerCase();
+      const nb = displayName(b).toLowerCase();
+      return na.localeCompare(nb, "fr");
+    };
+    switch (accountsSortMode) {
+      case "alpha":
+        list.sort(cmpName);
+        break;
+      case "balance_asc":
+        list.sort((a, b) => {
+          const d = (a.balance ?? 0) - (b.balance ?? 0);
+          if (d !== 0) return d;
+          return cmpName(a, b);
+        });
+        break;
+      case "balance_desc":
+        list.sort((a, b) => {
+          const d = (b.balance ?? 0) - (a.balance ?? 0);
+          if (d !== 0) return d;
+          return cmpName(a, b);
+        });
+        break;
+      case "status": {
+        const rank = (ba: BankAccount) => {
+          if (!ba.account_status_id) return 99_999;
+          return accountStatusSortOrder.get(ba.account_status_id) ?? 9_999;
+        };
+        list.sort((a, b) => {
+          const ra = rank(a);
+          const rb = rank(b);
+          if (ra !== rb) return ra - rb;
+          const ns = (a.account_status_name ?? "").localeCompare(
+            b.account_status_name ?? "",
+            "fr"
+          );
+          if (ns !== 0) return ns;
+          return cmpName(a, b);
+        });
+        break;
+      }
+      default:
+        break;
+    }
+    return list;
+  }, [filteredBankAccounts, accountsSortMode, accountStatusSortOrder]);
 
   const banksWithCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1049,6 +1338,158 @@ function AccountsPageContent() {
     if (noBankCount > 0) result.push({ id: "", name: "Sans banque", count: noBankCount, hasLogo: false });
     return result;
   }, [banks, bankAccounts]);
+
+  const statusesWithCounts = useMemo(() => {
+    const m = new Map<
+      string,
+      { id: string; name: string; emoji?: string | null; count: number }
+    >();
+    for (const ba of bankAccounts) {
+      const id = ba.account_status_id;
+      if (!id) continue;
+      const cur = m.get(id);
+      if (cur) cur.count += 1;
+      else
+        m.set(id, {
+          id,
+          name: ba.account_status_name ?? "—",
+          emoji: ba.account_status_emoji,
+          count: 1,
+        });
+    }
+    const rows = [...m.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "fr")
+    );
+    return [
+      {
+        id: "__all__" as const,
+        name: "Tous les statuts",
+        emoji: null as string | null,
+        count: bankAccounts.length,
+      },
+      ...rows,
+    ];
+  }, [bankAccounts]);
+
+  const accountTypesWithFilterCounts = useMemo(() => {
+    const m = new Map<
+      string,
+      { id: string; name: string; emoji?: string | null; count: number }
+    >();
+    let sansClient = 0;
+    for (const ba of bankAccounts) {
+      const id = ba.account_type_id;
+      if (!id) {
+        sansClient += 1;
+        continue;
+      }
+      const cur = m.get(id);
+      if (cur) cur.count += 1;
+      else
+        m.set(id, {
+          id,
+          name: ba.account_type_name ?? "—",
+          emoji: ba.account_type_emoji,
+          count: 1,
+        });
+    }
+    const rows = [...m.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "fr")
+    );
+    const result: { id: string; name: string; emoji?: string | null; count: number }[] = [
+      {
+        id: "__all__",
+        name: "Tous les clients",
+        emoji: null as string | null,
+        count: bankAccounts.length,
+      },
+    ];
+    if (sansClient > 0) {
+      result.push({
+        id: "",
+        name: "Aucun client",
+        emoji: null,
+        count: sansClient,
+      });
+    }
+    result.push(...rows);
+    return result;
+  }, [bankAccounts]);
+
+  const fournisseursWithCounts = useMemo(() => {
+    const meta = new Map<string, { label: string; count: number }>();
+    for (const ba of bankAccounts) {
+      const key = bankAccountFournisseurFacetKey(ba);
+      const label =
+        key === ""
+          ? "Sans source ni fournisseur (société)"
+          : bankAccountFournisseurFacetLabel(ba);
+      const cur = meta.get(key);
+      if (cur) cur.count += 1;
+      else meta.set(key, { label, count: 1 });
+    }
+    const keys = [...meta.keys()].filter((k) => k !== "").sort((a, b) => {
+      const la = meta.get(a)!.label;
+      const lb = meta.get(b)!.label;
+      return la.localeCompare(lb, "fr");
+    });
+    const rows: { key: string; label: string; count: number }[] = [
+      {
+        key: "__all__",
+        label: "Tous les fournisseurs / sources",
+        count: bankAccounts.length,
+      },
+    ];
+    if (meta.has("")) {
+      rows.push({
+        key: "",
+        label: "Sans source ni fournisseur (société)",
+        count: meta.get("")!.count,
+      });
+    }
+    for (const key of keys) {
+      const m = meta.get(key)!;
+      rows.push({ key, label: m.label, count: m.count });
+    }
+    return rows;
+  }, [bankAccounts]);
+
+  const balanceBucketsWithCounts = useMemo(() => {
+    let neg = 0;
+    let zero = 0;
+    let pos = 0;
+    for (const ba of bankAccounts) {
+      const bal = ba.balance ?? 0;
+      if (bal < -BALANCE_FILTER_EPS) neg += 1;
+      else if (bal > BALANCE_FILTER_EPS) pos += 1;
+      else zero += 1;
+    }
+    return [
+      { id: "all" as const, label: "Tous les soldes", count: bankAccounts.length },
+      { id: "negative" as const, label: "Solde négatif", count: neg },
+      { id: "zero" as const, label: "Solde nul", count: zero },
+      { id: "positive" as const, label: "Solde positif", count: pos },
+    ];
+  }, [bankAccounts]);
+
+  const hasActiveAccountFilters =
+    selectedBankId !== null ||
+    selectedStatusId !== null ||
+    selectedAccountTypeFilterId !== null ||
+    selectedFournisseurKey !== null ||
+    balanceBucket !== "all" ||
+    balanceRangeFilterActive;
+
+  const resetAccountFilters = useCallback(() => {
+    setSelectedBankId(null);
+    setSelectedStatusId(null);
+    setSelectedAccountTypeFilterId(null);
+    setSelectedFournisseurKey(null);
+    setBalanceBucket("all");
+    setBalanceRangeMin(balanceExtent.min);
+    setBalanceRangeMax(balanceExtent.max);
+    setAccountsFilterPanel("hub");
+  }, [balanceExtent.min, balanceExtent.max]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoading(true);
@@ -1430,6 +1871,9 @@ function AccountsPageContent() {
                 company_phone_id: updated.company_phone_id ?? undefined,
                 company_email: updated.company_email ?? undefined,
                 company_phone: updated.company_phone ?? undefined,
+                company_source_id: updated.company_source_id ?? undefined,
+                company_source_name: updated.company_source_name ?? undefined,
+                company_fournisseur: updated.company_fournisseur ?? undefined,
               }
             : ba
         )
@@ -1443,51 +1887,173 @@ function AccountsPageContent() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="flex flex-1 overflow-hidden">
-        <main
-          className={`min-w-0 flex-1 overflow-auto p-6 ${bankAccounts.length > 0 && banksWithCounts.length > 1 ? "lg:mr-56" : ""}`}
-        >
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
-              <BuildingIcon className="h-6 w-6" />
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-row">
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
+                <BuildingIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <h1 className="page-title text-2xl font-semibold">Comptes bancaires</h1>
+                <p className="text-sm text-[var(--muted-foreground)]">Gérez vos comptes et transactions</p>
+              </div>
             </div>
-            <div>
-              <h1 className="page-title text-2xl font-semibold">Comptes bancaires</h1>
-              <p className="text-sm text-[var(--muted-foreground)]">Gérez vos comptes et transactions</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
             {bankAccounts.length > 0 && (
               <>
-                <input
-                  type="search"
-                  placeholder="Rechercher par nom de compte ou société…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
-                  aria-label="Rechercher par nom de compte ou société"
-                />
-                {banksWithCounts.length > 1 && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="search"
+                    placeholder="Rechercher par nom de compte ou société…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full min-w-0 max-w-xl rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:max-w-md"
+                    aria-label="Rechercher par nom de compte ou société"
+                  />
+                  {hasActiveAccountFilters && (
+                    <button
+                      type="button"
+                      onClick={resetAccountFilters}
+                      className="inline-flex shrink-0 items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                    >
+                      Réinitialiser les filtres
+                    </button>
+                  )}
+                  <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
+                    <span className="shrink-0 font-medium text-[var(--foreground)]">Trier</span>
+                    <select
+                      value={accountsSortMode}
+                      onChange={(e) =>
+                        setAccountsSortMode(
+                          e.target.value as typeof accountsSortMode
+                        )
+                      }
+                      className="min-w-[12rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Trier la liste des comptes"
+                    >
+                      <option value="alpha">Alphabétique</option>
+                      <option value="balance_asc">Solde croissant</option>
+                      <option value="balance_desc">Solde décroissant</option>
+                      <option value="status">Par statuts</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 lg:hidden">
+                  {banksWithCounts.length > 1 && (
+                    <select
+                      value={selectedBankId ?? "__all__"}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setSelectedBankId(v === "__all__" ? null : v);
+                      }}
+                      className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par banque"
+                    >
+                      {banksWithCounts.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          Banque · {item.name} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {statusesWithCounts.length > 1 && (
+                    <select
+                      value={selectedStatusId ?? "__all__"}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setSelectedStatusId(v === "__all__" ? null : v);
+                      }}
+                      className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par statut"
+                    >
+                      {statusesWithCounts.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          Statut · {item.name} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {accountTypesWithFilterCounts.length > 1 && (
+                    <select
+                      value={selectedAccountTypeFilterId ?? "__all__"}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setSelectedAccountTypeFilterId(v === "__all__" ? null : v);
+                      }}
+                      className="min-w-[10rem] max-w-[16rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par client (type de compte)"
+                    >
+                      {accountTypesWithFilterCounts.map((item) => (
+                        <option
+                          key={item.id === "" ? "__aucun_client__" : item.id}
+                          value={item.id}
+                        >
+                          Client · {item.name} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {fournisseursWithCounts.length > 1 && (
+                    <select
+                      value={
+                        selectedFournisseurKey === null
+                          ? "__all__"
+                          : selectedFournisseurKey === ""
+                            ? "__empty__"
+                            : selectedFournisseurKey
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__all__") setSelectedFournisseurKey(null);
+                        else if (v === "__empty__") setSelectedFournisseurKey("");
+                        else setSelectedFournisseurKey(v);
+                      }}
+                      className="min-w-[10rem] max-w-[16rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par source ou fournisseur (société du compte)"
+                    >
+                      {fournisseursWithCounts.map((item) => (
+                        <option
+                          key={item.key === "" ? "__empty_val__" : item.key}
+                          value={item.key === "__all__" ? "__all__" : item.key === "" ? "__empty__" : item.key}
+                        >
+                          Fournisseur · {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <select
-                    value={selectedBankId ?? "__all__"}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setSelectedBankId(v === "__all__" ? null : v);
-                    }}
-                    className="lg:hidden rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                    aria-label="Filtrer par banque"
+                    value={balanceBucket}
+                    onChange={(e) =>
+                      setBalanceBucket(e.target.value as typeof balanceBucket)
+                    }
+                    className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                    aria-label="Filtrer par solde"
                   >
-                    {banksWithCounts.map((item) => (
+                    {balanceBucketsWithCounts.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} ({item.count})
+                        Solde · {item.label} ({item.count})
                       </option>
                     ))}
                   </select>
-                )}
+                  {bankAccounts.length > 0 && (
+                    <div className="min-w-0 basis-full">
+                      <BalanceAmountRangeControls
+                        extent={balanceExtent}
+                        rangeMin={balanceRangeMin}
+                        rangeMax={balanceRangeMax}
+                        step={balanceSliderStep}
+                        onMinChange={onBalanceRangeMinChange}
+                        onMaxChange={onBalanceRangeMaxChange}
+                      />
+                    </div>
+                  )}
+                </div>
               </>
             )}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
             {companies.length > 0 && (
               <button
                 type="button"
@@ -1511,11 +2077,17 @@ function AccountsPageContent() {
           <p className="text-[var(--muted-foreground)]">Aucun compte.</p>
         ) : filteredBankAccounts.length === 0 ? (
           <p className="text-[var(--muted-foreground)]">
-            Aucun compte ne correspond à « {search} ».
+            {search.trim()
+              ? `Aucun compte ne correspond à « ${search} »${
+                  hasActiveAccountFilters ? " avec les filtres choisis." : "."
+                }`
+              : hasActiveAccountFilters
+                ? "Aucun compte ne correspond aux filtres."
+                : "Aucun compte ne correspond."}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            {filteredBankAccounts.map((ba) => (
+            {sortedBankAccounts.map((ba) => (
               <AccountCard
                 key={ba.id}
                 bankAccount={ba}
@@ -1533,48 +2105,317 @@ function AccountsPageContent() {
           </div>
         )}
         </main>
-
-        {bankAccounts.length > 0 && banksWithCounts.length > 1 && (
-          <aside className="scrollbar-hide fixed right-0 top-0 z-30 hidden h-screen w-56 overflow-y-auto border-l border-[var(--border)] bg-[var(--muted)]/30 lg:block">
-            <div className="sticky top-0 p-4">
-              <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">Filtrer par banque</h2>
+        {bankAccounts.length > 0 && (
+          <aside className="scrollbar-hide relative sticky top-0 z-30 hidden h-screen max-h-screen w-52 shrink-0 flex-col self-start overflow-y-auto border-l border-[var(--border)] bg-[var(--muted)]/30 lg:flex">
+            <div className="flex flex-col p-4">
+              <h2 className="mb-1 text-sm font-semibold text-[var(--foreground)]">Filtres</h2>
+              <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+                Le détail s’ouvre à gauche, au-dessus de la liste.
+              </p>
               <nav className="space-y-1">
-                {banksWithCounts.map((item) => {
-                  const isActive =
-                    item.id === "__all__"
-                      ? selectedBankId === null
-                      : item.id === ""
-                        ? selectedBankId === ""
-                        : selectedBankId === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setSelectedBankId(item.id === "__all__" ? null : item.id)}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                        isActive
-                          ? "bg-[var(--primary-muted)] text-[var(--primary)] font-medium"
-                          : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-                      }`}
-                    >
-                      {item.id !== "__all__" && item.id !== "" && item.hasLogo ? (
-                        <img
-                          src={`/api/banks/${item.id}/files/logo`}
-                          alt=""
-                          className="h-6 w-6 shrink-0 rounded object-contain"
-                        />
-                      ) : (
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--muted)] text-xs font-medium text-[var(--muted-foreground)]">
-                          {item.id === "__all__" ? "⊕" : item.id === "" ? "—" : item.name.slice(0, 1)}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                      <span className="shrink-0 text-xs tabular-nums opacity-70">{item.count}</span>
-                    </button>
-                  );
-                })}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccountsFilterPanel((p) => (p === "banks" ? "hub" : "banks"))
+                  }
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    accountsFilterPanel === "banks"
+                      ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  }`}
+                >
+                  <BuildingIcon className="h-4 w-4 shrink-0 opacity-70" />
+                  <span className="min-w-0 flex-1 font-medium">Banques</span>
+                  <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccountsFilterPanel((p) => (p === "status" ? "hub" : "status"))
+                  }
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    accountsFilterPanel === "status"
+                      ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  }`}
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center text-xs opacity-70">
+                    ◉
+                  </span>
+                  <span className="min-w-0 flex-1 font-medium">Statut</span>
+                  <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccountsFilterPanel((p) => (p === "fournisseur" ? "hub" : "fournisseur"))
+                  }
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    accountsFilterPanel === "fournisseur"
+                      ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  }`}
+                >
+                  <ListIcon className="h-4 w-4 shrink-0 opacity-70" />
+                  <span className="min-w-0 flex-1 font-medium">Fournisseur</span>
+                  <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccountsFilterPanel((p) => (p === "client" ? "hub" : "client"))
+                  }
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    accountsFilterPanel === "client"
+                      ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  }`}
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center text-xs opacity-70">
+                    ◎
+                  </span>
+                  <span className="min-w-0 flex-1 font-medium">Client</span>
+                  <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccountsFilterPanel((p) => (p === "balance" ? "hub" : "balance"))
+                  }
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    accountsFilterPanel === "balance"
+                      ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  }`}
+                >
+                  <ChartIcon className="h-4 w-4 shrink-0 opacity-70" />
+                  <span className="min-w-0 flex-1 font-medium">Solde</span>
+                  <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+                </button>
               </nav>
             </div>
+            {accountsFilterPanel !== "hub" && (
+              <div
+                className="scrollbar-hide absolute inset-y-0 right-full z-40 flex w-60 flex-col overflow-y-auto rounded-l-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-hover-shadow)]"
+                role="dialog"
+                aria-label="Filtre détaillé"
+              >
+                {accountsFilterPanel === "banks" && (
+                  <>
+                    <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                      Par banque
+                    </h2>
+                    <nav className="space-y-1">
+                      {banksWithCounts.map((item) => {
+                        const isActive =
+                          item.id === "__all__"
+                            ? selectedBankId === null
+                            : item.id === ""
+                              ? selectedBankId === ""
+                              : selectedBankId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedBankId(item.id === "__all__" ? null : item.id)
+                            }
+                            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              isActive
+                                ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                                : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                            }`}
+                          >
+                            {item.id !== "__all__" && item.id !== "" && item.hasLogo ? (
+                              <img
+                                src={`/api/banks/${item.id}/files/logo`}
+                                alt=""
+                                className="h-6 w-6 shrink-0 rounded object-contain"
+                              />
+                            ) : (
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--muted)] text-xs font-medium text-[var(--muted-foreground)]">
+                                {item.id === "__all__"
+                                  ? "⊕"
+                                  : item.id === ""
+                                    ? "—"
+                                    : item.name.slice(0, 1)}
+                              </span>
+                            )}
+                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                            <span className="shrink-0 text-xs tabular-nums opacity-70">
+                              {item.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </>
+                )}
+                {accountsFilterPanel === "status" && (
+                  <>
+                    <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                      Par statut
+                    </h2>
+                    <nav className="space-y-1">
+                      {statusesWithCounts.map((item) => {
+                        const isActive =
+                          item.id === "__all__"
+                            ? selectedStatusId === null
+                            : selectedStatusId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedStatusId(item.id === "__all__" ? null : item.id)
+                            }
+                            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              isActive
+                                ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                                : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                            }`}
+                          >
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--muted)] text-sm">
+                              {item.emoji?.trim() || "·"}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                            <span className="shrink-0 text-xs tabular-nums opacity-70">
+                              {item.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </>
+                )}
+                {accountsFilterPanel === "fournisseur" && (
+                  <>
+                    <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                      Par fournisseur / source
+                    </h2>
+                    <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                      Selon la source (fiche société), ou l’ancien champ texte fournisseur si présent.
+                    </p>
+                    <nav className="space-y-1">
+                      {fournisseursWithCounts.map((item) => {
+                        const isActive =
+                          item.key === "__all__"
+                            ? selectedFournisseurKey === null
+                            : item.key === ""
+                              ? selectedFournisseurKey === ""
+                              : selectedFournisseurKey === item.key;
+                        return (
+                          <button
+                            key={item.key === "" ? "__empty__" : item.key}
+                            type="button"
+                            onClick={() =>
+                              setSelectedFournisseurKey(
+                                item.key === "__all__" ? null : item.key
+                              )
+                            }
+                            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              isActive
+                                ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                                : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                            }`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            <span className="shrink-0 text-xs tabular-nums opacity-70">
+                              {item.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </>
+                )}
+                {accountsFilterPanel === "client" && (
+                  <>
+                    <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                      Par client
+                    </h2>
+                    <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                      Même liste que le champ « Client » à la création ou l’édition du compte (Paramètres → Clients).
+                    </p>
+                    <nav className="space-y-1">
+                      {accountTypesWithFilterCounts.map((item) => {
+                        const isActive =
+                          item.id === "__all__"
+                            ? selectedAccountTypeFilterId === null
+                            : item.id === ""
+                              ? selectedAccountTypeFilterId === ""
+                              : selectedAccountTypeFilterId === item.id;
+                        return (
+                          <button
+                            key={item.id === "" ? "__aucun_client__" : item.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedAccountTypeFilterId(
+                                item.id === "__all__" ? null : item.id
+                              )
+                            }
+                            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              isActive
+                                ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                                : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                            }`}
+                          >
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--muted)] text-sm">
+                              {item.id === "__all__"
+                                ? "⊕"
+                                : item.id === ""
+                                  ? "—"
+                                  : item.emoji?.trim() || item.name.slice(0, 1)}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                            <span className="shrink-0 text-xs tabular-nums opacity-70">
+                              {item.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </>
+                )}
+                {accountsFilterPanel === "balance" && (
+                  <>
+                    <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                      Par solde
+                    </h2>
+                    <nav className="space-y-1">
+                      {balanceBucketsWithCounts.map((item) => {
+                        const isActive = balanceBucket === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setBalanceBucket(item.id)}
+                            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                              isActive
+                                ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                                : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                            }`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            <span className="shrink-0 text-xs tabular-nums opacity-70">
+                              {item.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                    <BalanceAmountRangeControls
+                      extent={balanceExtent}
+                      rangeMin={balanceRangeMin}
+                      rangeMax={balanceRangeMax}
+                      step={balanceSliderStep}
+                      onMinChange={onBalanceRangeMinChange}
+                      onMaxChange={onBalanceRangeMaxChange}
+                    />
+                  </>
+                )}
+              </div>
+            )}
           </aside>
         )}
       </div>
@@ -1759,7 +2600,7 @@ function AccountsPageContent() {
 
 export default function AccountsPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen flex-col p-6"><p className="text-[var(--muted-foreground)]">Chargement…</p></div>}>
+    <Suspense fallback={<div className="flex min-h-0 flex-1 flex-col p-6"><p className="text-[var(--muted-foreground)]">Chargement…</p></div>}>
       <AccountsPageContent />
     </Suspense>
   );

@@ -190,13 +190,24 @@ function HomeContent() {
     [sortedTransactions, filterValues]
   );
 
-  /** Sous-ensemble du jour courant (après filtres) pour les totaux du bandeau. */
-  const filteredTransactionsToday = useMemo(() => {
+  const filtersNarrowingView = useMemo(
+    () => hasActiveTransactionFilters(filterValues),
+    [filterValues]
+  );
+
+  /**
+   * Totaux du bandeau : sans filtre → uniquement les transactions à la date du jour ;
+   * avec filtre → toutes les lignes visibles (ex. plage de dates), pas limité à « aujourd’hui ».
+   */
+  const transactionsForSummaryTotals = useMemo(() => {
+    if (filtersNarrowingView) {
+      return filteredTransactions;
+    }
     const today = localTodayISO();
     return filteredTransactions.filter(
       (t) => transactionCalendarDayLocal(t.transaction_date) === today
     );
-  }, [filteredTransactions]);
+  }, [filtersNarrowingView, filteredTransactions]);
 
   const selectedTransactionsFromGrid = useMemo(() => {
     const ids = selectionStats?.selectedTransactionIds;
@@ -205,21 +216,21 @@ function HomeContent() {
     return ids.map((id) => byId.get(id)).filter((t): t is Transaction => t != null);
   }, [selectionStats, filteredTransactions]);
 
-  const todayNetTotal = useMemo(() => {
-    return filteredTransactionsToday.reduce((sum, t) => sum + signedAmount(t), 0);
-  }, [filteredTransactionsToday]);
+  const summaryNetTotal = useMemo(() => {
+    return transactionsForSummaryTotals.reduce((sum, t) => sum + signedAmount(t), 0);
+  }, [transactionsForSummaryTotals]);
 
-  const { todayDebitsTotal, todayCreditsTotal } = useMemo(() => {
+  const { summaryDebitsTotal, summaryCreditsTotal } = useMemo(() => {
     let debits = 0;
     let credits = 0;
-    for (const t of filteredTransactionsToday) {
+    for (const t of transactionsForSummaryTotals) {
       const num = Number(t.amount);
       if (Number.isNaN(num)) continue;
       if (t.type === "DEBIT") debits += num;
       else credits += num;
     }
-    return { todayDebitsTotal: debits, todayCreditsTotal: credits };
-  }, [filteredTransactionsToday]);
+    return { summaryDebitsTotal: debits, summaryCreditsTotal: credits };
+  }, [transactionsForSummaryTotals]);
 
   const fetchBankAccounts = useCallback(async () => {
     setLoadingBankAccounts(true);
@@ -548,16 +559,18 @@ function HomeContent() {
       "Société",
       "Montant",
       "Type",
-      "Statut",
       "Description",
       "Fournisseur",
       "Client",
       "Créé le",
+      "État",
     ];
     const rows = filteredTransactions.map((t) => {
       const num = Number(t.amount);
       const signed = t.type === "DEBIT" ? -num : num;
       const statusDisplay = [t.account_status_emoji, t.account_status_name].filter(Boolean).join(" ").trim();
+      const etat =
+        t.type === "DEBIT" ? debitStatusLabel(t.debit_status ?? null) || "—" : "";
       return [
         t.id,
         t.transaction_date,
@@ -567,11 +580,11 @@ function HomeContent() {
         t.company_name ?? "",
         signed,
         t.type,
-        t.type === "DEBIT" ? debitStatusLabel(t.debit_status ?? null) || "—" : "",
         t.description ?? "",
         t.fournisseur_name ?? "",
         t.client_name ?? "",
         t.created_at ?? "",
+        etat,
       ];
     });
     const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
@@ -592,10 +605,10 @@ function HomeContent() {
         </div>
       )}
       <TransactionsSummaryPanel
-        todayNetTotal={todayNetTotal}
-        todayDebitsTotal={todayDebitsTotal}
-        todayCreditsTotal={todayCreditsTotal}
-        filtersNarrowingView={hasActiveTransactionFilters(filterValues)}
+        summaryNetTotal={summaryNetTotal}
+        summaryDebitsTotal={summaryDebitsTotal}
+        summaryCreditsTotal={summaryCreditsTotal}
+        filtersNarrowingView={filtersNarrowingView}
         selectionStats={selectionStats}
       />
       <SheetToolbar

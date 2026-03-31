@@ -33,11 +33,11 @@ function StatBlock({
 }
 
 interface TransactionsSummaryPanelProps {
-  /** Somme nette (débits négatifs, crédits positifs) des transactions du jour, filtres appliqués. */
-  todayNetTotal: number;
-  todayDebitsTotal: number;
-  todayCreditsTotal: number;
-  /** Si true, les montants portent uniquement sur les lignes qui passent les filtres du tableau. */
+  /** Somme nette (débits négatifs, crédits positifs) : jour courant si aucun filtre, sinon toutes les lignes visibles. */
+  summaryNetTotal: number;
+  summaryDebitsTotal: number;
+  summaryCreditsTotal: number;
+  /** Si true, les totaux portent sur toutes les lignes filtrées (plus de vue « uniquement aujourd’hui »). */
   filtersNarrowingView: boolean;
   selectionStats: TransactionSelectionStats | null;
 }
@@ -47,9 +47,9 @@ const summaryRowClass =
 
 /** Indicateurs d’un bloc sur une ligne (wrap si besoin). À partir de `md`, vue actuelle et sélection sont côte à côte. */
 export function TransactionsSummaryPanel({
-  todayNetTotal,
-  todayDebitsTotal,
-  todayCreditsTotal,
+  summaryNetTotal,
+  summaryDebitsTotal,
+  summaryCreditsTotal,
   filtersNarrowingView,
   selectionStats,
 }: TransactionsSummaryPanelProps) {
@@ -59,8 +59,8 @@ export function TransactionsSummaryPanel({
       className="relative z-30 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-4 py-5 shadow-[0_6px_20px_rgba(13,148,136,0.08)] md:h-56 md:max-h-56 md:overflow-y-auto md:py-4"
       aria-label={
         filtersNarrowingView
-          ? "Totaux du jour (filtres actifs) et sélection"
-          : "Totaux du jour sur les lignes affichées et sélection"
+          ? "Totaux sur les lignes filtrées et sélection"
+          : "Totaux à la date du jour et sélection"
       }
     >
       <div
@@ -79,30 +79,30 @@ export function TransactionsSummaryPanel({
         >
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
             {filtersNarrowingView ? (
-              <>Aujourd&apos;hui — selon les filtres du tableau</>
+              <>Totaux — lignes affichées</>
             ) : (
-              <>Aujourd&apos;hui — toutes les lignes affichées</>
+              <>Aujourd&apos;hui</>
             )}
           </p>
           <p className="mb-3 text-[11px] font-normal normal-case tracking-normal text-[var(--muted-foreground)]">
             {filtersNarrowingView
-              ? "Les totaux du jour ne comptent que les transactions visibles après filtrage."
-              : "Aucun filtre actif : les totaux du jour suivent tout le tableau tel qu’affiché."}
+              ? "Somme de toutes les transactions visibles dans le tableau (filtres actifs)."
+              : "Vue par défaut : uniquement les transactions à la date du jour parmi le tableau chargé. Aucun filtre actif."}
           </p>
           <div className={summaryRowClass}>
             <StatBlock
-              label="Total aujourd'hui"
-              value={`${formatEur(todayNetTotal)} €`}
+              label={filtersNarrowingView ? "Total net" : "Total aujourd'hui"}
+              value={`${formatEur(summaryNetTotal)} €`}
               valueClassName="text-[var(--primary)]"
             />
             <StatBlock
-              label="Total des débits aujourd'hui"
-              value={`-${formatEur(todayDebitsTotal)} €`}
+              label={filtersNarrowingView ? "Total des débits" : "Total des débits aujourd'hui"}
+              value={`-${formatEur(summaryDebitsTotal)} €`}
               valueClassName="text-[var(--destructive)]"
             />
             <StatBlock
-              label="Total des crédits aujourd'hui"
-              value={`${formatEur(todayCreditsTotal)} €`}
+              label={filtersNarrowingView ? "Total des crédits" : "Total des crédits aujourd'hui"}
+              value={`${formatEur(summaryCreditsTotal)} €`}
               valueClassName="text-[var(--success)]"
             />
           </div>
