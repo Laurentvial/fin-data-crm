@@ -102,19 +102,25 @@ export function AppSidebar() {
   }, [appSuperAdmin]);
 
   const fetchSession = useCallback(async () => {
-    const data = await getCachedSession();
-    setSession(data);
-    setIsPending(false);
     try {
-      const res = await fetch("/api/me/app-super-admin");
-      if (res.ok) {
-        const body = await res.json();
-        setAppSuperAdmin(!!body.super_admin);
-      } else {
+      const data = await getCachedSession();
+      setSession(data);
+      try {
+        const res = await fetch("/api/me/app-super-admin");
+        if (res.ok) {
+          const body = await res.json();
+          setAppSuperAdmin(!!body.super_admin);
+        } else {
+          setAppSuperAdmin(false);
+        }
+      } catch {
         setAppSuperAdmin(false);
       }
     } catch {
+      setSession(null);
       setAppSuperAdmin(false);
+    } finally {
+      setIsPending(false);
     }
   }, []);
 
@@ -203,11 +209,13 @@ export function AppSidebar() {
               {isPending ? "..." : session?.user?.name ?? "Utilisateur"}
             </p>
             <p className="truncate text-xs text-[var(--muted-foreground)]">
-              {appSuperAdmin
-                ? "Super-administrateur"
-                : session?.user?.role === "admin"
-                  ? "Administrateur"
-                  : "Utilisateur"}
+              {isPending
+                ? "..."
+                : appSuperAdmin
+                  ? "Super-administrateur"
+                  : session?.user?.role === "admin"
+                    ? "Administrateur"
+                    : "Utilisateur"}
             </p>
           </div>
         </div>
