@@ -94,6 +94,8 @@ function HomeContent() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState<string>("");
   const [selectionStats, setSelectionStats] = useState<TransactionSelectionStats | null>(null);
+  const [transactionGridSelectionResetNonce, setTransactionGridSelectionResetNonce] = useState(0);
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
 
   const [filterValues, setFilterValues] = useState<TransactionFilterValues>(() => ({
     ...DEFAULT_TRANSACTION_FILTERS,
@@ -484,6 +486,51 @@ function HomeContent() {
     }
   }, [fetchTransactions]);
 
+  const handleBulkDeleteSelected = useCallback(async () => {
+    const ids = selectionStats?.selectedTransactionIds;
+    if (!ids?.length) return;
+    const unique = [...new Set(ids)];
+    const n = unique.length;
+    if (!confirm(`Supprimer ${n} transaction${n > 1 ? "s" : ""} ?`)) return;
+    setBulkDeleteBusy(true);
+    setSaveStatus("saving");
+    setSaveMessage("");
+    try {
+      for (const id of unique) {
+        const res = await fetch(`/api/transactions/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error ?? `HTTP ${res.status}`);
+        }
+        setTransactions((prev) => prev.filter((t) => t.id !== id));
+      }
+      setTransactionGridSelectionResetNonce((x) => x + 1);
+      await fetchTransactions();
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      await fetchTransactions();
+      setSaveStatus("error");
+      setSaveMessage(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setBulkDeleteBusy(false);
+    }
+  }, [selectionStats, fetchTransactions]);
+
+  const bulkDeleteToolbar = useMemo(() => {
+    const ids = selectionStats?.selectedTransactionIds;
+    if (!ids?.length) return null;
+    const unique = [...new Set(ids)];
+    return {
+      count: unique.length,
+      busy: bulkDeleteBusy,
+      onClick: handleBulkDeleteSelected,
+    };
+  }, [selectionStats, bulkDeleteBusy, handleBulkDeleteSelected]);
+
   const handleZoomIn = useCallback(() => {
     setZoom((z) => Math.min(150, z + 10));
   }, []);
@@ -559,6 +606,7 @@ function HomeContent() {
         }
         createInvoice={createInvoiceToolbar}
         groupedInvoice={groupedInvoiceToolbar}
+        bulkDeleteSelected={bulkDeleteToolbar}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="flex min-h-full flex-1 flex-col px-4 py-4">
@@ -582,6 +630,7 @@ function HomeContent() {
               transactionsForFilterOptions={sortedTransactions}
               fournisseurs={fournisseurs}
               settingsClients={settingsClients}
+              selectionResetNonce={transactionGridSelectionResetNonce}
             />
           </div>
         </div>

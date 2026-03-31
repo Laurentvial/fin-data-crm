@@ -189,6 +189,8 @@ interface TransactionsGridProps {
   fournisseurs?: Fournisseur[];
   /** Clients = account_types (Paramètres › Clients) pour la colonne Client. */
   settingsClients?: AccountType[];
+  /** Incrémenter après une action parent (ex. suppression groupée) pour effacer coches / stats. */
+  selectionResetNonce?: number;
 }
 
 interface DateCellData {
@@ -740,6 +742,7 @@ export function TransactionsGrid({
   transactionsForFilterOptions = [],
   fournisseurs = [],
   settingsClients = [],
+  selectionResetNonce,
 }: TransactionsGridProps) {
   const scale = zoom / 100;
   const fournisseurRenderer = useMemo(
@@ -765,6 +768,7 @@ export function TransactionsGrid({
 
   const loadMoreThrottleRef = useRef(0);
   const gridContainerRef = useRef<HTMLDivElement>(null);
+  const selectionResetNoncePrevRef = useRef<number | undefined>(undefined);
 
   const columnFiltersEnabled = Boolean(filterValues && onApplyFilters);
   const resolvedTheme = useResolvedTheme();
@@ -1341,6 +1345,20 @@ export function TransactionsGrid({
     [updateSelectionAndStats]
   );
 
+  useEffect(() => {
+    if (selectionResetNonce === undefined) return;
+    if (selectionResetNoncePrevRef.current === selectionResetNonce) return;
+    const isInitial = selectionResetNoncePrevRef.current === undefined;
+    selectionResetNoncePrevRef.current = selectionResetNonce;
+    if (isInitial || !onSelectionStatsChange) return;
+    const empty: GridSelection = {
+      columns: CompactSelection.empty(),
+      rows: CompactSelection.empty(),
+      current: undefined,
+    };
+    updateSelectionAndStats(empty);
+  }, [selectionResetNonce, onSelectionStatsChange, updateSelectionAndStats]);
+
   /** Clic en dehors du tableau (comme Google Sheets) : réinitialiser la sélection. */
   useEffect(() => {
     if (!onSelectionStatsChange) return;
@@ -1358,6 +1376,7 @@ export function TransactionsGrid({
       const el = t instanceof Element ? t : null;
       if (el?.closest("#portal")) return;
       if (el?.closest('[role="dialog"]')) return;
+      if (el?.closest("[data-keep-transaction-grid-selection]")) return;
 
       updateSelectionAndStats(empty);
     };

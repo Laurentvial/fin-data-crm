@@ -55,6 +55,7 @@ export function TransactionsSummaryPanel({
 }: TransactionsSummaryPanelProps) {
   return (
     <section
+      data-keep-transaction-grid-selection
       className="relative z-30 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-4 py-5 shadow-[0_6px_20px_rgba(13,148,136,0.08)] md:h-56 md:max-h-56 md:overflow-y-auto md:py-4"
       aria-label={
         filtersNarrowingView
@@ -131,8 +132,8 @@ export function TransactionsSummaryPanel({
               {selectionStats.selectedTransactionIds.length > 0 ? (
                 <>
                   Cochez les cases à gauche : une ligne → « Créer une facture » dans la barre d&apos;outils ; plusieurs
-                  lignes → « Facture groupée ». Les totaux ci-dessus portent sur les lignes cochées. Débits et crédits :
-                  sommes brutes (positives) par type.
+                  lignes → « Facture groupée » ou « Supprimer ». Les totaux ci-dessus portent sur les lignes cochées.
+                  Débits et crédits : sommes brutes (positives) par type.
                 </>
               ) : (
                 <>

@@ -16,6 +16,8 @@ interface SheetToolbarProps {
   createInvoice?: InvoiceToolbarAction | null;
   /** Affiché à côté de « Ajouter » lorsque ≥ 2 lignes sont cochées. */
   groupedInvoice?: InvoiceToolbarAction | null;
+  /** À côté de « Facture groupée » : suppression des lignes cochées (colonne cases). */
+  bulkDeleteSelected?: { count: number; busy: boolean; onClick: () => void } | null;
 }
 
 function FilterIcon({ className }: { className?: string }) {
@@ -69,9 +71,13 @@ export function SheetToolbar({
   onAddClick,
   createInvoice,
   groupedInvoice,
+  bulkDeleteSelected,
 }: SheetToolbarProps) {
   return (
-    <div className="relative z-20 flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm">
+    <div
+      data-keep-transaction-grid-selection
+      className="relative z-20 flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm"
+    >
       {onAddClick && (
         <button
           type="button"
@@ -104,6 +110,21 @@ export function SheetToolbar({
           Facture groupée ({groupedInvoice.count})
         </button>
       )}
+      {bulkDeleteSelected && bulkDeleteSelected.count > 0 ? (
+        <button
+          type="button"
+          disabled={bulkDeleteSelected.busy}
+          title="Supprimer les transactions cochées (colonne de gauche)"
+          onClick={bulkDeleteSelected.onClick}
+          className="flex items-center gap-2 rounded-lg border border-[var(--destructive)] bg-[var(--destructive)]/10 px-3 py-1.5 text-sm font-medium text-[var(--destructive)] hover:bg-[var(--destructive)]/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {bulkDeleteSelected.busy
+            ? "Suppression…"
+            : bulkDeleteSelected.count === 1
+              ? "Supprimer la cochée"
+              : `Supprimer (${bulkDeleteSelected.count})`}
+        </button>
+      ) : null}
       {onResetFiltersClick && (
         <button
           type="button"
