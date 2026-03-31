@@ -1528,32 +1528,36 @@ function SocietesPageContent() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-              </svg>
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-[var(--primary)]">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                  <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="page-title text-2xl font-semibold">Sociétés</h1>
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  Gérez les sociétés. Chaque société peut avoir plusieurs comptes bancaires.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="page-title text-2xl font-semibold">Sociétés</h1>
-              <p className="text-sm text-[var(--muted-foreground)]">
-                Gérez les sociétés. Chaque société peut avoir plusieurs comptes bancaires.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
             {companies.length > 0 && (
-              <input
-                type="search"
-                placeholder="Rechercher par nom de société…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
-                aria-label="Rechercher par nom de société"
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="search"
+                  placeholder="Rechercher par nom de société…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full min-w-0 max-w-xl rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:max-w-md"
+                  aria-label="Rechercher par nom de société"
+                />
+              </div>
             )}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
             <button
               type="button"
               onClick={openAdd}

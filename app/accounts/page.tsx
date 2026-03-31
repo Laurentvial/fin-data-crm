@@ -1889,7 +1889,7 @@ function AccountsPageContent() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-row">
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
+        <main className="relative z-0 min-h-0 min-w-0 flex-1 overflow-auto p-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <div className="flex items-center gap-3">
@@ -1912,15 +1912,6 @@ function AccountsPageContent() {
                     className="w-full min-w-0 max-w-xl rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:max-w-md"
                     aria-label="Rechercher par nom de compte ou société"
                   />
-                  {hasActiveAccountFilters && (
-                    <button
-                      type="button"
-                      onClick={resetAccountFilters}
-                      className="inline-flex shrink-0 items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
-                    >
-                      Réinitialiser les filtres
-                    </button>
-                  )}
                   <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
                     <span className="shrink-0 font-medium text-[var(--foreground)]">Trier</span>
                     <select
@@ -1941,6 +1932,15 @@ function AccountsPageContent() {
                   </label>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:hidden">
+                  {hasActiveAccountFilters && (
+                    <button
+                      type="button"
+                      onClick={resetAccountFilters}
+                      className="inline-flex shrink-0 items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                    >
+                      Réinitialiser les filtres
+                    </button>
+                  )}
                   {banksWithCounts.length > 1 && (
                     <select
                       value={selectedBankId ?? "__all__"}
@@ -2106,12 +2106,21 @@ function AccountsPageContent() {
         )}
         </main>
         {bankAccounts.length > 0 && (
-          <aside className="scrollbar-hide relative sticky top-0 z-30 hidden h-screen max-h-screen w-52 shrink-0 flex-col self-start overflow-y-auto border-l border-[var(--border)] bg-[var(--muted)]/30 lg:flex">
-            <div className="flex flex-col p-4">
+          <aside className="relative sticky top-0 z-40 hidden h-screen max-h-screen w-52 shrink-0 flex-col self-start overflow-visible border-l border-[var(--border)] bg-[var(--muted)]/30 lg:flex">
+            <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
               <h2 className="mb-1 text-sm font-semibold text-[var(--foreground)]">Filtres</h2>
               <p className="mb-3 text-xs text-[var(--muted-foreground)]">
                 Le détail s’ouvre à gauche, au-dessus de la liste.
               </p>
+              {hasActiveAccountFilters && (
+                <button
+                  type="button"
+                  onClick={resetAccountFilters}
+                  className="mb-3 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-left text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                >
+                  Réinitialiser les filtres
+                </button>
+              )}
               <nav className="space-y-1">
                 <button
                   type="button"
@@ -2196,7 +2205,7 @@ function AccountsPageContent() {
             </div>
             {accountsFilterPanel !== "hub" && (
               <div
-                className="scrollbar-hide absolute inset-y-0 right-full z-40 flex w-60 flex-col overflow-y-auto rounded-l-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-hover-shadow)]"
+                className="scrollbar-hide absolute inset-y-0 right-full z-50 flex w-60 flex-col overflow-y-auto rounded-l-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-hover-shadow)]"
                 role="dialog"
                 aria-label="Filtre détaillé"
               >
