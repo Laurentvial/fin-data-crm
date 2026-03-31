@@ -308,7 +308,12 @@ const INVOICE_COUNTRIES = [
   { code: "TR", label: "Turquie" },
 ];
 
-const PAYS_NAISSANCE_OPTIONS = [...INVOICE_COUNTRIES, { code: "DZ", label: "Algérie" }];
+const PAYS_NAISSANCE_OPTIONS = [
+  ...INVOICE_COUNTRIES,
+  { code: "DZ", label: "Algérie" },
+  { code: "TN", label: "Tunisie" },
+  { code: "AO", label: "Angola" },
+];
 
 function CompanyModal({
   title,

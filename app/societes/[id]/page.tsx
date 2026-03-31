@@ -36,6 +36,8 @@ const COUNTRY_LABELS: Record<string, string> = {
   LV: "Lettonie",
   TR: "Turquie",
   DZ: "Algérie",
+  TN: "Tunisie",
+  AO: "Angola",
 };
 
 function formatDateDisplay(iso: string | null | undefined): string {
