@@ -8,7 +8,7 @@ import { Select } from "@/components/Select";
 import type { Bank, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
-import { PAYS_NAISSANCE_OPTIONS } from "@/lib/countries-fr";
+import { COUNTRY_LABELS_FR, PAYS_NAISSANCE_OPTIONS } from "@/lib/countries-fr";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -99,6 +99,51 @@ function formatDateInput(value: string): string {
 function siretOrSirenDigitsOk(raw: string): boolean {
   const d = raw.replace(/\D/g, "");
   return d.length === 9 || d.length === 14;
+}
+
+/** Filtre société : source (catalogue) ou ancien champ texte `fournisseur`. */
+function companyFournisseurFacetKey(c: Company): string {
+  if (c.source_id) return `s:${c.source_id}`;
+  const leg = (c.fournisseur ?? "").trim();
+  if (leg) return `l:${encodeURIComponent(leg)}`;
+  return "";
+}
+
+function companyFournisseurFacetLabel(c: Company): string {
+  const src = (c.source_name ?? "").trim();
+  if (src) return src;
+  return (c.fournisseur ?? "").trim();
+}
+
+function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
+function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+    </svg>
+  );
 }
 
 type CompanyCreateEmailRow = { email: string; password: string };
@@ -1081,16 +1126,182 @@ function SocietesPageContent() {
   const [siretLookupLoading, setSiretLookupLoading] = useState(false);
   const [siretLookupNotice, setSiretLookupNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [societesFilterPanel, setSocietesFilterPanel] = useState<
+    "hub" | "activite" | "fournisseur" | "pays"
+  >("hub");
+  /** null = toutes ; "" = sans activité ; sinon libellé exact (trim). */
+  const [selectedActiviteKey, setSelectedActiviteKey] = useState<string | null>(null);
+  /** null = tous ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent */
+  const [selectedFournisseurKey, setSelectedFournisseurKey] = useState<string | null>(null);
+  /** null = tous ; "" = pays non renseigné ; sinon code ISO alpha-2 majuscules */
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null);
   const [createEmailRows, setCreateEmailRows] = useState<CompanyCreateEmailRow[]>([]);
   const [createPhoneRows, setCreatePhoneRows] = useState<CompanyCreatePhoneRow[]>([]);
 
+  const activitesWithCounts = useMemo(() => {
+    const meta = new Map<string, number>();
+    for (const c of companies) {
+      const a = (c.activite ?? "").trim();
+      meta.set(a, (meta.get(a) ?? 0) + 1);
+    }
+    const rows: { key: string; label: string; count: number }[] = [
+      {
+        key: "__all__",
+        label: "Toutes les activités",
+        count: companies.length,
+      },
+    ];
+    if (meta.has("")) {
+      rows.push({
+        key: "",
+        label: "Sans activité",
+        count: meta.get("")!,
+      });
+    }
+    const keys = [...meta.keys()]
+      .filter((k) => k !== "")
+      .sort((a, b) => a.localeCompare(b, "fr"));
+    for (const k of keys) {
+      rows.push({ key: k, label: k, count: meta.get(k)! });
+    }
+    return rows;
+  }, [companies]);
+
+  const societesFournisseursWithCounts = useMemo(() => {
+    const meta = new Map<string, { label: string; count: number }>();
+    for (const c of companies) {
+      const key = companyFournisseurFacetKey(c);
+      const label =
+        key === ""
+          ? "Sans source ni fournisseur"
+          : companyFournisseurFacetLabel(c);
+      const cur = meta.get(key);
+      if (cur) cur.count += 1;
+      else meta.set(key, { label, count: 1 });
+    }
+    const keys = [...meta.keys()].filter((k) => k !== "").sort((a, b) => {
+      const la = meta.get(a)!.label;
+      const lb = meta.get(b)!.label;
+      return la.localeCompare(lb, "fr");
+    });
+    const rows: { key: string; label: string; count: number }[] = [
+      {
+        key: "__all__",
+        label: "Tous les fournisseurs / sources",
+        count: companies.length,
+      },
+    ];
+    if (meta.has("")) {
+      rows.push({
+        key: "",
+        label: "Sans source ni fournisseur",
+        count: meta.get("")!.count,
+      });
+    }
+    for (const key of keys) {
+      const m = meta.get(key)!;
+      rows.push({ key, label: m.label, count: m.count });
+    }
+    return rows;
+  }, [companies]);
+
+  const paysWithCounts = useMemo(() => {
+    const meta = new Map<string, number>();
+    for (const c of companies) {
+      const code = (c.country_code ?? "").trim().toUpperCase();
+      const key = code || "";
+      meta.set(key, (meta.get(key) ?? 0) + 1);
+    }
+    const rows: { key: string; label: string; count: number }[] = [
+      {
+        key: "__all__",
+        label: "Tous les pays",
+        count: companies.length,
+      },
+    ];
+    if (meta.has("")) {
+      rows.push({
+        key: "",
+        label: "Pays non renseigné",
+        count: meta.get("")!,
+      });
+    }
+    const codes = [...meta.keys()]
+      .filter((k) => k !== "")
+      .sort((a, b) => {
+        const la = COUNTRY_LABELS_FR[a] ?? a;
+        const lb = COUNTRY_LABELS_FR[b] ?? b;
+        return la.localeCompare(lb, "fr");
+      });
+    for (const code of codes) {
+      const label = COUNTRY_LABELS_FR[code] ?? code;
+      rows.push({ key: code, label, count: meta.get(code)! });
+    }
+    return rows;
+  }, [companies]);
+
+  const hasActiveSocietesFilters =
+    selectedActiviteKey !== null ||
+    selectedFournisseurKey !== null ||
+    selectedCountryCode !== null;
+
+  const resetSocietesFilters = useCallback(() => {
+    setSelectedActiviteKey(null);
+    setSelectedFournisseurKey(null);
+    setSelectedCountryCode(null);
+    setSocietesFilterPanel("hub");
+  }, []);
+
   const filteredCompanies = useMemo(() => {
+    let list = companies;
     const q = search.trim().toLowerCase();
-    if (!q) return companies;
-    return companies.filter((c) =>
-      (c.name ?? "").toLowerCase().includes(q)
-    );
-  }, [companies, search]);
+    if (q) {
+      list = list.filter((c) => (c.name ?? "").toLowerCase().includes(q));
+    }
+    if (selectedActiviteKey !== null) {
+      if (selectedActiviteKey === "") {
+        list = list.filter((c) => !(c.activite ?? "").trim());
+      } else {
+        list = list.filter((c) => (c.activite ?? "").trim() === selectedActiviteKey);
+      }
+    }
+    if (selectedFournisseurKey !== null) {
+      if (selectedFournisseurKey === "") {
+        list = list.filter((c) => companyFournisseurFacetKey(c) === "");
+      } else if (selectedFournisseurKey.startsWith("s:")) {
+        const id = selectedFournisseurKey.slice(2);
+        list = list.filter((c) => c.source_id === id);
+      } else if (selectedFournisseurKey.startsWith("l:")) {
+        let raw: string;
+        try {
+          raw = decodeURIComponent(selectedFournisseurKey.slice(2));
+        } catch {
+          raw = selectedFournisseurKey.slice(2);
+        }
+        list = list.filter(
+          (c) =>
+            !c.source_id && (c.fournisseur ?? "").trim() === raw
+        );
+      }
+    }
+    if (selectedCountryCode !== null) {
+      if (selectedCountryCode === "") {
+        list = list.filter((c) => !(c.country_code ?? "").trim());
+      } else {
+        list = list.filter(
+          (c) =>
+            (c.country_code ?? "").trim().toUpperCase() === selectedCountryCode
+        );
+      }
+    }
+    return list;
+  }, [
+    companies,
+    search,
+    selectedActiviteKey,
+    selectedFournisseurKey,
+    selectedCountryCode,
+  ]);
 
   const companiesByLetter = useMemo(() => {
     const map: Record<string, Company[]> = {};
@@ -1526,8 +1737,9 @@ function SocietesPageContent() {
   const showModal = isAddModal || editingCompany;
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="flex-1 overflow-auto p-6">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-row">
+      <main className="relative z-0 min-h-0 min-w-0 flex-1 overflow-auto p-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <div className="flex items-center gap-3">
@@ -1545,16 +1757,113 @@ function SocietesPageContent() {
               </div>
             </div>
             {companies.length > 0 && (
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="search"
-                  placeholder="Rechercher par nom de société…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full min-w-0 max-w-xl rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:max-w-md"
-                  aria-label="Rechercher par nom de société"
-                />
-              </div>
+              <>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="search"
+                    placeholder="Rechercher par nom de société…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full min-w-0 max-w-xl rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:max-w-md"
+                    aria-label="Rechercher par nom de société"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 lg:hidden">
+                  {hasActiveSocietesFilters && (
+                    <button
+                      type="button"
+                      onClick={resetSocietesFilters}
+                      className="inline-flex shrink-0 items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                    >
+                      Réinitialiser les filtres
+                    </button>
+                  )}
+                  {activitesWithCounts.length > 1 && (
+                    <select
+                      value={
+                        selectedActiviteKey === null
+                          ? "__all__"
+                          : selectedActiviteKey === ""
+                            ? "__empty__"
+                            : selectedActiviteKey
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__all__") setSelectedActiviteKey(null);
+                        else if (v === "__empty__") setSelectedActiviteKey("");
+                        else setSelectedActiviteKey(v);
+                      }}
+                      className="min-w-[10rem] max-w-[18rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par activité"
+                    >
+                      {activitesWithCounts.map((item) => (
+                        <option
+                          key={item.key === "" ? "__empty_val__" : item.key}
+                          value={item.key === "__all__" ? "__all__" : item.key === "" ? "__empty__" : item.key}
+                        >
+                          Activité · {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {societesFournisseursWithCounts.length > 1 && (
+                    <select
+                      value={
+                        selectedFournisseurKey === null
+                          ? "__all__"
+                          : selectedFournisseurKey === ""
+                            ? "__empty__"
+                            : selectedFournisseurKey
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__all__") setSelectedFournisseurKey(null);
+                        else if (v === "__empty__") setSelectedFournisseurKey("");
+                        else setSelectedFournisseurKey(v);
+                      }}
+                      className="min-w-[10rem] max-w-[18rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par fournisseur ou source"
+                    >
+                      {societesFournisseursWithCounts.map((item) => (
+                        <option
+                          key={item.key === "" ? "__empty_val__" : item.key}
+                          value={item.key === "__all__" ? "__all__" : item.key === "" ? "__empty__" : item.key}
+                        >
+                          Fournisseur · {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {paysWithCounts.length > 1 && (
+                    <select
+                      value={
+                        selectedCountryCode === null
+                          ? "__all__"
+                          : selectedCountryCode === ""
+                            ? "__empty__"
+                            : selectedCountryCode
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__all__") setSelectedCountryCode(null);
+                        else if (v === "__empty__") setSelectedCountryCode("");
+                        else setSelectedCountryCode(v);
+                      }}
+                      className="min-w-[10rem] max-w-[18rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par pays"
+                    >
+                      {paysWithCounts.map((item) => (
+                        <option
+                          key={item.key === "" ? "__empty_val__" : item.key}
+                          value={item.key === "__all__" ? "__all__" : item.key === "" ? "__empty__" : item.key}
+                        >
+                          Pays · {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </>
             )}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
@@ -1580,7 +1889,13 @@ function SocietesPageContent() {
           <p className="text-[var(--muted-foreground)]">Aucune société. Cliquez sur « Ajouter une société » pour commencer.</p>
         ) : filteredCompanies.length === 0 ? (
           <p className="text-[var(--muted-foreground)]">
-            Aucune société ne correspond à « {search} ».
+            {search.trim()
+              ? `Aucune société ne correspond à « ${search} »${
+                  hasActiveSocietesFilters ? " avec les filtres choisis." : "."
+                }`
+              : hasActiveSocietesFilters
+                ? "Aucune société ne correspond aux filtres."
+                : "Aucune société ne correspond."}
           </p>
         ) : (
           <div className="space-y-2">
@@ -1637,6 +1952,196 @@ function SocietesPageContent() {
           </div>
         )}
       </main>
+
+      {companies.length > 0 && (
+        <aside className="relative sticky top-0 z-40 hidden h-screen max-h-screen w-52 shrink-0 flex-col self-start overflow-visible border-l border-[var(--border)] bg-[var(--muted)]/30 lg:flex">
+          <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+            <h2 className="mb-1 text-sm font-semibold text-[var(--foreground)]">Filtres</h2>
+            <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+              Par activité, fournisseur (source) ou pays de la fiche société.
+            </p>
+            {hasActiveSocietesFilters && (
+              <button
+                type="button"
+                onClick={resetSocietesFilters}
+                className="mb-3 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-left text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+              >
+                Réinitialiser les filtres
+              </button>
+            )}
+            <nav className="space-y-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setSocietesFilterPanel((p) => (p === "activite" ? "hub" : "activite"))
+                }
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  societesFilterPanel === "activite"
+                    ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                }`}
+              >
+                <BriefcaseIcon className="h-4 w-4 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 font-medium">Activité</span>
+                <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSocietesFilterPanel((p) => (p === "fournisseur" ? "hub" : "fournisseur"))
+                }
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  societesFilterPanel === "fournisseur"
+                    ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                }`}
+              >
+                <ListIcon className="h-4 w-4 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 font-medium">Fournisseur</span>
+                <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSocietesFilterPanel((p) => (p === "pays" ? "hub" : "pays"))
+                }
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  societesFilterPanel === "pays"
+                    ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                }`}
+              >
+                <GlobeIcon className="h-4 w-4 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 font-medium">Pays</span>
+                <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+              </button>
+            </nav>
+          </div>
+          {societesFilterPanel !== "hub" && (
+            <div
+              className="scrollbar-hide absolute inset-y-0 right-full z-50 flex w-60 flex-col overflow-y-auto rounded-l-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-hover-shadow)]"
+              role="dialog"
+              aria-label="Filtre détaillé"
+            >
+              {societesFilterPanel === "activite" && (
+                <>
+                  <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                    Par activité
+                  </h2>
+                  <nav className="space-y-1">
+                    {activitesWithCounts.map((item) => {
+                      const isActive =
+                        item.key === "__all__"
+                          ? selectedActiviteKey === null
+                          : item.key === ""
+                            ? selectedActiviteKey === ""
+                            : selectedActiviteKey === item.key;
+                      return (
+                        <button
+                          key={item.key === "" ? "__empty__" : item.key}
+                          type="button"
+                          onClick={() =>
+                            setSelectedActiviteKey(item.key === "__all__" ? null : item.key)
+                          }
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            isActive
+                              ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          <span className="shrink-0 text-xs tabular-nums opacity-70">
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
+              {societesFilterPanel === "fournisseur" && (
+                <>
+                  <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                    Par fournisseur / source
+                  </h2>
+                  <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                    Selon la source (catalogue Paramètres), ou l’ancien champ texte fournisseur si présent.
+                  </p>
+                  <nav className="space-y-1">
+                    {societesFournisseursWithCounts.map((item) => {
+                      const isActive =
+                        item.key === "__all__"
+                          ? selectedFournisseurKey === null
+                          : item.key === ""
+                            ? selectedFournisseurKey === ""
+                            : selectedFournisseurKey === item.key;
+                      return (
+                        <button
+                          key={item.key === "" ? "__empty__" : item.key}
+                          type="button"
+                          onClick={() =>
+                            setSelectedFournisseurKey(item.key === "__all__" ? null : item.key)
+                          }
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            isActive
+                              ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          <span className="shrink-0 text-xs tabular-nums opacity-70">
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
+              {societesFilterPanel === "pays" && (
+                <>
+                  <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                    Par pays
+                  </h2>
+                  <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                    Pays enregistré sur la fiche société (code pays / TVA).
+                  </p>
+                  <nav className="space-y-1">
+                    {paysWithCounts.map((item) => {
+                      const isActive =
+                        item.key === "__all__"
+                          ? selectedCountryCode === null
+                          : item.key === ""
+                            ? selectedCountryCode === ""
+                            : selectedCountryCode === item.key;
+                      return (
+                        <button
+                          key={item.key === "" ? "__empty__" : item.key}
+                          type="button"
+                          onClick={() =>
+                            setSelectedCountryCode(item.key === "__all__" ? null : item.key)
+                          }
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            isActive
+                              ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          <span className="shrink-0 text-xs tabular-nums opacity-70">
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
+            </div>
+          )}
+        </aside>
+      )}
+      </div>
 
       {companyToDelete && (
         <DeleteConfirmationModal

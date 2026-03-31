@@ -219,12 +219,18 @@ function UserRow({
   onDelete,
   onSetRole,
   onEdit,
+  isSuperAdmin,
+  superAdminPending,
+  onToggleSuperAdmin,
 }: {
   user: User;
   currentUserId: string | null;
   onDelete: (u: User) => void;
   onSetRole: (userId: string, role: "user" | "admin") => void;
   onEdit: (u: User) => void;
+  isSuperAdmin: boolean;
+  superAdminPending: boolean;
+  onToggleSuperAdmin: (userId: string, enabled: boolean) => void;
 }) {
   const isSelf = user.id === currentUserId;
   return (
@@ -242,6 +248,21 @@ function UserRow({
           <option value="user">Utilisateur</option>
           <option value="admin">Administrateur</option>
         </select>
+      </td>
+      <td className="px-4 py-2 text-center">
+        <input
+          type="checkbox"
+          checked={isSuperAdmin}
+          disabled={superAdminPending || (isSelf && isSuperAdmin)}
+          onChange={(e) => onToggleSuperAdmin(user.id, e.target.checked)}
+          title={
+            isSelf && isSuperAdmin
+              ? "Seul un autre super-admin peut retirer votre accès (Paramètres)."
+              : "Accès à la page Rapports et statistiques globales"
+          }
+          className="h-4 w-4 accent-[var(--primary)] disabled:opacity-50"
+          aria-label={`Super-admin pour ${user.name}`}
+        />
       </td>
       <td className="px-4 py-2 text-[var(--foreground)]">{user.telegram_id != null ? (
         <span className="font-mono text-sm" title={user.telegram_username ? `@${user.telegram_username}` : undefined}>
@@ -2852,6 +2873,8 @@ export default function SettingsPage() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [superAdminIds, setSuperAdminIds] = useState<string[]>([]);
+  const [superAdminSavingId, setSuperAdminSavingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -2866,11 +2889,20 @@ export default function SettingsPage() {
     setCurrentUserId(session?.user?.id ?? null);
 
     if (role === "admin") {
-      const { data } = await authClient.admin.listUsers({
-        query: { limit: 50, sortBy: "createdAt", sortDirection: "desc" },
-      });
+      const [{ data }, linksRes, superRes] = await Promise.all([
+        authClient.admin.listUsers({
+          query: { limit: 50, sortBy: "createdAt", sortDirection: "desc" },
+        }),
+        fetch("/api/admin/users/telegram-links"),
+        fetch("/api/admin/app-super-admins"),
+      ]);
       const userList = (data?.users ?? []) as User[];
-      const linksRes = await fetch("/api/admin/users/telegram-links");
+      if (superRes.ok) {
+        const body = await superRes.json();
+        setSuperAdminIds(Array.isArray(body.user_ids) ? body.user_ids : []);
+      } else {
+        setSuperAdminIds([]);
+      }
       if (linksRes.ok) {
         const { links } = await linksRes.json();
         const byUserId = new Map((links as { user_id: string; telegram_id: number; telegram_username?: string }[]).map((l) => [l.user_id, l]));
@@ -2882,6 +2914,9 @@ export default function SettingsPage() {
       } else {
         setUsers(userList);
       }
+    } else {
+      setUsers([]);
+      setSuperAdminIds([]);
     }
     setUsersLoading(false);
   }, []);
@@ -2911,6 +2946,47 @@ export default function SettingsPage() {
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, role } : u))
     );
+  };
+
+  const handleToggleSuperAdmin = async (userId: string, enabled: boolean) => {
+    setActionError(null);
+    setSuperAdminSavingId(userId);
+    try {
+      if (enabled) {
+        const res = await fetch("/api/admin/app-super-admins", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+        });
+        const body = res.ok ? null : await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setActionError(
+            typeof (body as { error?: string }).error === "string"
+              ? (body as { error: string }).error
+              : "Échec de l'ajout super-admin."
+          );
+          return;
+        }
+        setSuperAdminIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+      } else {
+        const res = await fetch(
+          `/api/admin/app-super-admins?user_id=${encodeURIComponent(userId)}`,
+          { method: "DELETE" }
+        );
+        const body = res.ok ? null : await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setActionError(
+            typeof (body as { error?: string }).error === "string"
+              ? (body as { error: string }).error
+              : "Échec de la révocation super-admin."
+          );
+          return;
+        }
+        setSuperAdminIds((prev) => prev.filter((id) => id !== userId));
+      }
+    } finally {
+      setSuperAdminSavingId(null);
+    }
   };
 
   const openEdit = (user: User) => {
@@ -2993,6 +3069,10 @@ export default function SettingsPage() {
             <p className="mb-4 text-sm text-[var(--muted-foreground)]">
               Créez des comptes pour les utilisateurs. Les nouveaux comptes ne
               peuvent être créés que depuis cette page par un administrateur.
+            </p>
+            <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+              La colonne « Super-admin » donne accès à la page Rapports (statistiques financières agrégées).
+              Pour retirer votre propre accès super-admin, un autre administrateur doit décocher la case.
             </p>
 
             <form
@@ -3082,6 +3162,9 @@ export default function SettingsPage() {
                       <th className="table-header px-4 py-2 text-left font-medium">
                         Rôle
                       </th>
+                      <th className="table-header px-4 py-2 text-center font-medium">
+                        Super-admin
+                      </th>
                       <th className="table-header px-4 py-2 text-left font-medium">
                         Telegram
                       </th>
@@ -3094,7 +3177,7 @@ export default function SettingsPage() {
                     {users.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={6}
                           className="px-4 py-6 text-center text-[var(--muted-foreground)]"
                         >
                           Aucun utilisateur
@@ -3109,6 +3192,9 @@ export default function SettingsPage() {
                           onDelete={handleDelete}
                           onSetRole={handleSetRole}
                           onEdit={openEdit}
+                          isSuperAdmin={superAdminIds.includes(u.id)}
+                          superAdminPending={superAdminSavingId === u.id}
+                          onToggleSuperAdmin={handleToggleSuperAdmin}
                         />
                       ))
                     )}

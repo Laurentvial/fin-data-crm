@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import type { ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 import { getCachedSession, invalidateSessionCache } from "@/lib/auth/session-cache";
 
-const navMain = [
+const navMainBase = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboardIcon },
   { href: "/", label: "Toutes les transactions", icon: GridIcon },
   { href: "/societes", label: "Sociétés", icon: BriefcaseIcon },
   { href: "/accounts", label: "Comptes", icon: BuildingIcon },
-  { href: "/reporting", label: "Rapports", icon: ChartIcon },
-];
+  { href: "/reporting", label: "Rapports", icon: ChartIcon, superAdminOnly: true as const },
+] as const;
 
 const navAdmin = [
   { href: "/settings", label: "Paramètres", icon: SettingsIcon },
@@ -92,11 +93,29 @@ export function AppSidebar() {
   const router = useRouter();
   const [session, setSession] = useState<Awaited<ReturnType<typeof authClient.getSession>>["data"]>(null);
   const [isPending, setIsPending] = useState(true);
+  const [appSuperAdmin, setAppSuperAdmin] = useState(false);
+
+  const navMain = useMemo(() => {
+    return navMainBase.filter(
+      (item) => !("superAdminOnly" in item) || appSuperAdmin
+    );
+  }, [appSuperAdmin]);
 
   const fetchSession = useCallback(async () => {
     const data = await getCachedSession();
     setSession(data);
     setIsPending(false);
+    try {
+      const res = await fetch("/api/me/app-super-admin");
+      if (res.ok) {
+        const body = await res.json();
+        setAppSuperAdmin(!!body.super_admin);
+      } else {
+        setAppSuperAdmin(false);
+      }
+    } catch {
+      setAppSuperAdmin(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -134,7 +153,7 @@ export function AppSidebar() {
       <nav className="flex flex-1 flex-col gap-1 p-3 pt-4">
         {navMain.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-          const Icon = item.icon;
+          const Icon = item.icon as React.ComponentType<{ className?: string }>;
           return (
             <Link
               key={item.href}
@@ -184,7 +203,11 @@ export function AppSidebar() {
               {isPending ? "..." : session?.user?.name ?? "Utilisateur"}
             </p>
             <p className="truncate text-xs text-[var(--muted-foreground)]">
-              {session?.user?.role === "admin" ? "Administrateur" : "Utilisateur"}
+              {appSuperAdmin
+                ? "Super-administrateur"
+                : session?.user?.role === "admin"
+                  ? "Administrateur"
+                  : "Utilisateur"}
             </p>
           </div>
         </div>
