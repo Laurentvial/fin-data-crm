@@ -368,7 +368,12 @@ function EditUserModal({
 
 type TelegramStatus = {
   authorized: boolean;
-  user?: { first_name: string; username: string; phone?: string };
+  user?: {
+    id?: number;
+    first_name: string;
+    username: string;
+    phone?: string;
+  };
   error?: string;
 };
 
@@ -533,6 +538,16 @@ function TelegramConnectionSection() {
           <span className="min-w-0 flex-1 break-words text-sm text-green-800 dark:text-green-200">
             Connecté en tant que <strong>{status.user.first_name}</strong>
             {status.user.username ? ` (@${status.user.username})` : ""}
+            {status.user.phone ? (
+              <span className="mt-1 block text-xs opacity-90">
+                Numéro côté serveur : <code className="font-mono">{status.user.phone}</code>
+              </span>
+            ) : null}
+            {typeof status.user.id === "number" ? (
+              <span className="mt-1 block text-xs opacity-90">
+                ID Telegram (serveur) : <code className="font-mono">{status.user.id}</code>
+              </span>
+            ) : null}
           </span>
           <button
             type="button"
@@ -645,6 +660,19 @@ function TelegramConnectionSection() {
           )}
         </div>
       )}
+
+      {status?.authorized && typeof status.user?.id === "number" ? (
+        <p className="mt-3 text-xs leading-relaxed text-[var(--muted-foreground)]">
+          <span className="font-medium text-[var(--foreground)]">
+            Vérifier que c’est bien le même compte que sur votre téléphone :
+          </span>{" "}
+          sous <strong>Paramètres → Appareils</strong> (sessions actives), le compte doit lister, en plus du
+          téléphone, une session correspondant au serveur (souvent un autre appareil ou un client comme Telethon).
+          Le <strong>numéro</strong> dans Paramètres doit matcher « Numéro côté serveur » s’il est affiché. Pour
+          l’<strong>ID numérique</strong>, comparez avec une méthode de confiance (par ex. bot d’info où vous
+          n’envoyez qu’un message de ce compte) : il doit être identique à l’ID affiché ci-dessus.
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -52,6 +52,8 @@ from telethon.utils import get_peer_id
 _TELEGRAM_ACCOUNT_CANNOT_CREATE_GROUPS_FR = (
     "Telegram a restreint le compte utilisé par le serveur : il ne peut plus créer de groupes ou de supergroupes "
     "(souvent après un signalement pour spam). "
+    "Il s’agit du numéro configuré pour la création automatique (session sur le serveur), pas forcément du compte "
+    "avec lequel vous utilisez Telegram sur votre téléphone. "
     "Que faire : (1) Paramètres de l’application (admin) → Session Telegram / création de groupes : reconnectez un autre numéro "
     "Telegram qui n’a pas cette limitation ; "
     "(2) Créez le groupe à la main avec un autre compte, puis à la création du compte bancaire cochez « Lier un groupe Telegram existant » "
@@ -251,6 +253,7 @@ async def auth_status(x_api_key: str | None = Header(None)):
         return {
             "authorized": True,
             "user": {
+                "id": me.id,
                 "first_name": me.first_name or "",
                 "username": me.username or "",
                 "phone": me.phone or "",
@@ -288,6 +291,7 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
         return {
             "authorized": True,
             "user": {
+                "id": me.id,
                 "first_name": me.first_name or "",
                 "username": me.username or "",
                 "phone": me.phone or "",
@@ -329,6 +333,7 @@ async def auth_confirm(request: Request, x_api_key: str | None = Header(None)):
         return {
             "success": True,
             "user": {
+                "id": me.id,
                 "first_name": me.first_name or "",
                 "username": me.username or "",
                 "phone": me.phone or "",
