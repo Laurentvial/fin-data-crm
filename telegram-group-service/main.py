@@ -411,22 +411,8 @@ def _parse_users(body: dict) -> list[tuple[int, str | None]]:
 
 
 def _invited_member_admin_rights() -> ChatAdminRights:
-    """Admin preset for members invited at group creation (change group info, invite users, moderation, etc.)."""
-    return ChatAdminRights(
-        change_info=True,
-        post_messages=True,
-        edit_messages=True,
-        delete_messages=True,
-        ban_users=True,
-        invite_users=True,
-        pin_messages=True,
-        add_admins=True,
-        manage_call=True,
-        manage_topics=True,
-        post_stories=True,
-        edit_stories=True,
-        delete_stories=True,
-    )
+    """Minimal admin preset for members invited at creation: only add colleagues, no other admin powers."""
+    return ChatAdminRights(invite_users=True)
 
 
 async def _promote_invited_user_to_admin(
