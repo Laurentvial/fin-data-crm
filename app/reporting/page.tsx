@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import type { BankAccount } from "@/lib/types";
+import { FinancialTrendChart, type TrendPoint } from "@/components/reporting/FinancialTrendChart";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import type { BankAccount, Company } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
   return ba.company_name !== ba.name ? `${ba.name} – ${ba.company_name}` : ba.name;
@@ -14,6 +16,27 @@ function formatYmd(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** Affichage jj/mm/aaaa pour une date ISO yyyy-mm-dd. */
+function formatIsoToFr(iso: string): string {
+  const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** Saisie jj/mm/aaaa → yyyy-mm-dd ou null si invalide. */
+function parseFrToIso(s: string): string | null {
+  const t = s.trim();
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return formatYmd(d);
 }
 
 /** Lundi de la semaine civile (ISO pratique, locale FR). */
@@ -42,6 +65,7 @@ export type DatePresetId =
   | "this_week"
   | "last_7_days"
   | "this_month"
+  | "last_month"
   | "last_30_days"
   | "this_year"
   | "custom";
@@ -68,6 +92,11 @@ function rangeForPreset(id: DatePresetId, customFrom: string, customTo: string):
       const start = new Date(today.getFullYear(), today.getMonth(), 1);
       return { from: formatYmd(start), to: formatYmd(today) };
     }
+    case "last_month": {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end = new Date(today.getFullYear(), today.getMonth(), 0);
+      return { from: formatYmd(start), to: formatYmd(end) };
+    }
     case "last_30_days":
       return { from: formatYmd(addDays(today, -29)), to: formatYmd(today) };
     case "this_year": {
@@ -89,6 +118,7 @@ const PRESET_OPTIONS: { id: DatePresetId; label: string }[] = [
   { id: "this_week", label: "Cette semaine" },
   { id: "last_7_days", label: "7 derniers jours" },
   { id: "this_month", label: "Ce mois-ci" },
+  { id: "last_month", label: "Le mois dernier" },
   { id: "last_30_days", label: "30 derniers jours" },
   { id: "this_year", label: "Cette année" },
   { id: "custom", label: "Personnalisée" },
@@ -117,9 +147,16 @@ function ReportingContent() {
     return formatYmd(new Date(d.getFullYear(), d.getMonth(), 1));
   });
   const [customTo, setCustomTo] = useState(() => formatYmd(new Date()));
+  const [customFromInput, setCustomFromInput] = useState(() => {
+    const d = new Date();
+    return formatIsoToFr(formatYmd(new Date(d.getFullYear(), d.getMonth(), 1)));
+  });
+  const [customToInput, setCustomToInput] = useState(() => formatIsoToFr(formatYmd(new Date())));
 
+  const [companyId, setCompanyId] = useState<string>("");
   const [clientId, setClientId] = useState<string>("");
   const [bankId, setBankId] = useState<string>("");
+  const [companies, setCompanies] = useState<Pick<Company, "id" | "name">[]>([]);
   const [clients, setClients] = useState<AccountTypeRow[]>([]);
   const [banks, setBanks] = useState<BankRow[]>([]);
 
@@ -129,6 +166,8 @@ function ReportingContent() {
     credits_count: number;
     debits_count: number;
   } | null>(null);
+  const [trendPoints, setTrendPoints] = useState<TrendPoint[]>([]);
+  const [trendGranularity, setTrendGranularity] = useState<"day" | "hour">("day");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,6 +175,29 @@ function ReportingContent() {
     () => rangeForPreset(preset, customFrom, customTo),
     [preset, customFrom, customTo]
   );
+
+  const companyOptions = useMemo(
+    () => companies.map((co) => ({ value: co.id, label: co.name })),
+    [companies]
+  );
+  const clientOptions = useMemo(
+    () =>
+      clients.map((c) => ({
+        value: c.id,
+        label: `${c.emoji ? `${c.emoji} ` : ""}${c.name}`,
+      })),
+    [clients]
+  );
+  const bankOptions = useMemo(
+    () => banks.map((b) => ({ value: b.id, label: b.name })),
+    [banks]
+  );
+
+  useEffect(() => {
+    if (preset !== "custom") return;
+    setCustomFromInput(formatIsoToFr(customFrom));
+    setCustomToInput(formatIsoToFr(customTo));
+  }, [preset]);
 
   const fetchBankAccount = useCallback(async () => {
     if (!bankAccountIdFromUrl) return;
@@ -185,7 +247,16 @@ function ReportingContent() {
     let cancelled = false;
     (async () => {
       try {
-        const [cRes, bRes] = await Promise.all([fetch("/api/account-types"), fetch("/api/banks")]);
+        const [accRes, cRes, bRes] = await Promise.all([
+          fetch("/api/accounts"),
+          fetch("/api/account-types"),
+          fetch("/api/banks"),
+        ]);
+        if (accRes.ok && !cancelled) {
+          const rows = await accRes.json();
+          const list = Array.isArray(rows) ? (rows as Company[]) : [];
+          setCompanies(list.map((co) => ({ id: co.id, name: co.name })));
+        }
         if (cRes.ok && !cancelled) {
           const rows = await cRes.json();
           setClients(Array.isArray(rows) ? rows : []);
@@ -209,14 +280,21 @@ function ReportingContent() {
     setError(null);
     const { from, to } = effectiveRange;
     const params = new URLSearchParams({ date_from: from, date_to: to });
+    if (companyId) params.set("company_id", companyId);
     if (clientId) params.set("client_account_type_id", clientId);
     if (bankId) params.set("bank_id", bankId);
     try {
-      const res = await fetch(`/api/reporting/financial-summary?${params}`);
-      const data = await res.json();
-      if (!res.ok) {
+      const qs = params.toString();
+      const [sumRes, tsRes] = await Promise.all([
+        fetch(`/api/reporting/financial-summary?${qs}`),
+        fetch(`/api/reporting/financial-timeseries?${qs}`),
+      ]);
+      const data = await sumRes.json();
+      if (!sumRes.ok) {
         setError(typeof data.error === "string" ? data.error : "Erreur de chargement.");
         setSummary(null);
+        setTrendPoints([]);
+        setTrendGranularity("day");
         return;
       }
       setSummary({
@@ -225,13 +303,23 @@ function ReportingContent() {
         credits_count: data.credits_count,
         debits_count: data.debits_count,
       });
+      if (tsRes.ok) {
+        const tsJson = await tsRes.json();
+        setTrendPoints(Array.isArray(tsJson.points) ? tsJson.points : []);
+        setTrendGranularity(tsJson.granularity === "hour" ? "hour" : "day");
+      } else {
+        setTrendPoints([]);
+        setTrendGranularity("day");
+      }
     } catch {
       setError("Erreur réseau.");
       setSummary(null);
+      setTrendPoints([]);
+      setTrendGranularity("day");
     } finally {
       setLoading(false);
     }
-  }, [allowed, effectiveRange, clientId, bankId]);
+  }, [allowed, effectiveRange, companyId, clientId, bankId]);
 
   useEffect(() => {
     if (allowed && accessChecked) {
@@ -271,7 +359,7 @@ function ReportingContent() {
       <main className="flex-1 overflow-auto p-6">
         <h1 className="page-title mb-2 text-2xl font-semibold">Rapports financiers</h1>
         <p className="mb-6 text-sm text-[var(--muted-foreground)]">
-          Chiffre d&apos;affaires (totaux des crédits) et débits sur la période sélectionnée, avec filtres par client et par banque.
+          Chiffre d&apos;affaires (totaux des crédits) et débits sur la période sélectionnée, avec filtres par société, client et banque.
         </p>
 
         {bankAccountIdFromUrl && (
@@ -302,20 +390,48 @@ function ReportingContent() {
           {preset === "custom" && (
             <>
               <div className="min-w-[140px]">
-                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Du</label>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">
+                  Du <span className="font-normal text-[var(--muted-foreground)]">(jj/mm/aaaa)</span>
+                </label>
                 <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="jj/mm/aaaa"
+                  value={customFromInput}
+                  onChange={(e) => setCustomFromInput(e.target.value)}
+                  onBlur={() => {
+                    const p = parseFrToIso(customFromInput);
+                    if (p) {
+                      setCustomFrom(p);
+                      setCustomFromInput(formatIsoToFr(p));
+                    } else {
+                      setCustomFromInput(formatIsoToFr(customFrom));
+                    }
+                  }}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
               </div>
               <div className="min-w-[140px]">
-                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Au</label>
+                <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">
+                  Au <span className="font-normal text-[var(--muted-foreground)]">(jj/mm/aaaa)</span>
+                </label>
                 <input
-                  type="date"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="jj/mm/aaaa"
+                  value={customToInput}
+                  onChange={(e) => setCustomToInput(e.target.value)}
+                  onBlur={() => {
+                    const p = parseFrToIso(customToInput);
+                    if (p) {
+                      setCustomTo(p);
+                      setCustomToInput(formatIsoToFr(p));
+                    } else {
+                      setCustomToInput(formatIsoToFr(customTo));
+                    }
+                  }}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
               </div>
@@ -323,38 +439,42 @@ function ReportingContent() {
           )}
           <div className="min-w-[200px] flex-1">
             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+              Société
+            </label>
+            <SearchableSelect
+              value={companyId}
+              onChange={setCompanyId}
+              options={companyOptions}
+              emptyLabel="Toutes les sociétés"
+              ariaLabel="Filtrer par société"
+              className="w-full"
+            />
+          </div>
+          <div className="min-w-[200px] flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
               Client (type de compte)
             </label>
-            <select
+            <SearchableSelect
               value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-            >
-              <option value="">Tous les clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.emoji ? `${c.emoji} ` : ""}
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={setClientId}
+              options={clientOptions}
+              emptyLabel="Tous les clients"
+              ariaLabel="Filtrer par client (type de compte)"
+              className="w-full"
+            />
           </div>
           <div className="min-w-[200px] flex-1">
             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
               Banque
             </label>
-            <select
+            <SearchableSelect
               value={bankId}
-              onChange={(e) => setBankId(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-            >
-              <option value="">Toutes les banques</option>
-              {banks.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              onChange={setBankId}
+              options={bankOptions}
+              emptyLabel="Toutes les banques"
+              ariaLabel="Filtrer par banque"
+              className="w-full"
+            />
           </div>
           <button
             type="button"
@@ -375,7 +495,7 @@ function ReportingContent() {
         <p className="mb-4 text-sm text-[var(--muted-foreground)]">
           Période affichée :{" "}
           <span className="font-medium text-[var(--foreground)]">
-            {effectiveRange.from} → {effectiveRange.to}
+            {formatIsoToFr(effectiveRange.from)} → {formatIsoToFr(effectiveRange.to)}
           </span>
         </p>
 
@@ -403,6 +523,30 @@ function ReportingContent() {
             )}
           </section>
         </div>
+
+        <section className="mt-8 rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
+          <h2 className="subsection-header mb-1 text-base font-medium">
+            {trendGranularity === "hour" ? "Évolution par heure" : "Évolution quotidienne"}
+          </h2>
+          <p className="mb-4 max-w-3xl text-xs text-[var(--muted-foreground)]">
+            {trendGranularity === "hour" ? (
+              <>
+                Période de moins de 48 h : montants agrégés par heure (fuseau Europe/Paris), selon la date
+                d&apos;enregistrement des transactions. Ligne verte : crédits. Ligne rouge : débits.
+              </>
+            ) : (
+              <>
+                Montants enregistrés par jour (chaque point = total des crédits ou des débits ce jour-là). Ligne
+                verte : chiffre d&apos;affaires (crédits). Ligne rouge : débits.
+              </>
+            )}
+          </p>
+          {loading && trendPoints.length === 0 ? (
+            <p className="text-sm text-[var(--muted-foreground)]">Chargement du graphique…</p>
+          ) : (
+            <FinancialTrendChart points={trendPoints} granularity={trendGranularity} />
+          )}
+        </section>
       </main>
     </div>
   );

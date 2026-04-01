@@ -24,10 +24,17 @@ export async function GET(request: NextRequest) {
   const date_to = searchParams.get("date_to") ?? "";
   const client_account_type_id = searchParams.get("client_account_type_id") || null;
   const bank_id = searchParams.get("bank_id") || null;
+  const company_id = searchParams.get("company_id") || null;
 
   if (!isValidDate(date_from) || !isValidDate(date_to)) {
     return NextResponse.json(
       { error: "date_from et date_to requis (format YYYY-MM-DD)." },
+      { status: 400 }
+    );
+  }
+  if (date_from > date_to) {
+    return NextResponse.json(
+      { error: "date_from doit être antérieure ou égale à date_to." },
       { status: 400 }
     );
   }
@@ -51,6 +58,10 @@ export async function GET(request: NextRequest) {
         AND (
           (${client_account_type_id})::text IS NULL
           OR COALESCE(t.client_account_type_id, ba.account_type_id)::text = (${client_account_type_id})::text
+        )
+        AND (
+          (${company_id})::text IS NULL
+          OR ba.company_id::text = (${company_id})::text
         )
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
