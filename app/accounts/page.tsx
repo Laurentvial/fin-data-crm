@@ -1742,6 +1742,7 @@ function AccountsPageContent() {
         throw new Error(errBody.error ?? "Échec de la création");
       }
       const created = data as BankAccount & {
+        telegram_setup_warning?: string;
         telegram_invite_warnings?: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[];
       };
       setBankAccounts((prev) =>
@@ -1749,7 +1750,13 @@ function AccountsPageContent() {
           (a, b) => (a.company_name ?? "").localeCompare(b.company_name ?? "") || a.name.localeCompare(b.name)
         )
       );
+      const setupWarning =
+        typeof created.telegram_setup_warning === "string"
+          ? created.telegram_setup_warning.trim()
+          : "";
       const warnings = created.telegram_invite_warnings;
+      const inviteParts: string[] = [];
+      if (setupWarning) inviteParts.push(setupWarning);
       if (Array.isArray(warnings) && warnings.length > 0) {
         const names = warnings.map((w) => w.name || (w.telegram_username ? `@${w.telegram_username}` : `ID ${w.telegram_id}`));
         const reasonMsg = warnings.some((w) => w.reason === "UserNotMutualContactError")
@@ -1763,9 +1770,12 @@ function AccountsPageContent() {
                 : warnings.length > 0
                 ? `Raison technique : ${warnings.map((w) => w.reason).filter(Boolean).join(", ")}`
                 : null;
-        setCreateInviteWarning(
+        inviteParts.push(
           `${warnings.length} utilisateur(s) n'ont pas pu être ajoutés : ${names.join(", ")}. ${reasonMsg ?? ""}`
         );
+      }
+      if (inviteParts.length > 0) {
+        setCreateInviteWarning(inviteParts.join("\n\n"));
       } else {
         closeCreateModal();
       }

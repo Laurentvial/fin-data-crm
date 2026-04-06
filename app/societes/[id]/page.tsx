@@ -718,10 +718,17 @@ export default function SocieteDetailPage() {
         throw new Error(errBody.error ?? "Échec de l'ajout");
       }
       const added = parsed as BankAccount & {
+        telegram_setup_warning?: string;
         telegram_invite_warnings?: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[];
       };
       setBankAccounts((prev) => [...prev, added as BankAccount].sort((a, b) => a.name.localeCompare(b.name)));
+      const setupWarning =
+        typeof added.telegram_setup_warning === "string"
+          ? added.telegram_setup_warning.trim()
+          : "";
       const warnings = added.telegram_invite_warnings;
+      const inviteParts: string[] = [];
+      if (setupWarning) inviteParts.push(setupWarning);
       if (Array.isArray(warnings) && warnings.length > 0) {
         const names = warnings.map((w) => w.name || (w.telegram_username ? `@${w.telegram_username}` : `ID ${w.telegram_id}`));
         const reasonMsg = warnings.some((w) => w.reason === "UserNotMutualContactError")
@@ -735,9 +742,12 @@ export default function SocieteDetailPage() {
                 : warnings.length > 0
                 ? `Raison technique : ${warnings.map((w) => w.reason).filter(Boolean).join(", ")}`
                 : null;
-        setBankAccountInviteWarning(
+        inviteParts.push(
           `${warnings.length} utilisateur(s) n'ont pas pu être ajoutés : ${names.join(", ")}. ${reasonMsg ?? ""}`
         );
+      }
+      if (inviteParts.length > 0) {
+        setBankAccountInviteWarning(inviteParts.join("\n\n"));
       } else {
         closeCreateAccountModal();
       }

@@ -8,7 +8,8 @@ export const maxDuration = 300;
 function telegramCreateTimeoutMs(): number {
   const n = Number(process.env.TELEGRAM_CREATE_GROUP_TIMEOUT_MS);
   if (Number.isFinite(n) && n >= 5000) return Math.min(n, 290_000);
-  return 120_000;
+  // Default 4 min: linking + many spaced invites / PeerFlood backoff can exceed 120 s.
+  return 240_000;
 }
 
 function maxKbisBase64Chars(): number {
@@ -448,13 +449,29 @@ export async function POST(request: Request) {
       }
     }
 
-    let telegramChatId: string;
+    let telegramChatId: string | undefined;
     let invited: number[] = [];
     let failed: {
       telegram_id: number;
       telegram_username?: string;
       reason: string;
     }[] = [];
+    let telegramSetupWarning: string | null = null;
+
+    /** Si groupe existant saisi : enregistrer l’ID malgré l’échec Telegram ; sinon erreur HTTP. */
+    const abortOrRejectUnlessLink = (
+      message: string,
+      status: number,
+    ): NextResponse | null => {
+      if (useExistingGroup && existingTelegramChatId !== null) {
+        telegramSetupWarning = message.trim();
+        telegramChatId = String(existingTelegramChatId);
+        invited = [];
+        failed = [];
+        return null;
+      }
+      return NextResponse.json({ error: message }, { status });
+    };
 
     const telegramUsers = await sql`
       SELECT ut.telegram_id, ut.telegram_username
@@ -587,57 +604,15 @@ export async function POST(request: Request) {
       bodyJson = JSON.stringify(createGroupBody);
     }
     const tmo = telegramCreateTimeoutMs();
-    let createRes: Response;
-    try {
-      createRes = await fetch(
-        `${serviceUrl!.replace(/\/$/, "")}/create-group`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": apiKey!,
-          },
-          body: bodyJson,
-          signal: AbortSignal.timeout(tmo),
-        },
-      );
-    } catch (fetchErr) {
-      if (isFetchAbortOrTimeout(fetchErr)) {
-        return NextResponse.json(
-          {
-            error: `Le service Telegram n'a pas répondu dans les délais (${Math.round(tmo / 1000)} s). Augmentez TELEGRAM_CREATE_GROUP_TIMEOUT_MS et le timeout du proxy devant Node (ex. proxy_read_timeout dans nginx) pour qu'il dépasse cette durée ; réduisez la taille du KBIS ; ou utilisez « Lier un groupe Telegram existant ». Une page HTML « 502 » sans message JSON indique en général un timeout du proxy, pas l'application.`,
-          },
-          { status: 504 },
-        );
-      }
-      const err = fetchErr as NodeJS.ErrnoException & {
-        cause?: { code?: string };
-      };
-      const code = err?.cause?.code ?? err?.code;
-      if (
-        code === "ECONNREFUSED" ||
-        code === "ENOTFOUND" ||
-        code === "ETIMEDOUT"
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Le service Telegram est inaccessible. Vérifiez que le service est démarré (TELEGRAM_GROUP_SERVICE_URL) ou utilisez « Lier un groupe Telegram existant » en saisissant l'ID du groupe.",
-          },
-          { status: 502 },
-        );
-      }
-      console.error("Telegram create-group fetch error:", fetchErr);
-      return NextResponse.json(
-        { error: "Impossible de contacter le service Telegram." },
-        { status: 502 },
-      );
-    }
-    if (!createRes.ok) {
-      const errText = await createRes.text();
+    let createRes: Response | undefined;
+
+    async function parseTelegramErrorMessage(
+      res: Response,
+      errText: string,
+    ): Promise<string> {
       let msg = useExistingGroup
-        ? "Impossible de finaliser le groupe Telegram (invitations / fichiers)"
-        : "Impossible de créer le groupe Telegram";
+        ? "Impossible de finaliser le groupe Telegram (invitations / fichiers)."
+        : "Impossible de créer le groupe Telegram.";
       try {
         const errData = JSON.parse(errText) as {
           detail?: string | Array<string | { msg?: string }>;
@@ -654,69 +629,145 @@ export async function POST(request: Request) {
         if (errText.trim())
           msg = friendlyTelegramCreateGroupError(errText.slice(0, 2000));
       }
-      console.error("Telegram create-group error:", createRes.status, msg);
-      return NextResponse.json(
-        { error: msg },
-        { status: createRes.status >= 500 ? 502 : createRes.status },
-      );
+      console.error("Telegram create-group error:", res.status, msg);
+      return msg;
     }
-    const responseText = await createRes.text();
-    let createData: {
-      chat_id?: unknown;
-      invited?: number[];
-      failed?: {
-        telegram_id: number;
-        telegram_username?: string;
-        reason: string;
-      }[];
-    };
+
     try {
-      createData = JSON.parse(responseText) as typeof createData;
-    } catch (parseErr) {
-      console.error(
-        "Telegram create-group: JSON invalide, statut",
-        createRes.status,
-        "extrait:",
-        responseText.slice(0, 400),
-        parseErr,
-      );
-      return NextResponse.json(
-        { error: "Réponse invalide du service Telegram (JSON)." },
-        { status: 502 },
-      );
-    }
-    const parsedChatId = normalizeTelegramChatIdFromService(createData.chat_id);
-    if (parsedChatId === null) {
-      console.error(
-        "Telegram create-group: chat_id manquant ou invalide",
-        createData,
-      );
-      return NextResponse.json(
-        { error: "Réponse invalide du service Telegram (chat_id)." },
-        { status: 502 },
-      );
-    }
-    if (useExistingGroup) {
-      if (parsedChatId !== String(existingTelegramChatId)) {
-        console.error(
-          "Telegram setup: chat_id mismatch",
-          parsedChatId,
-          existingTelegramChatId,
-        );
-        return NextResponse.json(
-          {
-            error:
-              "Incohérence de l'ID groupe renvoyé par le service Telegram. Vérifiez les journaux du service.",
+      createRes = await fetch(
+        `${serviceUrl!.replace(/\/$/, "")}/create-group`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey!,
           },
-          { status: 502 },
+          body: bodyJson,
+          signal: AbortSignal.timeout(tmo),
+        },
+      );
+    } catch (fetchErr) {
+      if (isFetchAbortOrTimeout(fetchErr)) {
+        const r = abortOrRejectUnlessLink(
+          `Le service Telegram n'a pas répondu dans les délais (${Math.round(tmo / 1000)} s). Augmentez TELEGRAM_CREATE_GROUP_TIMEOUT_MS et le timeout du proxy devant Node (ex. proxy_read_timeout dans nginx) pour qu'il dépasse cette durée ; réduisez la taille du KBIS ; ou utilisez « Lier un groupe Telegram existant ». Une page HTML « 502 » sans message JSON indique en général un timeout du proxy, pas l'application.`,
+          504,
         );
+        if (r) return r;
+      } else {
+        const err = fetchErr as NodeJS.ErrnoException & {
+          cause?: { code?: string };
+        };
+        const code = err?.cause?.code ?? err?.code;
+        if (
+          code === "ECONNREFUSED" ||
+          code === "ENOTFOUND" ||
+          code === "ETIMEDOUT"
+        ) {
+          const r = abortOrRejectUnlessLink(
+            "Le service Telegram est inaccessible. Vérifiez que le service est démarré (TELEGRAM_GROUP_SERVICE_URL) ou utilisez « Lier un groupe Telegram existant » en saisissant l'ID du groupe.",
+            502,
+          );
+          if (r) return r;
+        } else {
+          console.error("Telegram create-group fetch error:", fetchErr);
+          const r = abortOrRejectUnlessLink(
+            "Impossible de contacter le service Telegram.",
+            502,
+          );
+          if (r) return r;
+        }
       }
-      telegramChatId = String(existingTelegramChatId);
-    } else {
-      telegramChatId = parsedChatId;
     }
-    invited = createData.invited ?? [];
-    failed = createData.failed ?? [];
+
+    if (createRes && !telegramSetupWarning) {
+      if (!createRes.ok) {
+        const errText = await createRes.text();
+        const msg = await parseTelegramErrorMessage(createRes, errText);
+        const r = abortOrRejectUnlessLink(
+          `${msg} Si vous liez un groupe existant, le compte peut être créé avec l'ID saisi ; sinon corrigez la demande ou réessayez.`,
+          createRes.status >= 500 ? 502 : createRes.status,
+        );
+        if (r) return r;
+      } else {
+        const responseText = await createRes.text();
+        let createData:
+          | {
+              chat_id?: unknown;
+              invited?: number[];
+              failed?: {
+                telegram_id: number;
+                telegram_username?: string;
+                reason: string;
+              }[];
+            }
+          | undefined;
+        try {
+          createData = JSON.parse(responseText) as NonNullable<typeof createData>;
+        } catch (parseErr) {
+          console.error(
+            "Telegram create-group: JSON invalide, statut",
+            createRes.status,
+            "extrait:",
+            responseText.slice(0, 400),
+            parseErr,
+          );
+          const r = abortOrRejectUnlessLink(
+            "Réponse invalide du service Telegram (JSON). Vérifiez les journaux du service.",
+            502,
+          );
+          if (r) return r;
+        }
+        if (!telegramSetupWarning && createData) {
+          const parsedChatId = normalizeTelegramChatIdFromService(
+            createData.chat_id,
+          );
+          if (parsedChatId === null) {
+            console.error(
+              "Telegram create-group: chat_id manquant ou invalide",
+              createData,
+            );
+            const r = abortOrRejectUnlessLink(
+              "Réponse invalide du service Telegram (chat_id).",
+              502,
+            );
+            if (r) return r;
+          } else if (
+            useExistingGroup &&
+            parsedChatId !== String(existingTelegramChatId)
+          ) {
+            console.error(
+              "Telegram setup: chat_id mismatch",
+              parsedChatId,
+              existingTelegramChatId,
+            );
+            const r = abortOrRejectUnlessLink(
+              "Incohérence de l'ID groupe renvoyé par le service Telegram. Vérifiez les journaux du service ; le compte sera enregistré avec l'ID saisi.",
+              502,
+            );
+            if (r) return r;
+          } else {
+            if (useExistingGroup) {
+              telegramChatId = String(existingTelegramChatId);
+            } else {
+              telegramChatId = parsedChatId;
+            }
+            invited = createData.invited ?? [];
+            failed = createData.failed ?? [];
+          }
+        }
+      }
+    }
+
+    if (telegramChatId === undefined) {
+      return NextResponse.json(
+        {
+          error:
+            "Échec Telegram : aucun identifiant de groupe à enregistrer. Créez le groupe via le service ou utilisez « Lier un groupe Telegram existant ».",
+        },
+        { status: 502 },
+      );
+    }
+
     if (useExistingGroup) {
       const [existing] = await sql`
         SELECT ba.name AS account_name, c.name AS company_name
@@ -858,13 +909,13 @@ export async function POST(request: Request) {
         enrichedWarnings = failed;
       }
     }
-    const payload =
-      failed.length > 0
-        ? {
-            ...result,
-            telegram_invite_warnings: enrichedWarnings,
-          }
-        : result;
+    const payload: Record<string, unknown> = { ...result };
+    if (telegramSetupWarning) {
+      payload.telegram_setup_warning = telegramSetupWarning;
+    }
+    if (failed.length > 0) {
+      payload.telegram_invite_warnings = enrichedWarnings;
+    }
     return NextResponse.json(jsonSafeForResponse(payload));
   } catch (error) {
     console.error("POST /api/bank-accounts error:", error);
