@@ -12,6 +12,7 @@ import { TelegramBankAccountRattrapage } from "@/components/TelegramBankAccountR
 import { IbanCopyRows } from "@/components/IbanCopyRows";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
+import { buildTelegramWelcomeDraft } from "@/lib/telegram-welcome-draft";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, CompanyEmail, CompanyPhone, IbanItem } from "@/lib/types";
 
@@ -522,6 +523,47 @@ function EditBankAccountModal({
   const [ibanLookupLoading, setIbanLookupLoading] = useState<number | null>(null);
   const [ibanValidation, setIbanValidation] = useState<Record<string, boolean>>({});
 
+  const telegramWelcomeDraft = useMemo(() => {
+    const co = companies.find((c) => c.id === companyId);
+    const companyName = (co?.name ?? bankAccount.company_name ?? "").trim();
+    let emailStr = (bankAccount.company_email ?? "").trim();
+    if (!emailStr && companyEmails.length > 0) {
+      const picked = companyEmailId
+        ? companyEmails.find((e) => e.id === companyEmailId)
+        : undefined;
+      emailStr = (
+        picked?.email ??
+        companyEmails.find((e) => e.is_default)?.email ??
+        companyEmails[0]?.email ??
+        ""
+      ).trim();
+    }
+    const bank = banks.find((b) => b.id === bankId);
+    const bankName = (bank?.name ?? bankAccount.bank_name ?? "").trim() || null;
+    return buildTelegramWelcomeDraft({
+      companyName,
+      address: co?.address,
+      codePostal: co?.code_postal,
+      ville: co?.ville,
+      email: emailStr || null,
+      siret: co?.siret,
+      directeur: co?.directeur,
+      ibans,
+      bankName,
+    });
+  }, [
+    companies,
+    companyId,
+    bankAccount.company_name,
+    bankAccount.company_email,
+    bankAccount.bank_name,
+    companyEmails,
+    companyEmailId,
+    banks,
+    bankId,
+    ibans,
+  ]);
+
   const lookupIbanBic = async (index: number) => {
     const item = ibans[index];
     const raw = (item?.iban ?? "").trim().replace(/\s/g, "").toUpperCase();
@@ -942,6 +984,7 @@ function EditBankAccountModal({
             accountName={name}
             telegramChatId={telegramChatId}
             hasBankLogo={!!bankAccount.has_logo}
+            welcomeDraft={telegramWelcomeDraft}
           />
 
           <div className="col-span-3">
@@ -1112,6 +1155,7 @@ function AccountsPageContent() {
     accountName: string;
     telegramChatId: string;
     hasBankLogo: boolean;
+    welcomeDraft: string;
   } | null>(null);
   const [createLinkExistingGroupId, setCreateLinkExistingGroupId] = useState("");
   const [creating, setCreating] = useState(false);
@@ -1828,11 +1872,29 @@ function AccountsPageContent() {
         setCreateInviteWarning(inviteParts.join("\n\n"));
       }
       if (createLinkTelegramEnabled && created.telegram_chat_id != null) {
+        const cr = created as BankAccount;
+        const co = companies.find((c) => c.id === String(cr.company_id ?? createCompanyId));
+        let emailStr = (cr.company_email ?? "").trim();
+        if (!emailStr && co?.emails && co.emails.length > 0) {
+          emailStr = co.emails[0]!.trim();
+        }
+        const welcomeDraft = buildTelegramWelcomeDraft({
+          companyName: (co?.name ?? cr.company_name ?? "").trim(),
+          address: co?.address,
+          codePostal: co?.code_postal,
+          ville: co?.ville,
+          email: emailStr || null,
+          siret: co?.siret,
+          directeur: co?.directeur,
+          ibans: Array.isArray(cr.ibans) ? cr.ibans : [],
+          bankName: (cr.bank_name ?? "").trim() || null,
+        });
         setCreatePostTelegram({
           accountId: String(created.id),
           accountName: typeof created.name === "string" ? created.name : createName.trim(),
           telegramChatId: String(created.telegram_chat_id),
           hasBankLogo: !!(created as { has_logo?: boolean }).has_logo,
+          welcomeDraft,
         });
       } else if (inviteParts.length === 0) {
         closeCreateModal();

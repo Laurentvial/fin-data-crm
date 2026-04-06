@@ -18,14 +18,47 @@ function ChevronRightIcon({ className }: { className?: string }) {
   );
 }
 
+function btnClass(disabled: boolean) {
+  return `rounded-lg border border-[var(--border)] bg-[var(--primary)] px-2.5 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 shrink-0`;
+}
+
+function formatSyncResponse(data: Record<string, unknown>, headline: string): string {
+  const lines: string[] = [headline];
+  if (typeof data.classic_chat_admin_note === "string") {
+    lines.push(data.classic_chat_admin_note);
+  }
+  const invited = data.invited;
+  if (Array.isArray(invited) && invited.length > 0) {
+    lines.push(`Invités : ${invited.join(", ")}.`);
+  }
+  const failed = data.failed;
+  if (Array.isArray(failed) && failed.length > 0) {
+    lines.push(
+      `Échecs invitation : ${failed.map((f: { telegram_id?: number; reason?: string }) => `${f.telegram_id ?? "?"} (${f.reason ?? ""})`).join(" ; ")}`,
+    );
+  }
+  const apf = data.admin_promote_failed;
+  if (Array.isArray(apf) && apf.length > 0) {
+    lines.push(
+      `Échecs promotion : ${apf.map((f: { telegram_id?: number; reason?: string }) => `${f.telegram_id ?? "?"} (${f.reason ?? ""})`).join(" ; ")}`,
+    );
+  }
+  const pof = data.promote_only_failed;
+  if (Array.isArray(pof) && pof.length > 0) {
+    lines.push(
+      `Échecs promotion (membres déjà présents) : ${pof.map((f: { telegram_id?: number; reason?: string }) => `${f.telegram_id ?? "?"} (${f.reason ?? ""})`).join(" ; ")}`,
+    );
+  }
+  return lines.join("\n");
+}
+
 export interface TelegramBankAccountRattrapageProps {
   bankAccountId: string;
-  /** Used as default suggested title when resetting (e.g. compte name). */
   accountName: string;
   telegramChatId: string;
   hasBankLogo: boolean;
-  /** Open the collapsible section on mount (e.g. after creating an account). */
   defaultExpanded?: boolean;
+  welcomeDraft?: string;
 }
 
 export function TelegramBankAccountRattrapage({
@@ -34,36 +67,34 @@ export function TelegramBankAccountRattrapage({
   telegramChatId,
   hasBankLogo,
   defaultExpanded = false,
+  welcomeDraft = "",
 }: TelegramBankAccountRattrapageProps) {
   const [telegramCatchUpExpanded, setTelegramCatchUpExpanded] = useState(defaultExpanded);
   const [telegramSyncTitle, setTelegramSyncTitle] = useState("");
-  const [telegramUpdateTitle, setTelegramUpdateTitle] = useState(false);
-  const [telegramApplyBankLogo, setTelegramApplyBankLogo] = useState(false);
   const [telegramCustomLogoLabel, setTelegramCustomLogoLabel] = useState<string | null>(null);
   const telegramCustomLogoRef = useRef<{ base64: string; contentType: string } | null>(null);
-  const [telegramInviteIds, setTelegramInviteIds] = useState<Set<number>>(() => new Set());
-  const [telegramPromoteOnInvite, setTelegramPromoteOnInvite] = useState(true);
-  const [telegramPromoteOnlyIds, setTelegramPromoteOnlyIds] = useState<Set<number>>(() => new Set());
   const [telegramWelcome, setTelegramWelcome] = useState("");
   const [telegramUsersList, setTelegramUsersList] = useState<
     { telegram_id: number; telegram_username?: string; name?: string }[]
   >([]);
   const [telegramUsersLoading, setTelegramUsersLoading] = useState(false);
-  const [telegramSyncRunning, setTelegramSyncRunning] = useState(false);
+  /** Clef de l’action en cours (ex. title, logo-bank, invite-123, promote-456). */
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [telegramSyncResult, setTelegramSyncResult] = useState<string | null>(null);
+
+  const chatOk =
+    String(telegramChatId ?? "").trim().length > 0 &&
+    /^-?\d+$/.test(String(telegramChatId ?? "").trim());
 
   useEffect(() => {
     setTelegramSyncTitle(accountName.trim());
-    setTelegramUpdateTitle(false);
-    setTelegramApplyBankLogo(!!hasBankLogo);
-    setTelegramInviteIds(new Set());
-    setTelegramPromoteOnlyIds(new Set());
-    setTelegramWelcome("");
+    setTelegramWelcome(welcomeDraft ?? "");
     setTelegramCustomLogoLabel(null);
     telegramCustomLogoRef.current = null;
     setTelegramSyncResult(null);
+    setBusyKey(null);
     setTelegramCatchUpExpanded(defaultExpanded);
-  }, [bankAccountId, accountName, hasBankLogo, defaultExpanded]);
+  }, [bankAccountId, accountName, defaultExpanded, welcomeDraft]);
 
   useEffect(() => {
     if (!telegramCatchUpExpanded) return;
@@ -89,22 +120,35 @@ export function TelegramBankAccountRattrapage({
     };
   }, [telegramCatchUpExpanded]);
 
-  const toggleTelegramInvite = (tid: number) => {
-    setTelegramInviteIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(tid)) next.delete(tid);
-      else next.add(tid);
-      return next;
-    });
+  const appendLog = (block: string) => {
+    setTelegramSyncResult((prev) => (prev ? `${prev}\n\n—\n\n${block}` : block));
   };
 
-  const toggleTelegramPromoteOnly = (tid: number) => {
-    setTelegramPromoteOnlyIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(tid)) next.delete(tid);
-      else next.add(tid);
-      return next;
-    });
+  const runAction = async (key: string, body: Record<string, unknown>, successHeadline: string) => {
+    if (!chatOk) return;
+    setBusyKey(key);
+    try {
+      const res = await fetch(`/api/bank-accounts/${bankAccountId}/telegram-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      let data: Record<string, unknown> = {};
+      try {
+        data = (await res.json()) as Record<string, unknown>;
+      } catch {
+        data = {};
+      }
+      if (!res.ok) {
+        appendLog(typeof data.error === "string" ? data.error : `Erreur ${res.status}`);
+        return;
+      }
+      appendLog(formatSyncResponse(data, successHeadline));
+    } catch (err) {
+      appendLog(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setBusyKey(null);
+    }
   };
 
   const handleTelegramCustomLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,94 +173,62 @@ export function TelegramBankAccountRattrapage({
     }
     telegramCustomLogoRef.current = { contentType: m[1], base64: m[2] };
     setTelegramCustomLogoLabel(file.name);
-    setTelegramApplyBankLogo(false);
   };
 
-  const runTelegramCatchUp = async () => {
-    const custom = telegramCustomLogoRef.current;
-    const hasTitle = telegramUpdateTitle && telegramSyncTitle.trim().length > 0;
-    const hasLogo = Boolean(custom) || telegramApplyBankLogo;
-    const hasInv = telegramInviteIds.size > 0;
-    const hasPo = telegramPromoteOnlyIds.size > 0;
-    const hasWel = telegramWelcome.trim().length > 0;
-    if (!hasTitle && !hasLogo && !hasInv && !hasPo && !hasWel) {
-      setTelegramSyncResult("Cochez au moins une action (titre, logo, invitations, promotions ou message).");
+  const applyTitle = () => {
+    const t = telegramSyncTitle.trim();
+    if (!t) {
+      appendLog("Nom du groupe : saisissez un titre avant d’appliquer.");
       return;
     }
-    setTelegramSyncRunning(true);
-    setTelegramSyncResult(null);
-    try {
-      const body: Record<string, unknown> = {};
-      if (hasTitle) {
-        body.update_title = true;
-        body.telegram_title = telegramSyncTitle.trim();
-      }
-      if (custom) {
-        body.logo_base64 = custom.base64;
-        body.logo_content_type = custom.contentType;
-      } else if (telegramApplyBankLogo) {
-        body.apply_bank_logo = true;
-      }
-      if (hasInv) {
-        body.invite_telegram_ids = [...telegramInviteIds];
-        body.promote_invite_users = telegramPromoteOnInvite;
-      }
-      if (hasPo) {
-        body.promote_only_telegram_ids = [...telegramPromoteOnlyIds];
-      }
-      if (hasWel) {
-        body.welcome_message = telegramWelcome.trim();
-      }
-      const res = await fetch(`/api/bank-accounts/${bankAccountId}/telegram-sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      let data: Record<string, unknown> = {};
-      try {
-        data = (await res.json()) as Record<string, unknown>;
-      } catch {
-        data = {};
-      }
-      if (!res.ok) {
-        setTelegramSyncResult(
-          typeof data.error === "string" ? data.error : `Erreur ${res.status}`,
-        );
-        return;
-      }
-      const lines: string[] = ["Opération Telegram terminée."];
-      if (typeof data.classic_chat_admin_note === "string") {
-        lines.push(data.classic_chat_admin_note);
-      }
-      const invited = data.invited;
-      if (Array.isArray(invited) && invited.length > 0) {
-        lines.push(`Invités : ${invited.join(", ")}.`);
-      }
-      const failed = data.failed;
-      if (Array.isArray(failed) && failed.length > 0) {
-        lines.push(
-          `Échecs invitation : ${failed.map((f: { telegram_id?: number; reason?: string }) => `${f.telegram_id ?? "?"} (${f.reason ?? ""})`).join(" ; ")}`,
-        );
-      }
-      const apf = data.admin_promote_failed;
-      if (Array.isArray(apf) && apf.length > 0) {
-        lines.push(
-          `Échecs promotion : ${apf.map((f: { telegram_id?: number; reason?: string }) => `${f.telegram_id ?? "?"} (${f.reason ?? ""})`).join(" ; ")}`,
-        );
-      }
-      const pof = data.promote_only_failed;
-      if (Array.isArray(pof) && pof.length > 0) {
-        lines.push(
-          `Échecs promotion (membres déjà présents) : ${pof.map((f: { telegram_id?: number; reason?: string }) => `${f.telegram_id ?? "?"} (${f.reason ?? ""})`).join(" ; ")}`,
-        );
-      }
-      setTelegramSyncResult(lines.join("\n"));
-    } catch (err) {
-      setTelegramSyncResult(err instanceof Error ? err.message : "Erreur inconnue");
-    } finally {
-      setTelegramSyncRunning(false);
-    }
+    return runAction("title", { update_title: true, telegram_title: t }, "Nom du groupe mis à jour.");
   };
+
+  const sendBankLogo = () =>
+    runAction("logo-bank", { apply_bank_logo: true }, "Logo banque envoyé sur le groupe.");
+
+  const sendCustomLogo = () => {
+    const custom = telegramCustomLogoRef.current;
+    if (!custom) {
+      appendLog("Choisissez d’abord une image.");
+      return;
+    }
+    return runAction(
+      "logo-custom",
+      { logo_base64: custom.base64, logo_content_type: custom.contentType },
+      "Image personnalisée envoyée sur le groupe.",
+    );
+  };
+
+  const postWelcome = () => {
+    const msg = telegramWelcome.trim();
+    if (!msg) {
+      appendLog("Message vide : rien à publier.");
+      return;
+    }
+    return runAction("welcome", { welcome_message: msg }, "Message publié dans le groupe.");
+  };
+
+  const inviteUser = (telegramId: number, promoteAfter: boolean) => {
+    const key = promoteAfter ? `invite-promote-${telegramId}` : `invite-simple-${telegramId}`;
+    return runAction(
+      key,
+      {
+        invite_telegram_ids: [telegramId],
+        promote_invite_users: promoteAfter,
+      },
+      promoteAfter
+        ? `Invitation (avec droit d’ajouter des membres) : ID ${telegramId}.`
+        : `Invitation : ID ${telegramId}.`,
+    );
+  };
+
+  const promoteOnlyUser = (telegramId: number) =>
+    runAction(
+      `promote-${telegramId}`,
+      { promote_only_telegram_ids: [telegramId] },
+      `Promotion (déjà membre) : ID ${telegramId}.`,
+    );
 
   return (
     <div className="col-span-3 rounded-lg border border-[var(--border)] bg-[var(--muted)]/15">
@@ -231,135 +243,152 @@ export function TelegramBankAccountRattrapage({
         </span>
       </button>
       {telegramCatchUpExpanded && (
-        <div className="space-y-3 border-t border-[var(--border)] p-3 text-sm">
+        <div className="space-y-4 border-t border-[var(--border)] p-3 text-sm">
           <p className="text-xs text-[var(--muted-foreground)]">
-            Actions optionnelles sur le groupe lié. Le service Telegram doit être disponible. Sur supergroupe, « droit
-            d’inviter » = admin limité ; sur petit groupe classique, Telegram n’expose que l’admin complet.
+            Chaque action envoie une requête au service Telegram. Sur supergroupe, « droit d’inviter » = admin limité ;
+            sur petit groupe classique, Telegram n’expose que l’admin complet.
           </p>
           {telegramSyncResult && (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs whitespace-pre-wrap">
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs whitespace-pre-wrap">
               {telegramSyncResult}
             </div>
           )}
-          <label className="flex items-start gap-2">
+
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+            <p className="text-xs font-medium text-[var(--foreground)]">Nom du groupe Telegram</p>
             <input
-              type="checkbox"
-              checked={telegramUpdateTitle}
-              onChange={(e) => setTelegramUpdateTitle(e.target.checked)}
-              className="mt-1"
+              type="text"
+              value={telegramSyncTitle}
+              onChange={(e) => setTelegramSyncTitle(e.target.value)}
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
-            <span>
-              Mettre à jour le nom affiché du groupe Telegram
-              <input
-                type="text"
-                value={telegramSyncTitle}
-                onChange={(e) => setTelegramSyncTitle(e.target.value)}
-                disabled={!telegramUpdateTitle}
-                className="mt-1 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm disabled:opacity-50"
-              />
-            </span>
-          </label>
-          <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={telegramApplyBankLogo}
-                onChange={(e) => {
-                  setTelegramApplyBankLogo(e.target.checked);
-                  if (e.target.checked) {
-                    telegramCustomLogoRef.current = null;
-                    setTelegramCustomLogoLabel(null);
-                  }
-                }}
-                disabled={!hasBankLogo || !!telegramCustomLogoLabel}
-              />
-              <span>
-                Envoyer le logo de la banque du compte comme photo du groupe
-                {!hasBankLogo ? (
-                  <span className="text-[var(--muted-foreground)]"> (aucun logo enregistré pour cette banque)</span>
-                ) : null}
-              </span>
-            </label>
-            <label className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
-              Ou image personnalisée (prioritaire sur le logo banque)
-              <input
-                type="file"
-                accept="image/*"
-                className="max-w-full text-[var(--foreground)]"
-                onChange={handleTelegramCustomLogo}
-              />
-              {telegramCustomLogoLabel ? (
-                <span className="text-[var(--foreground)]">{telegramCustomLogoLabel}</span>
-              ) : null}
-            </label>
+            <button
+              type="button"
+              onClick={() => void applyTitle()}
+              disabled={!chatOk || busyKey !== null}
+              className={btnClass(!chatOk || busyKey !== null)}
+            >
+              {busyKey === "title" ? "Envoi…" : "Appliquer ce nom sur Telegram"}
+            </button>
           </div>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-[var(--muted-foreground)]">Message à poster dans le groupe (optionnel)</span>
+
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+            <p className="text-xs font-medium text-[var(--foreground)]">Photo du groupe</p>
+            <button
+              type="button"
+              onClick={() => void sendBankLogo()}
+              disabled={!chatOk || !hasBankLogo || busyKey !== null}
+              className={btnClass(!chatOk || !hasBankLogo || busyKey !== null)}
+            >
+              {busyKey === "logo-bank" ? "Envoi…" : "Envoyer le logo de la banque"}
+            </button>
+            {!hasBankLogo ? (
+              <p className="text-xs text-[var(--muted-foreground)]">Aucun logo enregistré pour cette banque.</p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <label className="text-xs text-[var(--muted-foreground)]">
+                Image personnalisée
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="ml-2 max-w-[min(100%,12rem)] text-[var(--foreground)]"
+                  onChange={(e) => void handleTelegramCustomLogo(e)}
+                />
+              </label>
+              {telegramCustomLogoLabel ? (
+                <span className="text-xs text-[var(--foreground)]">{telegramCustomLogoLabel}</span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void sendCustomLogo()}
+                disabled={!chatOk || !telegramCustomLogoRef.current || busyKey !== null}
+                className={btnClass(!chatOk || !telegramCustomLogoRef.current || busyKey !== null)}
+              >
+                {busyKey === "logo-custom" ? "Envoi…" : "Envoyer cette image"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+            <p className="text-xs font-medium text-[var(--foreground)]">Message dans le groupe</p>
             <textarea
               value={telegramWelcome}
               onChange={(e) => setTelegramWelcome(e.target.value)}
-              rows={2}
-              className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              rows={4}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
-          </label>
-          <div>
-            <p className="mb-1 text-xs font-medium text-[var(--foreground)]">Utilisateurs CRM liés à Telegram</p>
+            <button
+              type="button"
+              onClick={() => void postWelcome()}
+              disabled={!chatOk || busyKey !== null}
+              className={btnClass(!chatOk || busyKey !== null)}
+            >
+              {busyKey === "welcome" ? "Envoi…" : "Publier ce message"}
+            </button>
+          </div>
+
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+            <p className="mb-2 text-xs font-medium text-[var(--foreground)]">Utilisateurs CRM liés à Telegram</p>
             {telegramUsersLoading ? (
               <p className="text-xs text-[var(--muted-foreground)]">Chargement…</p>
             ) : telegramUsersList.length === 0 ? (
               <p className="text-xs text-[var(--muted-foreground)]">Aucun compte Telegram lié (admin ou paramètres utilisateurs).</p>
             ) : (
-              <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-[var(--border)] p-2">
+              <ul className="max-h-52 space-y-2 overflow-y-auto text-xs">
                 {telegramUsersList.map((u) => {
                   const label =
                     u.name || (u.telegram_username ? `@${u.telegram_username}` : `ID ${u.telegram_id}`);
+                  const invSimpleBusy = busyKey === `invite-simple-${u.telegram_id}`;
+                  const invPromoteBusy = busyKey === `invite-promote-${u.telegram_id}`;
+                  const proBusy = busyKey === `promote-${u.telegram_id}`;
                   return (
-                    <div key={u.telegram_id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      <label className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={telegramInviteIds.has(u.telegram_id)}
-                          onChange={() => toggleTelegramInvite(u.telegram_id)}
-                        />
-                        Inviter {label}
-                      </label>
-                      <label className="flex items-center gap-1 text-[var(--muted-foreground)]">
-                        <input
-                          type="checkbox"
-                          checked={telegramPromoteOnlyIds.has(u.telegram_id)}
-                          onChange={() => toggleTelegramPromoteOnly(u.telegram_id)}
-                        />
-                        Promouvoir seulement (déjà dans le groupe)
-                      </label>
-                    </div>
+                    <li
+                      key={u.telegram_id}
+                      className="flex flex-col gap-2 rounded-md border border-[var(--border)] p-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+                    >
+                      <span className="font-medium text-[var(--foreground)]">{label}</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void inviteUser(u.telegram_id, false)}
+                          disabled={!chatOk || busyKey !== null}
+                          className={btnClass(!chatOk || busyKey !== null)}
+                        >
+                          {invSimpleBusy ? "…" : "Inviter"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void inviteUser(u.telegram_id, true)}
+                          disabled={!chatOk || busyKey !== null}
+                          className={btnClass(!chatOk || busyKey !== null)}
+                          title="Admin limité en supergroupe : peut ajouter des membres"
+                        >
+                          {invPromoteBusy ? "…" : "Inviter + droit membres"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void promoteOnlyUser(u.telegram_id)}
+                          disabled={!chatOk || busyKey !== null}
+                          className={`rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-xs font-medium text-[var(--foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                          {proBusy ? "…" : "Promouvoir (déjà membre)"}
+                        </button>
+                      </div>
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             )}
-            <label className="mt-2 flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={telegramPromoteOnInvite}
-                onChange={(e) => setTelegramPromoteOnInvite(e.target.checked)}
-              />
-              Après invitation : leur donner le droit d’ajouter d’autres membres (admin limité en supergroupe)
-            </label>
+            <p className="mt-2 text-[11px] leading-snug text-[var(--muted-foreground)]">
+              « Inviter » ajoute la personne au groupe. « Inviter + droit membres » l’ajoute puis lui donne le droit
+              d’inviter d’autres personnes (supergroupe). « Promouvoir (déjà membre) » : la personne est déjà dans le
+              groupe, on applique seulement la promotion.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={runTelegramCatchUp}
-            disabled={
-              telegramSyncRunning ||
-              !String(telegramChatId ?? "").trim() ||
-              !/^-?\d+$/.test(String(telegramChatId ?? "").trim())
-            }
-            className="rounded-lg border border-[var(--border)] bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {telegramSyncRunning ? "Envoi au service Telegram…" : "Exécuter sur Telegram"}
-          </button>
-          {(!String(telegramChatId ?? "").trim() || !/^-?\d+$/.test(String(telegramChatId ?? "").trim())) && (
+
+          {!chatOk && (
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              Renseignez un ID de groupe Telegram valide pour ce compte pour lancer le rattrapage.
+              Renseignez un ID de groupe Telegram valide pour ce compte pour utiliser ces actions.
             </p>
           )}
         </div>
