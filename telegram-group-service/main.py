@@ -1485,6 +1485,12 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
 
     existing_raw = body.get("existing_chat_id")
     link_existing = existing_raw is not None and str(existing_raw).strip() != ""
+    crm_link_only = body.pop("crm_link_only", False) is True
+    if crm_link_only and not link_existing:
+        raise HTTPException(
+            status_code=400,
+            detail="crm_link_only requires existing_chat_id",
+        )
 
     title = body.get("title")
     if link_existing:
@@ -1542,6 +1548,14 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
 
 
         is_classic_chat = isinstance(group_entity, Chat)
+
+        if crm_link_only:
+            return {
+                "chat_id": str(chat_id),
+                "invited": [],
+                "failed": [],
+                "crm_link_only": True,
+            }
 
         await _apply_group_logo_from_base64(tg, group_entity, is_classic_chat, logo_base64, logo_content_type)
 

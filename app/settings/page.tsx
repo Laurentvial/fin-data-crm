@@ -1215,7 +1215,8 @@ function DatabaseBackupSection() {
         Créez un instantané logique de la base (données des tables, tous schémas hors catalogues système) et
         déposez-le sur Cloudinary en ressource brute (NDJSON compressé, équivalent{" "}
         <span className="font-mono text-xs">.jsonl.gz</span>). Réutilise les mêmes identifiants que pour les
-        factures PDF. Le schéma reste défini par les migrations du dépôt.
+        factures PDF. Le schéma reste défini par les migrations du dépôt. Avec Neon (HTTP), chaque requête est
+        limitée (~64 Mo) : l’export utilise de petits lots et tronque les gros champs (fichiers base64, etc.).
       </p>
 
       {!configured ? (
@@ -1226,7 +1227,9 @@ function DatabaseBackupSection() {
             <span className="font-mono">CLOUDINARY_API_KEY</span>,{" "}
             <span className="font-mono">CLOUDINARY_API_SECRET</span>. Optionnel :{" "}
             <span className="font-mono">CLOUDINARY_BACKUP_FOLDER</span> (défaut{" "}
-            <span className="font-mono">database-backups</span>) — dossier des fichiers raw de sauvegarde.
+            <span className="font-mono">database-backups</span>) — dossier des fichiers raw de sauvegarde ;{" "}
+            <span className="font-mono">DATABASE_BACKUP_PAGE_SIZE</span> (défaut 25) si une erreur « response is
+            too large » persiste.
           </p>
         </div>
       ) : null}

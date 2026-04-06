@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import {
   getCloudinaryBackupConfig,
+  isNeonSqlResponseTooLargeError,
   listRecentDatabaseBackups,
   runDatabaseBackupToCloudinary,
 } from "@/lib/database-cloudinary-backup";
@@ -72,6 +73,15 @@ export async function POST() {
     return NextResponse.json({ ok: true, key, public_id, secure_url, cloud_name });
   } catch (e) {
     console.error("POST /api/admin/database-backup:", e);
+    if (isNeonSqlResponseTooLargeError(e)) {
+      return NextResponse.json(
+        {
+          error:
+            "Réponse SQL trop volumineuse pour Neon (limite ~64 Mo par requête). Réduisez DATABASE_BACKUP_PAGE_SIZE (ex. 5 ou 10), redémarrez, puis réessayez. Les colonnes bytea sont omises et data_base64 / template_content sont tronqués dans l’export.",
+        },
+        { status: 507 }
+      );
+    }
     const message = e instanceof Error ? e.message : "Échec de la sauvegarde.";
     return NextResponse.json({ error: message }, { status: 500 });
   }

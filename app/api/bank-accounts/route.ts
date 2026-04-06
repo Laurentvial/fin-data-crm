@@ -12,13 +12,6 @@ function telegramCreateTimeoutMs(): number {
   return 240_000;
 }
 
-function maxKbisBase64Chars(): number {
-  const n = Number(process.env.TELEGRAM_CREATE_MAX_KBIS_BASE64_CHARS);
-  if (Number.isFinite(n) && n > 10_000) return n;
-  // Default ~2.1 MiB binary after decode — safer for Telegram worker on 512 MB RAM (e.g. Render Starter).
-  return 2_800_000;
-}
-
 function isFetchAbortOrTimeout(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   if (err.name === "AbortError" || err.name === "TimeoutError") return true;
@@ -381,70 +374,16 @@ export async function POST(request: Request) {
         );
       }
     }
-    let bankName: string | null = null;
     if (bank_id) {
       const [bank] =
-        await sql`SELECT id, name FROM banks WHERE id = ${bank_id}::uuid LIMIT 1`;
+        await sql`SELECT id FROM banks WHERE id = ${bank_id}::uuid LIMIT 1`;
       if (!bank) {
         return NextResponse.json(
           { error: "Banque introuvable." },
           { status: 404 },
         );
       }
-      bankName = (bank.name as string) ?? null;
     }
-    let emailStr = "—";
-    if (company_email_id) {
-      const [emRow] =
-        await sql`SELECT email FROM company_emails WHERE id = ${company_email_id}::uuid AND company_id = ${company_id}::uuid`;
-      if (emRow) emailStr = (emRow.email as string) ?? "—";
-    } else {
-      const [defEmail] =
-        await sql`SELECT email FROM company_emails WHERE company_id = ${company_id}::uuid AND is_default = true LIMIT 1`;
-      if (defEmail) emailStr = (defEmail.email as string) ?? "—";
-      else {
-        const emailRows =
-          await sql`SELECT email FROM company_emails WHERE company_id = ${company_id}::uuid ORDER BY email`;
-        emailStr =
-          emailRows.length > 0
-            ? emailRows.map((r) => r.email as string).join(", ")
-            : "—";
-      }
-    }
-    const [kbisRow] = await sql`
-      SELECT filename, content_type, data_base64
-      FROM company_files
-      WHERE company_id = ${company_id}::uuid AND file_type = 'kbis'
-      LIMIT 1
-    `;
-    const piDocRows = await sql`
-      SELECT file_type, filename, content_type, data_base64
-      FROM company_files
-      WHERE company_id = ${company_id}::uuid AND file_type IN ('pi_recto', 'pi_verso')
-    `;
-    const title = name;
-
-    const ibanStr =
-      ibanItems.length > 0
-        ? ibanItems
-            .map((i) => (i.bic ? `${i.iban} (BIC: ${i.bic})` : i.iban))
-            .join(", ")
-        : "—";
-    const addrParts = [
-      typeof company.address === "string" ? company.address.trim() : "",
-      typeof company.code_postal === "string" ? company.code_postal.trim() : "",
-      typeof company.ville === "string" ? company.ville.trim() : "",
-    ].filter(Boolean);
-    const addressLine = addrParts.length > 0 ? addrParts.join(", ") : "—";
-    const welcomeMessage = [
-      `NOM STE : ${company.name}`,
-      `ADRESSE : ${addressLine}`,
-      `EMAIL : ${emailStr}`,
-      `SIRET : ${(company.siret as string) ?? "—"}`,
-      `DIRECTEUR : ${(company.directeur as string) ?? "—"}`,
-      `IBAN : ${ibanStr}`,
-      `BANQUE : ${bankName ?? "—"}`,
-    ].join("\n\n");
 
     let telegramChatId: string | undefined;
     let invited: number[] = [];
@@ -456,166 +395,27 @@ export async function POST(request: Request) {
     let telegramSetupWarning: string | null = null;
 
     if (!skipTelegram) {
-    let logoBase64: string | null = null;
-    let logoContentType: string | null = null;
-    if (bank_id) {
-      const [logoRow] = await sql`
-        SELECT content_type, data_base64
-        FROM bank_files
-        WHERE bank_id = ${bank_id}::uuid AND file_type = 'logo'
-        LIMIT 1
-      `;
-      if (logoRow && typeof logoRow.data_base64 === "string") {
-        logoBase64 = logoRow.data_base64 as string;
-        logoContentType = (logoRow.content_type as string) || "image/png";
-      }
-    }
-
-    /** Si groupe existant saisi : enregistrer l’ID malgré l’échec Telegram ; sinon erreur HTTP. */
-    const abortOrRejectUnlessLink = (
-      message: string,
-      status: number,
-    ): NextResponse | null => {
-      if (!skipTelegram && existingTelegramChatId !== null) {
-        telegramSetupWarning = message.trim();
-        telegramChatId = String(existingTelegramChatId);
-        invited = [];
-        failed = [];
-        return null;
-      }
-      return NextResponse.json({ error: message }, { status });
-    };
-
-    const telegramUsers = await sql`
-      SELECT ut.telegram_id, ut.telegram_username
-      FROM user_telegram ut
-    `;
-    const users =
-      telegramUsers.length > 0
-        ? telegramUsers.map((u) => ({
-            telegram_id: Number(u.telegram_id),
-            telegram_username: u.telegram_username ?? undefined,
-          }))
-        : undefined;
-
-    const createGroupBody: {
-      title: string;
-      existing_chat_id?: number;
-      users?: { telegram_id: number; telegram_username?: string }[];
-      logo_base64?: string;
-      logo_content_type?: string;
-      welcome_message?: string;
-      kbis_base64?: string;
-      kbis_content_type?: string;
-      kbis_filename?: string;
-      pi_recto_base64?: string;
-      pi_recto_filename?: string;
-      pi_verso_base64?: string;
-      pi_verso_filename?: string;
-    } = {
-      title,
-      users,
-      welcome_message: welcomeMessage,
-    };
-    if (!skipTelegram) {
-      createGroupBody.existing_chat_id = existingTelegramChatId!;
-    }
-    if (logoBase64 && logoContentType) {
-      createGroupBody.logo_base64 = logoBase64;
-      createGroupBody.logo_content_type = logoContentType;
-      console.log(
-        "Sending bank logo to Telegram service:",
-        logoContentType,
-        logoBase64.length,
-        "chars base64",
-      );
-    } else {
-      console.log(
-        "No bank logo to send (bank_id=%s, hasLogo=%s)",
-        bank_id ?? "null",
-        !!logoBase64,
-      );
-    }
-    const maxAttachB64 = maxKbisBase64Chars();
-    if (kbisRow && typeof kbisRow.data_base64 === "string") {
-      const kbisB64 = kbisRow.data_base64 as string;
-      if (kbisB64.length <= maxAttachB64) {
-        createGroupBody.kbis_base64 = kbisB64;
-        createGroupBody.kbis_content_type =
-          (kbisRow.content_type as string) || "application/pdf";
-        if (typeof kbisRow.filename === "string" && kbisRow.filename) {
-          createGroupBody.kbis_filename = kbisRow.filename;
+      /** Si groupe existant saisi : enregistrer l’ID malgré l’échec Telegram ; sinon erreur HTTP. */
+      const abortOrRejectUnlessLink = (
+        message: string,
+        status: number,
+      ): NextResponse | null => {
+        if (!skipTelegram && existingTelegramChatId !== null) {
+          telegramSetupWarning = message.trim();
+          telegramChatId = String(existingTelegramChatId);
+          invited = [];
+          failed = [];
+          return null;
         }
-      } else {
-        console.warn(
-          "POST /api/bank-accounts: KBIS trop volumineux pour create-group (%s chars > %s), envoi sans pièce jointe Telegram.",
-          kbisB64.length,
-          maxAttachB64,
-        );
-        createGroupBody.welcome_message = `${welcomeMessage}\n\n(NB : KBIS non joint automatiquement — fichier trop volumineux. Ajoutez-le manuellement au groupe ou augmentez TELEGRAM_CREATE_MAX_KBIS_BASE64_CHARS.)`;
-      }
-    }
-    type PiRow = {
-      file_type: string;
-      filename?: string | null;
-      data_base64?: string | null;
-    };
-    const piRectoRow = (piDocRows as PiRow[]).find(
-      (r) => r.file_type === "pi_recto",
-    );
-    const piVersoRow = (piDocRows as PiRow[]).find(
-      (r) => r.file_type === "pi_verso",
-    );
-    if (piRectoRow && typeof piRectoRow.data_base64 === "string") {
-      const b64 = piRectoRow.data_base64;
-      if (b64.length <= maxAttachB64) {
-        createGroupBody.pi_recto_base64 = b64;
-        if (typeof piRectoRow.filename === "string" && piRectoRow.filename) {
-          createGroupBody.pi_recto_filename = piRectoRow.filename;
-        }
-      } else {
-        console.warn(
-          "POST /api/bank-accounts: pi_recto trop volumineux pour create-group (%s chars > %s), ignoré.",
-          b64.length,
-          maxAttachB64,
-        );
-      }
-    }
-    if (piVersoRow && typeof piVersoRow.data_base64 === "string") {
-      const b64 = piVersoRow.data_base64;
-      if (b64.length <= maxAttachB64) {
-        createGroupBody.pi_verso_base64 = b64;
-        if (typeof piVersoRow.filename === "string" && piVersoRow.filename) {
-          createGroupBody.pi_verso_filename = piVersoRow.filename;
-        }
-      } else {
-        console.warn(
-          "POST /api/bank-accounts: pi_verso trop volumineux pour create-group (%s chars > %s), ignoré.",
-          b64.length,
-          maxAttachB64,
-        );
-      }
-    }
-    let bodyJson: string;
-    try {
-      bodyJson = JSON.stringify(createGroupBody);
-    } catch (stringifyErr) {
-      console.error(
-        "POST /api/bank-accounts: JSON.stringify(create-group body) failed:",
-        stringifyErr,
-      );
-      delete createGroupBody.kbis_base64;
-      delete createGroupBody.kbis_content_type;
-      delete createGroupBody.kbis_filename;
-      delete createGroupBody.pi_recto_base64;
-      delete createGroupBody.pi_recto_filename;
-      delete createGroupBody.pi_verso_base64;
-      delete createGroupBody.pi_verso_filename;
-      delete createGroupBody.logo_base64;
-      delete createGroupBody.logo_content_type;
-      createGroupBody.welcome_message = `${welcomeMessage}\n\n(NB : pièces jointes omises — erreur de sérialisation.)`;
-      bodyJson = JSON.stringify(createGroupBody);
-    }
+        return NextResponse.json({ error: message }, { status });
+      };
+
+      /** Valide l’accès au groupe uniquement. Titre, logo, invitations et pièces jointes : rattrapage CRM (telegram-sync). */
+      const createGroupBody = {
+        existing_chat_id: existingTelegramChatId!,
+        crm_link_only: true as const,
+      };
+      const bodyJson = JSON.stringify(createGroupBody);
     const tmo = telegramCreateTimeoutMs();
     let createRes: Response | undefined;
 
@@ -624,7 +424,7 @@ export async function POST(request: Request) {
       errText: string,
     ): Promise<string> {
       let msg =
-        "Impossible de finaliser le groupe Telegram (invitations / fichiers).";
+        "Impossible de valider la liaison Telegram avec ce groupe (vérifiez l’ID et les droits du compte worker).";
       try {
         const errData = JSON.parse(errText) as {
           detail?: string | Array<string | { msg?: string }>;
@@ -661,7 +461,7 @@ export async function POST(request: Request) {
     } catch (fetchErr) {
       if (isFetchAbortOrTimeout(fetchErr)) {
         const r = abortOrRejectUnlessLink(
-          `Le service Telegram n'a pas répondu dans les délais (${Math.round(tmo / 1000)} s). Augmentez TELEGRAM_CREATE_GROUP_TIMEOUT_MS et le timeout du proxy devant Node (ex. proxy_read_timeout dans nginx) pour qu'il dépasse cette durée ; réduisez la taille du KBIS ; ou utilisez « Lier un groupe Telegram existant ». Une page HTML « 502 » sans message JSON indique en général un timeout du proxy, pas l'application.`,
+          `Le service Telegram n'a pas répondu dans les délais (${Math.round(tmo / 1000)} s). Augmentez TELEGRAM_CREATE_GROUP_TIMEOUT_MS et le timeout du proxy devant Node. Une page HTML « 502 » sans message JSON indique en général un timeout du proxy, pas l'application.`,
           504,
         );
         if (r) return r;
@@ -696,7 +496,7 @@ export async function POST(request: Request) {
         const errText = await createRes.text();
         const msg = await parseTelegramErrorMessage(createRes, errText);
         const r = abortOrRejectUnlessLink(
-          `${msg} Si vous liez un groupe existant, le compte peut être créé avec l'ID saisi ; sinon corrigez la demande ou réessayez.`,
+          `${msg} Le compte peut être créé avec l'ID saisi ; corrigez la demande ou réessayez, ou appliquez le rattrapage Telegram après création.`,
           createRes.status >= 500 ? 502 : createRes.status,
         );
         if (r) return r;
@@ -845,6 +645,7 @@ export async function POST(request: Request) {
         src.name AS company_source_name,
         c.fournisseur AS company_fournisseur,
         0::float AS balance,
+        EXISTS(SELECT 1 FROM bank_files bf WHERE bf.bank_id = ba.bank_id AND bf.file_type = 'logo') AS has_logo,
         EXISTS(SELECT 1 FROM bank_account_files baf WHERE baf.bank_account_id = ba.id AND baf.file_type = 'rib') AS has_rib,
         COALESCE(
           (SELECT json_agg(json_build_object('iban', bai.iban, 'bic', bai.bic) ORDER BY bai.created_at)

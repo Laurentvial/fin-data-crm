@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AccountNameField } from "@/components/AccountNameField";
 import { BankSelect } from "@/components/BankSelect";
 import { Select } from "@/components/Select";
+import { TelegramBankAccountRattrapage } from "@/components/TelegramBankAccountRattrapage";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { AccountStatus, AccountType, Bank, CardItem, Company, IbanItem } from "@/lib/types";
@@ -64,6 +65,13 @@ export interface CreateBankAccountModalProps {
   /** When false with `onLinkTelegramEnabledChange`, creation skips Telegram entirely (CRM only). Default true. */
   linkTelegramEnabled?: boolean;
   onLinkTelegramEnabledChange?: (enabled: boolean) => void;
+  /** After successful create with Telegram linked : show rattrapage panel (titre, logo, invitations manuels). */
+  postCreateTelegram?: {
+    accountId: string;
+    accountName: string;
+    telegramChatId: string;
+    hasBankLogo: boolean;
+  } | null;
 }
 
 export function CreateBankAccountModal({
@@ -103,6 +111,7 @@ export function CreateBankAccountModal({
   onLinkExistingGroupIdChange,
   linkTelegramEnabled = true,
   onLinkTelegramEnabledChange,
+  postCreateTelegram = null,
 }: CreateBankAccountModalProps) {
   const telegramLinkActive =
     onLinkTelegramEnabledChange != null ? linkTelegramEnabled : linkExistingGroupId !== "";
@@ -218,11 +227,24 @@ export function CreateBankAccountModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 p-6 pb-0">
-        <h3 className="subsection-header mb-4 text-lg font-medium">Créer un compte bancaire</h3>
+        <h3 className="subsection-header mb-4 text-lg font-medium">
+          {postCreateTelegram ? "Compte créé" : "Créer un compte bancaire"}
+        </h3>
         <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-          {telegramLinkActive
-            ? "Liez un groupe Telegram existant avec son ID (ex. -100…). Le service Telegram appliquera titre, logo, invitations des utilisateurs CRM liés et pièces jointes (KBIS, etc.) si le service est configuré."
-            : "Aucune liaison Telegram : le compte est créé dans le CRM uniquement. Vous pourrez renseigner un ID de groupe plus tard en modifiant le compte."}
+          {postCreateTelegram ? (
+            <>
+              Le groupe est lié dans le CRM (aucune modification automatique sur Telegram). Utilisez la section
+              ci-dessous pour renommer le groupe, envoyer le logo, inviter des membres ou poster un message.
+            </>
+          ) : telegramLinkActive ? (
+            <>
+              Liez un groupe existant avec son ID (ex. -100…). Seule la liaison est vérifiée à la création ; titre,
+              logo, invitations et pièces jointes se font ensuite via « Rattrapage Telegram » (ici après création ou
+              dans modifier le compte).
+            </>
+          ) : (
+            "Aucune liaison Telegram : le compte est créé dans le CRM uniquement. Vous pourrez renseigner un ID de groupe plus tard en modifiant le compte."
+          )}
         </p>
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
@@ -236,6 +258,21 @@ export function CreateBankAccountModal({
         )}
         </div>
         <div className="flex-1 overflow-y-auto p-6">
+        {postCreateTelegram ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-100">
+              Compte enregistré. Groupe Telegram :{" "}
+              <span className="font-mono">{postCreateTelegram.telegramChatId}</span>
+            </div>
+            <TelegramBankAccountRattrapage
+              bankAccountId={postCreateTelegram.accountId}
+              accountName={postCreateTelegram.accountName}
+              telegramChatId={postCreateTelegram.telegramChatId}
+              hasBankLogo={postCreateTelegram.hasBankLogo}
+              defaultExpanded
+            />
+          </div>
+        ) : (
         <div className="grid grid-cols-3 gap-x-4 gap-y-4">
           {onLinkExistingGroupIdChange && (
             <div className="col-span-3">
@@ -546,10 +583,11 @@ export function CreateBankAccountModal({
             />
           </div>
         </div>
+        )}
         </div>
         <div className="shrink-0 border-t border-[var(--border)] p-6 pt-4">
         <div className="flex justify-end gap-2">
-          {inviteWarning ? (
+          {postCreateTelegram || inviteWarning ? (
             <button
               type="button"
               onClick={onClose}

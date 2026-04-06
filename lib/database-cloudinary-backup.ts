@@ -4,12 +4,75 @@ import { createGzip } from "node:zlib";
 import { configureCloudinary } from "@/lib/invoicing/cloudinary";
 import { sql } from "@/lib/db";
 
-const PAGE_SIZE = 400;
+/** Neon HTTP driver caps each query response (~64 MiB). Large base64 file columns require small batches + truncation. */
+const DEFAULT_BACKUP_PAGE_SIZE = 25;
+const MIN_BACKUP_PAGE_SIZE = 1;
+const MAX_BACKUP_PAGE_SIZE = 200;
+/** Max characters per cell for known heavy text columns (data_base64 logos, etc.). */
+const BACKUP_DATA_BASE64_MAX_CHARS = 262_144;
+const BACKUP_TEMPLATE_CONTENT_MAX_CHARS = 524_288;
+
+function backupPageSize(): number {
+  const raw = process.env.DATABASE_BACKUP_PAGE_SIZE;
+  if (raw == null || String(raw).trim() === "") return DEFAULT_BACKUP_PAGE_SIZE;
+  const n = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(n)) return DEFAULT_BACKUP_PAGE_SIZE;
+  return Math.min(MAX_BACKUP_PAGE_SIZE, Math.max(MIN_BACKUP_PAGE_SIZE, n));
+}
+
+function pgQuoteIdent(name: string, kind: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Identifiant ${kind} refusé pour l'export : ${name}`);
+  }
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+type ColumnMeta = { column_name: string; data_type: string; udt_name: string };
+
+/** SELECT list that keeps rows under Neon’s per-response size limit (bytea omitted, large text truncated). */
+function buildBackupSelectExpressions(columns: ColumnMeta[]): string {
+  if (columns.length === 0) {
+    throw new Error("Table sans colonnes : export impossible.");
+  }
+  return columns
+    .map((c) => {
+      const q = pgQuoteIdent(c.column_name, "colonne");
+      if (c.udt_name === "bytea") {
+        return `NULL AS ${q}`;
+      }
+      const low = c.column_name.toLowerCase();
+      if (low === "data_base64") {
+        return `(CASE WHEN ${q} IS NULL THEN NULL ELSE LEFT(${q}::text, ${BACKUP_DATA_BASE64_MAX_CHARS}) END) AS ${q}`;
+      }
+      if (low === "template_content") {
+        return `(CASE WHEN ${q} IS NULL THEN NULL ELSE LEFT(${q}::text, ${BACKUP_TEMPLATE_CONTENT_MAX_CHARS}) END) AS ${q}`;
+      }
+      return q;
+    })
+    .join(", ");
+}
 
 export type CloudinaryBackupConfig = {
   folder: string;
   cloudName: string;
 };
+
+/** Neon HTTP SQL can return 507 when a single query response exceeds ~64 MiB. */
+export function isNeonSqlResponseTooLargeError(err: unknown): boolean {
+  const chunks: string[] = [];
+  if (err instanceof Error) chunks.push(err.message);
+  if (err && typeof err === "object") {
+    const m = (err as { message?: unknown }).message;
+    if (m != null) chunks.push(String(m));
+  }
+  try {
+    chunks.push(JSON.stringify(err));
+  } catch {
+    /* ignore */
+  }
+  const s = chunks.join(" ");
+  return s.includes("response is too large") || s.includes("67108864");
+}
 
 export function getCloudinaryBackupConfig(): CloudinaryBackupConfig | null {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -44,7 +107,8 @@ async function* backupLines(): AsyncGenerator<string, void, undefined> {
     format_version: 1,
     created_at: new Date().toISOString(),
     note:
-      "Export logique NDJSON (gzip). Les migrations du dépôt définissent le schéma ; cet export contient surtout les données applicatives.",
+      "Export logique NDJSON (gzip). Compatible limite Neon HTTP (~64 Mo par requête) : lots réduits, colonnes bytea exportées en NULL, data_base64 et template_content tronqués. Variable DATABASE_BACKUP_PAGE_SIZE si besoin.",
+    backup_page_size: backupPageSize(),
   };
   yield jsonLine(meta);
 
@@ -61,14 +125,15 @@ async function* backupLines(): AsyncGenerator<string, void, undefined> {
     const quoted = quoteTableRef(schema, table);
 
     const colRows = (await sql`
-      SELECT column_name
+      SELECT column_name, data_type, udt_name
       FROM information_schema.columns
       WHERE table_schema = ${schema}
         AND table_name = ${table}
       ORDER BY ordinal_position
-    `) as { column_name: string }[];
+    `) as ColumnMeta[];
 
     const columns = colRows.map((c) => c.column_name);
+    const selectList = buildBackupSelectExpressions(colRows);
     yield jsonLine({
       type: "table",
       schema,
@@ -76,11 +141,13 @@ async function* backupLines(): AsyncGenerator<string, void, undefined> {
       columns,
     });
 
+    const pageSize = backupPageSize();
     let offset = 0;
     for (;;) {
-      const rows = (await sql`
-        SELECT * FROM ${sql.unsafe(quoted)} LIMIT ${PAGE_SIZE} OFFSET ${offset}
-      `) as Record<string, unknown>[];
+      const rows = (await sql.query(
+        `SELECT ${selectList} FROM ${quoted} LIMIT $1 OFFSET $2`,
+        [pageSize, offset]
+      )) as Record<string, unknown>[];
       if (!rows.length) break;
       yield jsonLine({
         type: "data",
@@ -89,7 +156,7 @@ async function* backupLines(): AsyncGenerator<string, void, undefined> {
         rows,
       });
       offset += rows.length;
-      if (rows.length < PAGE_SIZE) break;
+      if (rows.length < pageSize) break;
     }
   }
 }

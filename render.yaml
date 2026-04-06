@@ -44,6 +44,8 @@ services:
         sync: false
       - key: CLOUDINARY_BACKUP_FOLDER
         sync: false
+      - key: DATABASE_BACKUP_PAGE_SIZE
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_STATEMENT_MODEL
