@@ -1141,6 +1141,170 @@ function BanksSection() {
   );
 }
 
+type BackupListItem = { key: string; size: number; last_modified: string | null };
+
+function DatabaseBackupSection() {
+  const [loading, setLoading] = useState(true);
+  const [configured, setConfigured] = useState(false);
+  const [bucket, setBucket] = useState<string | null>(null);
+  const [recent, setRecent] = useState<BackupListItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [backupPending, setBackupPending] = useState(false);
+  const [lastMessage, setLastMessage] = useState<string | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/database-backup");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? "Échec du chargement");
+      }
+      setConfigured(!!data.configured);
+      setBucket(typeof data.bucket === "string" ? data.bucket : null);
+      setRecent(Array.isArray(data.recent) ? data.recent : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+      setConfigured(false);
+      setRecent([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  const handleSnapshot = async () => {
+    if (!confirm("Lancer une sauvegarde manuelle vers S3 ? Cela peut prendre plusieurs minutes.")) return;
+    setBackupPending(true);
+    setError(null);
+    setLastMessage(null);
+    try {
+      const res = await fetch("/api/admin/database-backup", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? "Échec de la sauvegarde");
+      }
+      setLastMessage(`Instantané créé : ${data.key}`);
+      await fetchStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setBackupPending(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+        <h2 className="section-header mb-4 text-lg font-medium">Sauvegarde base de données (S3)</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+      <h2 className="section-header mb-4 text-lg font-medium">Sauvegarde base de données (S3)</h2>
+      <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+        Créez un instantané logique de la base (données des tables, tous schémas hors catalogues système) et
+        déposez-le dans un compartiment S3. Le fichier est au format NDJSON compressé (
+        <span className="font-mono text-xs">.jsonl.gz</span>). Le schéma reste défini par les migrations du
+        dépôt.
+      </p>
+
+      {!configured ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          <p className="font-medium">Configuration S3 requise</p>
+          <p className="mt-1 text-xs opacity-90">
+            Variables d&apos;environnement : <span className="font-mono">S3_BACKUP_BUCKET</span>,{" "}
+            <span className="font-mono">AWS_ACCESS_KEY_ID</span>,{" "}
+            <span className="font-mono">AWS_SECRET_ACCESS_KEY</span>
+            . Optionnel : <span className="font-mono">S3_BACKUP_PREFIX</span> (défaut{" "}
+            <span className="font-mono">database-backups</span>),{" "}
+            <span className="font-mono">S3_BACKUP_REGION</span> ou{" "}
+            <span className="font-mono">AWS_REGION</span>. La clé IAM doit autoriser{" "}
+            <span className="font-mono">s3:PutObject</span> et <span className="font-mono">s3:ListBucket</span>{" "}
+            sur le préfixe choisi.
+          </p>
+        </div>
+      ) : null}
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      {lastMessage && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
+          {lastMessage}
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleSnapshot}
+          disabled={!configured || backupPending}
+          className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+        >
+          {backupPending ? "Sauvegarde en cours…" : "Créer un instantané S3"}
+        </button>
+        <button
+          type="button"
+          onClick={() => fetchStatus()}
+          className="rounded-lg px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+        >
+          Actualiser la liste
+        </button>
+        {configured && bucket ? (
+          <span className="text-xs text-[var(--muted-foreground)]">
+            Compartiment : <span className="font-mono">{bucket}</span>
+          </span>
+        ) : null}
+      </div>
+
+      {configured && recent.length > 0 ? (
+        <div className="max-h-[280px] overflow-auto rounded-lg border border-[var(--border)]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-[var(--primary-muted)]">
+              <tr>
+                <th className="table-header px-4 py-2 text-left font-medium">Clé S3</th>
+                <th className="table-header px-4 py-2 text-right font-medium">Taille</th>
+                <th className="table-header px-4 py-2 text-left font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((r) => (
+                <tr key={r.key} className="border-t border-[var(--border)]">
+                  <td className="px-4 py-2 font-mono text-xs break-all text-[var(--foreground)]">{r.key}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--muted-foreground)]">
+                    {r.size.toLocaleString("fr-FR")} o
+                  </td>
+                  <td className="px-4 py-2 text-[var(--muted-foreground)]">
+                    {r.last_modified
+                      ? new Date(r.last_modified).toLocaleString("fr-FR", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : configured ? (
+        <p className="text-sm text-[var(--muted-foreground)]">Aucun fichier dans ce préfixe pour l’instant.</p>
+      ) : null}
+    </section>
+  );
+}
+
 function AccountTypesSection() {
   const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3260,6 +3424,8 @@ export default function SettingsPage() {
 
         {/* Section Banques - visible aux admins */}
         {!usersLoading && isAdmin && <BanksSection />}
+
+        {!usersLoading && isAdmin && <DatabaseBackupSection />}
 
         {/* Section Clients - visible aux admins */}
         {!usersLoading && isAdmin && <AccountTypesSection />}

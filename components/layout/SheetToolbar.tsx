@@ -12,6 +12,8 @@ interface SheetToolbarProps {
   onResetFiltersClick?: () => void;
   onExportClick?: () => void;
   onAddClick?: () => void;
+  /** Import relevé PDF (extraction IA + revue des doublons). */
+  onImportStatementClick?: () => void;
   /** Affiché à côté de « Ajouter » lorsqu’une seule ligne est cochée. */
   createInvoice?: InvoiceToolbarAction | null;
   /** Affiché à côté de « Ajouter » lorsque ≥ 2 lignes sont cochées. */
@@ -65,10 +67,22 @@ function PlusIcon({ className }: { className?: string }) {
   );
 }
 
+function FileUpIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="12" y1="18" x2="12" y2="11" />
+      <polyline points="9 14 12 11 15 14" />
+    </svg>
+  );
+}
+
 export function SheetToolbar({
   onResetFiltersClick,
   onExportClick,
   onAddClick,
+  onImportStatementClick,
   createInvoice,
   groupedInvoice,
   bulkDeleteSelected,
@@ -86,6 +100,17 @@ export function SheetToolbar({
         >
           <PlusIcon className="h-4 w-4" />
           Ajouter
+        </button>
+      )}
+      {onImportStatementClick && (
+        <button
+          type="button"
+          onClick={onImportStatementClick}
+          title="Importer un relevé bancaire PDF (extraction automatique)"
+          className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors shadow-sm"
+        >
+          <FileUpIcon className="h-4 w-4" />
+          Importer relevé
         </button>
       )}
       {createInvoice && (
@@ -135,14 +160,16 @@ export function SheetToolbar({
           Réinitialiser filtres
         </button>
       )}
-      <button
-        type="button"
-        onClick={onExportClick}
-        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--success-muted)] hover:text-[var(--success)]"
-      >
-        <DownloadIcon className="h-4 w-4" />
-        Exporter
-      </button>
+      {onExportClick ? (
+        <button
+          type="button"
+          onClick={onExportClick}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--success-muted)] hover:text-[var(--success)]"
+        >
+          <DownloadIcon className="h-4 w-4" />
+          Exporter
+        </button>
+      ) : null}
       <div className="ml-2 h-6 w-px bg-[var(--border)]" />
       <button type="button" disabled className="rounded p-1.5 text-[var(--muted-foreground)] opacity-50" aria-label="Annuler">
         <UndoIcon className="h-4 w-4" />

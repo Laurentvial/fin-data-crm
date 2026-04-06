@@ -157,11 +157,12 @@ export default function SocieteDetailPage() {
 
       if (resBank.ok) {
         const bankData = await resBank.json();
-        setBankAccounts(bankData);
+        const bankList = Array.isArray(bankData) ? bankData : [];
+        setBankAccounts(bankList);
 
         const txMap: Record<string, Transaction[]> = {};
         await Promise.all(
-          bankData.map(async (ba: BankAccount) => {
+          bankList.map(async (ba: BankAccount) => {
             const resTx = await fetch(
               `/api/transactions?bank_account_id=${ba.id}&limit=5`
             );
@@ -723,12 +724,15 @@ export default function SocieteDetailPage() {
       const warnings = added.telegram_invite_warnings;
       if (Array.isArray(warnings) && warnings.length > 0) {
         const names = warnings.map((w) => w.name || (w.telegram_username ? `@${w.telegram_username}` : `ID ${w.telegram_id}`));
-        const reasonMsg =
-          warnings.some((w) => w.reason === "UserNotMutualContactError")
-            ? "Ils doivent être dans les contacts du compte Telegram admin."
-            : warnings.some((w) => w.reason === "UserPrivacyRestrictedError")
-              ? "Paramètres de confidentialité Telegram : la personne doit aller dans Paramètres → Confidentialité → Groupes et canaux → « Qui peut vous ajouter aux groupes » et choisir « Tout le monde » ou « Mes contacts »."
-              : warnings.length > 0
+        const reasonMsg = warnings.some((w) => w.reason === "UserNotMutualContactError")
+          ? "Ils doivent être dans les contacts du compte Telegram admin."
+          : warnings.some((w) => w.reason === "UserPrivacyRestrictedError")
+            ? "Paramètres de confidentialité Telegram : la personne doit aller dans Paramètres → Confidentialité → Groupes et canaux → « Qui peut vous ajouter aux groupes » et choisir « Tout le monde » ou « Mes contacts »."
+            : warnings.some((w) => String(w.reason).includes("FloodWaitError"))
+              ? "Telegram limite temporairement les invitations (anti-spam). Le délai peut être très long ; attendez ou ajoutez les membres à la main dans le groupe. Le service espère désormais les invitations par petits lots avec des pauses plus longues."
+              : warnings.some((w) => String(w.reason).includes("PeerFloodError"))
+                ? "Trop d'invitations trop rapides pour ce groupe (limite Telegram). Réessayez plus tard, augmentez les pauses côté service (TELEGRAM_DELAY_CLASSIC_CHAT_INVITE_SEC, TELEGRAM_PEER_FLOOD_RETRY_SEC) ou ajoutez les membres à la main."
+                : warnings.length > 0
                 ? `Raison technique : ${warnings.map((w) => w.reason).filter(Boolean).join(", ")}`
                 : null;
         setBankAccountInviteWarning(

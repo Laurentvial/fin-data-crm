@@ -66,12 +66,15 @@ Creates a Telegram supergroup and optionally invites app users.
 ```json
 {
   "title": "Company Name – Account Name",
+  "existing_chat_id": -1001234567890,
   "users": [
     { "telegram_id": 123456789, "telegram_username": "optional_username" }
   ]
 }
 ```
 
+- `existing_chat_id` (optional): If set, **no new supergroup is created**; the service runs the same setup (invites, admin rights, logo, welcome message, KBIS/Pi, optionally sync bot) on this megagroup. Set `TELEGRAM_SKIP_SYNC_BOT=true` to skip auto-inviting the sync bot. The Telegram session user must already be an **administrator** of that group.
+- `title`: Required when `existing_chat_id` is omitted; when linking an existing group, `title` may be omitted (placeholder used server-side).
 - `users` (optional): List of `{ telegram_id, telegram_username? }` to invite. Users must be in the admin's Telegram contacts for the invite to succeed.
 
 **Response:**

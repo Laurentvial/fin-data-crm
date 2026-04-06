@@ -73,6 +73,7 @@ export async function GET(
         ) AS cards
       FROM bank_accounts ba
       JOIN companies c ON c.id = ba.company_id
+      LEFT JOIN sources src ON src.id = c.source_id
       LEFT JOIN banks b ON b.id = ba.bank_id
       LEFT JOIN account_types at ON at.id = ba.account_type_id
       LEFT JOIN account_statuses ast ON ast.id = ba.account_status_id

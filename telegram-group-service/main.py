@@ -25,6 +25,7 @@ from telethon import TelegramClient
 from telethon.errors import (
     FileReferenceInvalidError,
     FloodWaitError,
+    PeerFloodError,
     PhotoInvalidError,
     SessionPasswordNeededError,
     UserAlreadyInvitedError,
@@ -36,10 +37,18 @@ from telethon.tl.functions.channels import (
     CreateChannelRequest,
     EditAdminRequest,
     EditPhotoRequest,
+    EditTitleRequest,
     InviteToChannelRequest,
+)
+from telethon.tl.functions.messages import (
+    AddChatUserRequest,
+    EditChatAdminRequest,
+    EditChatPhotoRequest,
+    EditChatTitleRequest,
 )
 from telethon.tl.types import (
     Channel,
+    Chat,
     ChatAdminRights,
     DocumentAttributeFilename,
     InputChatUploadedPhoto,
@@ -111,6 +120,22 @@ def _max_logo_decoded_bytes() -> int:
 
 def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        raw = os.environ.get(name, "").strip()
+        return int(raw) if raw else default
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        raw = os.environ.get(name, "").strip()
+        return float(raw) if raw else default
+    except ValueError:
+        return default
 
 
 def _write_temp_file(data: bytes, suffix: str) -> str:
@@ -420,6 +445,157 @@ def _invited_member_admin_rights() -> ChatAdminRights:
     return ChatAdminRights(invite_users=True)
 
 
+def _flood_wait_seconds(e: FloodWaitError) -> int:
+    w = getattr(e, "seconds", None)
+    if w is None:
+        w = getattr(e, "value", 0) or 0
+    return int(w)
+
+
+def _is_already_participant_err(e: BaseException) -> bool:
+    """Telegram may surface 'already in group' as dedicated errors or generic RPC text."""
+    if isinstance(e, (UserAlreadyParticipantError, UserAlreadyInvitedError)):
+        return True
+    s = str(e).upper()
+    return "USER_ALREADY_PARTICIPANT" in s or "USER_ALREADY_INVITED" in s
+
+
+async def _resolve_group_for_link(tg: TelegramClient, eid: int) -> Channel | Chat:
+    """
+    Resolve a group for existing_chat_id: supergroup (Channel megagroup) or classic small group (Chat).
+
+    Telegram often creates new groups as classic chats first; both are supported for linking.
+
+    Accepts full peer id (-100… for supergroups, or negative id for classic chat) or positive channel_id
+    (without -100) for supergroups.
+    """
+    # Positive IDs are ambiguous: the same number can be resolved as a legacy basic Chat or as a
+    # megagroup internal channel id. Try -100… megagroup peer first so supergroups are not mistaken
+    # for basic chats (AddChatUserRequest would then fail on megagroups).
+    #
+    # Negative IDs without the -100 prefix (e.g. -2345678901 from a bot export) are treated as
+    # PeerChat → GetChatsRequest; for a supergroup that fails with "Invalid object ID for a chat".
+    # Retry as megagroup peer -(10**12 + abs(id)) (full -100… form).
+    candidates: list[int] = []
+    if eid > 0:
+        alt = -(10**12 + eid)
+        if alt != eid:
+            candidates.append(alt)
+        candidates.append(eid)
+    else:
+        candidates.append(eid)
+        inner = -eid
+        if inner < 10**12:
+            alt_mg = -(10**12 + inner)
+            if alt_mg != eid:
+                candidates.append(alt_mg)
+    last_err: BaseException | None = None
+    for cand in candidates:
+        try:
+            ent = await tg.get_entity(cand)
+        except Exception as e:
+            last_err = e
+            logger.debug("get_entity(%s) failed: %s", cand, e)
+            continue
+        if isinstance(ent, User):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cet identifiant correspond à un compte utilisateur Telegram, pas à un groupe. "
+                    "Utilisez l'ID du groupe (supergroupe : -100… ; petit groupe : souvent un entier négatif sans -100)."
+                ),
+            )
+        if isinstance(ent, Chat):
+            logger.info(
+                "Linked existing classic chat id=%s peer_id=%s (Telegram may upgrade it to -100… later)",
+                ent.id,
+                get_peer_id(ent),
+            )
+            return ent
+        if isinstance(ent, Channel):
+            if getattr(ent, "broadcast", False) and not getattr(ent, "megagroup", False):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Il s'agit d'une chaîne de diffusion, pas d'un groupe. "
+                        "Liez un groupe (ou supergroupe), pas une chaîne."
+                    ),
+                )
+            if not getattr(ent, "megagroup", False):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Le CRM attend un supergroupe (mégagroupe) ou un groupe classique, pas ce type de canal.",
+                )
+            logger.info(
+                "Linked existing megagroup resolved from id candidate %s → peer_id %s",
+                cand,
+                get_peer_id(ent),
+            )
+            return ent
+        raise HTTPException(
+            status_code=400,
+            detail=f"Type de conversation non pris en charge : {type(ent).__name__}.",
+        )
+    detail_extra = f" Détail : {last_err!s}" if last_err else ""
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Impossible d'accéder à ce groupe avec la session Telegram du serveur. "
+            "Vérifiez l'ID et ajoutez le compte de la session serveur comme administrateur du groupe. "
+            f"{detail_extra}"
+        ),
+    )
+
+
+async def _apply_group_display_name(
+    tg: TelegramClient,
+    group_entity: Channel | Chat,
+    is_classic_chat: bool,
+    input_channel,
+    display_title: str,
+) -> None:
+    """Set Telegram group title (megagroup / basic chat). Skips empty or placeholder titles."""
+    t = (display_title or "").strip()
+    if not t or t == "—":
+        return
+    if len(t) > 255:
+        t = t[:255]
+    try:
+        if is_classic_chat:
+            await tg(EditChatTitleRequest(group_entity.id, t))
+        else:
+            await tg(EditTitleRequest(channel=input_channel, title=t))
+        logger.info("Group display title set (%d chars)", len(t))
+    except Exception as e:
+        logger.warning("Could not set group title: %s", e)
+
+
+async def _elevate_migrated_basic_group(tg: TelegramClient, ent: Channel | Chat) -> Channel | Chat:
+    """
+    A legacy basic group (Chat) that was upgraded to a supergroup still appears as Chat with
+    migrated_to set. Chat-only RPCs (EditChatPhoto, etc.) and some peers then fail on the server.
+    Resolve the megagroup Channel and use it for the rest of the flow.
+    """
+    if not isinstance(ent, Chat):
+        return ent
+    migrated = getattr(ent, "migrated_to", None)
+    if migrated is None or migrated is False:
+        return ent
+    try:
+        ch = await tg.get_entity(migrated)
+    except Exception as e:
+        logger.warning("Chat %s has migrated_to but supergroup could not be loaded: %s", ent.id, e)
+        return ent
+    if isinstance(ch, Channel) and getattr(ch, "megagroup", False):
+        logger.info(
+            "Basic group %s was upgraded; using supergroup peer_id=%s",
+            ent.id,
+            get_peer_id(ch),
+        )
+        return ch
+    return ent
+
+
 async def _promote_invited_user_to_admin(
     tg: TelegramClient,
     input_channel,
@@ -428,9 +604,10 @@ async def _promote_invited_user_to_admin(
     username: str | None,
     admin_promote_failed: list[dict],
     max_flood_wait_sec: int,
+    delay_before_sec: float,
 ) -> None:
     rights = _invited_member_admin_rights()
-    await asyncio.sleep(0.4)
+    await asyncio.sleep(delay_before_sec)
     try:
         await tg(
             EditAdminRequest(
@@ -441,9 +618,7 @@ async def _promote_invited_user_to_admin(
             )
         )
     except FloodWaitError as e:
-        wait_sec = getattr(e, "seconds", None)
-        if wait_sec is None:
-            wait_sec = getattr(e, "value", 0) or 0
+        wait_sec = _flood_wait_seconds(e)
         if wait_sec <= max_flood_wait_sec:
             logger.info("FloodWait %ds for admin promotion, retrying...", wait_sec)
             await asyncio.sleep(wait_sec)
@@ -485,6 +660,64 @@ async def _promote_invited_user_to_admin(
         )
 
 
+async def _invite_single_to_channel(
+    tg: TelegramClient,
+    input_channel,
+    input_user: InputUser,
+    telegram_id: int,
+    username: str | None,
+    invited: list[int],
+    failed: list[dict],
+    max_flood_wait_sec: int,
+    pause_after: float,
+) -> None:
+    """One user per InviteToChannel (fallback when batch fails)."""
+    try:
+        await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
+        invited.append(telegram_id)
+    except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+        invited.append(telegram_id)
+    except FloodWaitError as e:
+        ws = _flood_wait_seconds(e)
+        if ws <= max_flood_wait_sec:
+            logger.info("FloodWait %ds for single invite, retrying...", ws)
+            await asyncio.sleep(ws)
+            try:
+                await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
+                invited.append(telegram_id)
+            except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+                invited.append(telegram_id)
+            except Exception as ex:
+                if _is_already_participant_err(ex):
+                    invited.append(telegram_id)
+                else:
+                    failed.append(
+                        {
+                            "telegram_id": telegram_id,
+                            "telegram_username": username,
+                            "reason": str(ex),
+                        }
+                    )
+        else:
+            failed.append(
+                {
+                    "telegram_id": telegram_id,
+                    "telegram_username": username,
+                    "reason": f"FloodWaitError:{ws}s",
+                }
+            )
+    except (UserNotMutualContactError, UserPrivacyRestrictedError) as e:
+        failed.append(
+            {"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__}
+        )
+    except Exception as e:
+        if _is_already_participant_err(e):
+            invited.append(telegram_id)
+        else:
+            failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
+    await asyncio.sleep(pause_after)
+
+
 async def _invite_bot_to_channel_by_username(
     tg: TelegramClient,
     input_channel,
@@ -515,9 +748,7 @@ async def _invite_bot_to_channel_by_username(
     except (UserAlreadyParticipantError, UserAlreadyInvitedError):
         return True, None
     except FloodWaitError as e:
-        wait_sec = getattr(e, "seconds", None)
-        if wait_sec is None:
-            wait_sec = getattr(e, "value", 0) or 0
+        wait_sec = _flood_wait_seconds(e)
         if wait_sec <= max_flood_wait_sec:
             logger.info("FloodWait %ds for sync bot invite, retrying...", wait_sec)
             await asyncio.sleep(wait_sec)
@@ -536,9 +767,192 @@ async def _invite_bot_to_channel_by_username(
         return False, str(e)
 
 
+async def _invite_bot_to_basic_chat(
+    tg: TelegramClient,
+    chat_id: int,
+    bot_username: str,
+    max_flood_wait_sec: int,
+) -> tuple[bool, str | None]:
+    uname = bot_username.strip().lstrip("@")
+    if not uname:
+        return False, "empty_username"
+    try:
+        entity = await tg.get_entity(uname)
+    except Exception as e:
+        logger.warning("Could not resolve sync bot @%s: %s", uname, e)
+        return False, str(e)
+    if not isinstance(entity, User) or not getattr(entity, "bot", False):
+        logger.warning("TELEGRAM_GROUP_SYNC_BOT_USERNAME %s is not a bot", uname)
+        return False, "not_a_bot"
+    input_bot = InputUser(entity.id, entity.access_hash)
+
+    async def _do_invite() -> None:
+        await tg(AddChatUserRequest(chat_id, input_bot, 0))
+
+    try:
+        await _do_invite()
+        return True, None
+    except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+        return True, None
+    except FloodWaitError as e:
+        wait_sec = _flood_wait_seconds(e)
+        if wait_sec <= max_flood_wait_sec:
+            logger.info("FloodWait %ds for sync bot add (classic chat), retrying...", wait_sec)
+            await asyncio.sleep(wait_sec)
+            try:
+                await _do_invite()
+                return True, None
+            except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+                return True, None
+            except Exception as retry_err:
+                logger.warning("Sync bot add (classic chat) failed after FloodWait retry: %s", retry_err)
+                return False, str(retry_err)
+        logger.warning("Sync bot add (classic chat) FloodWait too long: %ss", wait_sec)
+        return False, f"FloodWaitError:{wait_sec}s"
+    except Exception as e:
+        logger.warning("Could not add sync bot @%s to classic chat: %s", uname, e)
+        return False, str(e)
+
+
+async def _invite_single_to_basic_chat(
+    tg: TelegramClient,
+    chat_id: int,
+    input_user: InputUser,
+    telegram_id: int,
+    username: str | None,
+    invited: list[int],
+    failed: list[dict],
+    max_flood_wait_sec: int,
+    pause_after: float,
+) -> None:
+    """AddChatUserRequest is heavily rate-limited; PeerFloodError = 'Too many requests' with no seconds hint."""
+    peer_flood_pause = max(25.0, _env_float("TELEGRAM_PEER_FLOOD_RETRY_SEC", 75.0))
+    max_attempts = max(1, min(12, _env_int("TELEGRAM_PEER_FLOOD_INVITE_ATTEMPTS", 4)))
+
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            logger.info(
+                "Classic chat invite rate limit, sleeping %.0fs (attempt %s/%s)",
+                peer_flood_pause,
+                attempt + 1,
+                max_attempts,
+            )
+            await asyncio.sleep(peer_flood_pause)
+        try:
+            await tg(AddChatUserRequest(chat_id, input_user, 0))
+            invited.append(telegram_id)
+            break
+        except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+            invited.append(telegram_id)
+            break
+        except PeerFloodError:
+            if attempt >= max_attempts - 1:
+                failed.append(
+                    {
+                        "telegram_id": telegram_id,
+                        "telegram_username": username,
+                        "reason": "PeerFloodError: Too many requests (espacer les invitations : TELEGRAM_DELAY_CLASSIC_CHAT_INVITE_SEC, TELEGRAM_DELAY_BEFORE_EACH_CLASSIC_INVITE_SEC, TELEGRAM_PEER_FLOOD_RETRY_SEC).",
+                    }
+                )
+            continue
+        except FloodWaitError as e:
+            ws = _flood_wait_seconds(e)
+            if ws <= max_flood_wait_sec:
+                logger.info("FloodWait %ds for classic chat invite, retrying...", ws)
+                await asyncio.sleep(ws)
+                try:
+                    await tg(AddChatUserRequest(chat_id, input_user, 0))
+                    invited.append(telegram_id)
+                except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+                    invited.append(telegram_id)
+                except Exception as ex:
+                    if _is_already_participant_err(ex):
+                        invited.append(telegram_id)
+                    else:
+                        failed.append(
+                            {
+                                "telegram_id": telegram_id,
+                                "telegram_username": username,
+                                "reason": str(ex),
+                            }
+                        )
+            else:
+                failed.append(
+                    {
+                        "telegram_id": telegram_id,
+                        "telegram_username": username,
+                        "reason": f"FloodWaitError:{ws}s",
+                    }
+                )
+            break
+        except (UserNotMutualContactError, UserPrivacyRestrictedError) as e:
+            failed.append(
+                {"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__}
+            )
+            break
+        except Exception as e:
+            if _is_already_participant_err(e):
+                invited.append(telegram_id)
+            else:
+                failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
+            break
+
+    await asyncio.sleep(pause_after)
+
+
+async def _promote_invited_user_basic_chat(
+    tg: TelegramClient,
+    chat_id: int,
+    input_user: InputUser,
+    telegram_id: int,
+    username: str | None,
+    admin_promote_failed: list[dict],
+    max_flood_wait_sec: int,
+    delay_before_sec: float,
+) -> None:
+    """Classic Chat: admin is binary (no channel-style granular rights in this API)."""
+    await asyncio.sleep(delay_before_sec)
+    try:
+        await tg(EditChatAdminRequest(chat_id, input_user, is_admin=True))
+    except FloodWaitError as e:
+        wait_sec = _flood_wait_seconds(e)
+        if wait_sec <= max_flood_wait_sec:
+            logger.info("FloodWait %ds for classic chat admin, retrying...", wait_sec)
+            await asyncio.sleep(wait_sec)
+            try:
+                await tg(EditChatAdminRequest(chat_id, input_user, is_admin=True))
+            except Exception as retry_err:
+                logger.warning(
+                    "Could not promote user %s in classic chat after FloodWait retry: %s",
+                    telegram_id,
+                    retry_err,
+                )
+                admin_promote_failed.append(
+                    {
+                        "telegram_id": telegram_id,
+                        "telegram_username": username,
+                        "reason": str(retry_err),
+                    }
+                )
+        else:
+            admin_promote_failed.append(
+                {
+                    "telegram_id": telegram_id,
+                    "telegram_username": username,
+                    "reason": f"FloodWaitError:{wait_sec}s",
+                }
+            )
+            await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.warning("Could not promote user %s in classic chat: %s", telegram_id, e)
+        admin_promote_failed.append(
+            {"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)}
+        )
+
+
 async def _send_base64_file_to_channel(
     tg: TelegramClient,
-    channel: Channel,
+    peer: Channel | Chat,
     base64_data: str | None,
     filename_hint: str | None,
     caption: str,
@@ -582,7 +996,7 @@ async def _send_base64_file_to_channel(
         if filename_hint and isinstance(filename_hint, str) and filename_hint.strip():
             attrs.append(DocumentAttributeFilename(filename_hint.strip()))
         await tg.send_file(
-            channel,
+            peer,
             path,
             caption=caption,
             attributes=attrs if attrs else None,
@@ -609,12 +1023,18 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
     pi_verso_base64 = body.pop("pi_verso_base64", None)
     pi_verso_filename = body.pop("pi_verso_filename", None)
 
+    existing_raw = body.get("existing_chat_id")
+    link_existing = existing_raw is not None and str(existing_raw).strip() != ""
+
     title = body.get("title")
-    if not title or not isinstance(title, str):
-        raise HTTPException(status_code=400, detail="title is required")
-    title = str(title).strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title cannot be empty")
+    if link_existing:
+        title = str(title).strip() if title and isinstance(title, str) else ""
+    else:
+        if not title or not isinstance(title, str):
+            raise HTTPException(status_code=400, detail="title is required")
+        title = str(title).strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title cannot be empty")
 
     users_to_invite = _parse_users(body)
 
@@ -625,23 +1045,43 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         if my_id is not None:
             users_to_invite = [(tid, uname) for tid, uname in users_to_invite if tid != my_id]
 
-        result = await tg(CreateChannelRequest(
-            title=title,
-            about="",
-            megagroup=True,
-        ))
-        chat_id = None
-        channel = None
-        for chat in result.chats:
-            if isinstance(chat, Channel):
-                chat_id = get_peer_id(chat)
-                channel = chat
-                break
-        if chat_id is None or channel is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Could not extract chat_id from Telegram response",
-            )
+        if link_existing:
+            try:
+                eid = int(str(existing_raw).strip())
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="existing_chat_id invalide (entier attendu, ex. -100…).",
+                )
+            group_entity = await _resolve_group_for_link(tg, eid)
+        else:
+            result = await tg(CreateChannelRequest(
+                title=title,
+                about="",
+                megagroup=True,
+            ))
+            chat_id = None
+            group_entity = None
+            for chat in result.chats:
+                if isinstance(chat, Channel):
+                    chat_id = get_peer_id(chat)
+                    group_entity = chat
+                    break
+            if chat_id is None or group_entity is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not extract chat_id from Telegram response",
+                )
+
+        group_entity = await _elevate_migrated_basic_group(tg, group_entity)
+        chat_id = get_peer_id(group_entity)
+        try:
+            group_entity = await tg.get_entity(chat_id)
+        except Exception as refresh_err:
+            logger.debug("get_entity refresh after link/create skipped: %s", refresh_err)
+
+        is_classic_chat = isinstance(group_entity, Chat)
+        chat_internal_id = group_entity.id if is_classic_chat else None
 
         # Group photo: spill to disk so we do not hold base64 + decoded + JPEG + BytesIO in RAM at once.
         if (
@@ -703,19 +1143,25 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                                 )
                                 file_name = f"logo.{ext}"
                                 await asyncio.sleep(1)
-                                input_channel = await tg.get_input_entity(channel)
                                 uploaded_file = await tg.upload_file(raw_path, file_name=file_name)
                                 photo = InputChatUploadedPhoto(file=uploaded_file)
-                                await tg(EditPhotoRequest(channel=input_channel, photo=photo))
+                                if is_classic_chat:
+                                    await tg(EditChatPhotoRequest(chat_internal_id, photo))
+                                else:
+                                    input_peer = await tg.get_input_entity(group_entity)
+                                    await tg(EditPhotoRequest(channel=input_peer, photo=photo))
                                 logger.info("Group profile photo set (raw from disk)")
                         else:
                             _unlink_quiet(raw_path)
                             raw_path = None
                             await asyncio.sleep(1)
-                            input_channel = await tg.get_input_entity(channel)
                             uploaded_file = await tg.upload_file(jpeg_path, file_name="logo.jpg")
                             photo = InputChatUploadedPhoto(file=uploaded_file)
-                            await tg(EditPhotoRequest(channel=input_channel, photo=photo))
+                            if is_classic_chat:
+                                await tg(EditChatPhotoRequest(chat_internal_id, photo))
+                            else:
+                                input_peer = await tg.get_input_entity(group_entity)
+                                await tg(EditPhotoRequest(channel=input_peer, photo=photo))
                             logger.info("Group profile photo set (JPEG from disk)")
             except (PhotoInvalidError, FileReferenceInvalidError) as e:
                 logger.warning("Could not set group photo: %s", e)
@@ -735,8 +1181,26 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         invited: list[int] = []
         failed: list[dict] = []
         admin_promote_failed: list[dict] = []
-        input_channel = await tg.get_input_entity(channel)
-        max_flood_wait_sec = 60
+        input_channel = None if is_classic_chat else await tg.get_input_entity(group_entity)
+
+        if link_existing and title:
+            await _apply_group_display_name(tg, group_entity, is_classic_chat, input_channel, title)
+
+        # Auto-retry only for moderate FloodWaits (long bans e.g. 22h cannot be handled inside one HTTP call).
+        max_flood_wait_sec = max(30, _env_int("TELEGRAM_MAX_FLOOD_WAIT_RETRY_SEC", 600))
+        invite_batch_size = max(1, min(50, _env_int("TELEGRAM_INVITE_BATCH_SIZE", 5)))
+        delay_after_invite_batch = max(1.0, _env_float("TELEGRAM_DELAY_AFTER_INVITE_BATCH_SEC", 5.0))
+        delay_between_resolve = max(0.2, _env_float("TELEGRAM_DELAY_BETWEEN_RESOLVE_SEC", 0.9))
+        delay_before_invite_batch = max(0.5, _env_float("TELEGRAM_DELAY_BEFORE_INVITE_BATCH_SEC", 2.0))
+        delay_single_invite = max(1.5, _env_float("TELEGRAM_DELAY_BETWEEN_SINGLE_INVITES_SEC", 4.0))
+        # Classic small groups: AddChatUserRequest hits PeerFlood ("Too many requests") if invites are too close.
+        delay_before_each_classic = max(3.0, _env_float("TELEGRAM_DELAY_BEFORE_EACH_CLASSIC_INVITE_SEC", 10.0))
+        pause_after_classic_invite = max(
+            delay_single_invite,
+            _env_float("TELEGRAM_DELAY_CLASSIC_CHAT_INVITE_SEC", 14.0),
+        )
+        delay_before_promote = max(0.5, _env_float("TELEGRAM_DELAY_BEFORE_ADMIN_PROMOTE_SEC", 3.0))
+        delay_after_promote = max(0.5, _env_float("TELEGRAM_DELAY_AFTER_ADMIN_PROMOTE_SEC", 6.0))
         promote_admins = not _env_truthy("TELEGRAM_SKIP_ADMIN_PROMOTE_ON_INVITE")
 
         sync_bot_invited: bool | None = None
@@ -745,83 +1209,154 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
         sync_bot_uname = os.environ.get("TELEGRAM_GROUP_SYNC_BOT_USERNAME", "SYNC_RO_BOT").strip()
         if sync_bot_uname and not _env_truthy("TELEGRAM_SKIP_SYNC_BOT"):
             await asyncio.sleep(0.3)
-            sync_bot_invited, sync_bot_error = await _invite_bot_to_channel_by_username(
-                tg,
-                input_channel,
-                sync_bot_uname,
-                max_flood_wait_sec,
-            )
+            if is_classic_chat:
+                sync_bot_invited, sync_bot_error = await _invite_bot_to_basic_chat(
+                    tg,
+                    group_entity.id,
+                    sync_bot_uname,
+                    max_flood_wait_sec,
+                )
+            else:
+                sync_bot_invited, sync_bot_error = await _invite_bot_to_channel_by_username(
+                    tg,
+                    input_channel,
+                    sync_bot_uname,
+                    max_flood_wait_sec,
+                )
         else:
             sync_bot_skipped = True
 
+        resolved: list[tuple[int, str | None, InputUser]] = []
         for telegram_id, username in users_to_invite:
+            un = username
+            if un and str(un).strip().startswith("@"):
+                un = str(un).strip()[1:]
+            user_entity = None
             try:
-                if username and str(username).strip().startswith("@"):
-                    username = str(username).strip()[1:]
-                user_entity = None
+                user_entity = await tg.get_entity(telegram_id)
+            except Exception:
+                pass
+            if user_entity is None and un:
                 try:
-                    user_entity = await tg.get_entity(telegram_id)
+                    user_entity = await tg.get_entity(un)
                 except Exception:
                     pass
-                if user_entity is None and username:
-                    try:
-                        user_entity = await tg.get_entity(username)
-                    except Exception:
-                        pass
-                if user_entity is None:
-                    failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": "user_not_found"})
-                    continue
-                if not isinstance(user_entity, User):
-                    failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": "invalid_entity"})
-                    continue
-                input_user = InputUser(user_entity.id, user_entity.access_hash)
+            if user_entity is None:
+                failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": "user_not_found"})
+                await asyncio.sleep(delay_between_resolve)
+                continue
+            if not isinstance(user_entity, User):
+                failed.append({"telegram_id": telegram_id, "telegram_username": un, "reason": "invalid_entity"})
+                await asyncio.sleep(delay_between_resolve)
+                continue
+            resolved.append((telegram_id, un, InputUser(user_entity.id, user_entity.access_hash)))
+            await asyncio.sleep(delay_between_resolve)
+
+        if is_classic_chat:
+            cid = group_entity.id
+            for telegram_id, uname, input_user in resolved:
+                await asyncio.sleep(delay_before_each_classic)
+                await _invite_single_to_basic_chat(
+                    tg,
+                    cid,
+                    input_user,
+                    telegram_id,
+                    uname,
+                    invited,
+                    failed,
+                    max_flood_wait_sec,
+                    pause_after_classic_invite,
+                )
+                if promote_admins and telegram_id in invited:
+                    await _promote_invited_user_basic_chat(
+                        tg,
+                        cid,
+                        input_user,
+                        telegram_id,
+                        uname,
+                        admin_promote_failed,
+                        max_flood_wait_sec,
+                        delay_before_promote,
+                    )
+                    await asyncio.sleep(delay_after_promote)
+        else:
+            for i in range(0, len(resolved), invite_batch_size):
+                batch = resolved[i : i + invite_batch_size]
+                await asyncio.sleep(delay_before_invite_batch)
+                users_inputs: list[InputUser] = [t[2] for t in batch]
+                batch_ok = False
                 try:
-                    await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
-                    invited.append(telegram_id)
-                    if promote_admins:
+                    await tg(InviteToChannelRequest(channel=input_channel, users=users_inputs))
+                    for tid, _, _ in batch:
+                        invited.append(tid)
+                    batch_ok = True
+                except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+                    for tid, _, _ in batch:
+                        invited.append(tid)
+                    batch_ok = True
+                except FloodWaitError as e:
+                    ws = _flood_wait_seconds(e)
+                    if ws <= max_flood_wait_sec:
+                        logger.info("FloodWait %ds for invite batch, retrying...", ws)
+                        await asyncio.sleep(ws)
+                        try:
+                            await tg(InviteToChannelRequest(channel=input_channel, users=users_inputs))
+                            for tid, _, _ in batch:
+                                invited.append(tid)
+                            batch_ok = True
+                        except Exception as retry_err:
+                            if _is_already_participant_err(retry_err):
+                                for tid, _, _ in batch:
+                                    invited.append(tid)
+                                batch_ok = True
+                            else:
+                                logger.warning("Invite batch retry failed: %s", retry_err)
+                    else:
+                        logger.warning("Invite batch FloodWait %ds (> max retry %ds)", ws, max_flood_wait_sec)
+                except Exception as e:
+                    if _is_already_participant_err(e):
+                        for tid, _, _ in batch:
+                            invited.append(tid)
+                        batch_ok = True
+                    else:
+                        logger.info("Invite batch failed (%s), using per-user invites", e)
+
+                if not batch_ok:
+                    for telegram_id, uname, input_user in batch:
+                        await _invite_single_to_channel(
+                            tg,
+                            input_channel,
+                            input_user,
+                            telegram_id,
+                            uname,
+                            invited,
+                            failed,
+                            max_flood_wait_sec,
+                            delay_single_invite,
+                        )
+
+                await asyncio.sleep(delay_after_invite_batch)
+
+                if promote_admins:
+                    for telegram_id, uname, input_user in batch:
+                        if telegram_id not in invited:
+                            continue
                         await _promote_invited_user_to_admin(
                             tg,
                             input_channel,
                             input_user,
                             telegram_id,
-                            username,
+                            uname,
                             admin_promote_failed,
                             max_flood_wait_sec,
+                            delay_before_promote,
                         )
-                except FloodWaitError as e:
-                    wait_sec = getattr(e, "seconds", None)
-                    if wait_sec is None:
-                        wait_sec = getattr(e, "value", 0) or 0
-                    if wait_sec <= max_flood_wait_sec:
-                        logger.info("FloodWait %ds for invite, retrying...", wait_sec)
-                        await asyncio.sleep(wait_sec)
-                        await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
-                        invited.append(telegram_id)
-                        if promote_admins:
-                            await _promote_invited_user_to_admin(
-                                tg,
-                                input_channel,
-                                input_user,
-                                telegram_id,
-                                username,
-                                admin_promote_failed,
-                                max_flood_wait_sec,
-                            )
-                    else:
-                        failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": f"FloodWaitError:{wait_sec}s"})
-                        await asyncio.sleep(0.5)
-                await asyncio.sleep(1.5)
-            except (UserNotMutualContactError, UserPrivacyRestrictedError) as e:
-                failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__})
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
-                await asyncio.sleep(0.5)
+                        await asyncio.sleep(delay_after_promote)
 
         welcome_message = body.get("welcome_message")
         if welcome_message and isinstance(welcome_message, str) and welcome_message.strip():
             try:
-                await tg.send_message(channel, welcome_message.strip())
+                await tg.send_message(group_entity, welcome_message.strip())
             except Exception as e:
                 logger.warning("Could not send welcome message: %s", e)
 
@@ -863,7 +1398,7 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                         if kbis_filename and isinstance(kbis_filename, str) and kbis_filename.strip():
                             attrs.append(DocumentAttributeFilename(kbis_filename.strip()))
                         await tg.send_file(
-                            channel,
+                            group_entity,
                             kbis_path,
                             caption="KBIS",
                             attributes=attrs if attrs else None,
@@ -876,14 +1411,14 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
 
         await _send_base64_file_to_channel(
             tg,
-            channel,
+            group_entity,
             pi_recto_base64,
             pi_recto_filename,
             "Pièce d'identité recto",
         )
         await _send_base64_file_to_channel(
             tg,
-            channel,
+            group_entity,
             pi_verso_base64,
             pi_verso_filename,
             "Pièce d'identité verso",

@@ -42,6 +42,22 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: S3_BACKUP_BUCKET
+        sync: false
+      - key: S3_BACKUP_PREFIX
+        sync: false
+      - key: S3_BACKUP_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_STATEMENT_MODEL
+        sync: false
 
   # Python Telegram service
   - type: web

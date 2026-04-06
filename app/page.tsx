@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
+import { ImportBankStatementModal } from "@/components/ImportBankStatementModal";
 import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
 import { SheetFooter } from "@/components/layout/SheetFooter";
 import { SheetToolbar } from "@/components/layout/SheetToolbar";
@@ -104,6 +105,7 @@ function HomeContent() {
       : { mode: "all" },
   }));
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [importStatementModalOpen, setImportStatementModalOpen] = useState(false);
   const [invoiceModalTransactions, setInvoiceModalTransactions] = useState<Transaction[] | null>(null);
   const [zoom, setZoom] = useState(100);
   const [sortState, setSortState] = useState<{
@@ -475,6 +477,23 @@ function HomeContent() {
     fetchTransactions();
   }, [fetchTransactions]);
 
+  const handleImportStatementSuccess = useCallback(
+    (insertedCount: number) => {
+      setImportStatementModalOpen(false);
+      if (insertedCount > 0) {
+        setSaveStatus("saved");
+        setSaveMessage(
+          insertedCount === 1
+            ? "1 transaction importée."
+            : `${insertedCount} transactions importées.`
+        );
+        setTimeout(() => setSaveStatus("idle"), 3000);
+      }
+      fetchTransactions();
+    },
+    [fetchTransactions]
+  );
+
   const handleDeleteTransaction = useCallback(async (id: string) => {
     setSaveStatus("saving");
     setSaveMessage("");
@@ -617,6 +636,11 @@ function HomeContent() {
         onAddClick={
           bankAccounts.length > 0 && !loadingBankAccounts ? () => setAddModalOpen(true) : undefined
         }
+        onImportStatementClick={
+          bankAccounts.length > 0 && !loadingBankAccounts
+            ? () => setImportStatementModalOpen(true)
+            : undefined
+        }
         createInvoice={createInvoiceToolbar}
         groupedInvoice={groupedInvoiceToolbar}
         bulkDeleteSelected={bulkDeleteToolbar}
@@ -658,6 +682,18 @@ function HomeContent() {
           }
           onClose={() => setAddModalOpen(false)}
           onSuccess={handleAddTransaction}
+        />
+      )}
+      {importStatementModalOpen && (
+        <ImportBankStatementModal
+          bankAccounts={bankAccounts}
+          defaultBankAccountId={
+            filterValues.bankFilter.mode === "include" && filterValues.bankFilter.ids.length === 1
+              ? filterValues.bankFilter.ids[0]
+              : undefined
+          }
+          onClose={() => setImportStatementModalOpen(false)}
+          onSuccess={handleImportStatementSuccess}
         />
       )}
       {invoiceModalTransactions && invoiceModalTransactions.length > 0 && (

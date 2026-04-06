@@ -26,7 +26,10 @@
     "migrate:040": "node scripts/run-migration-040.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1021.0",
+    "@aws-sdk/lib-storage": "^3.1021.0",
     "@glideapps/glide-data-grid": "^6.0.3",
+    "@google/generative-ai": "^0.24.1",
     "@neondatabase/auth": "^0.2.0-beta.1",
     "@neondatabase/serverless": "^1.0.2",
     "@sparticuz/chromium": "^131.0.0",
