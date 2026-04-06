@@ -1,5 +1,8 @@
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
+/** Mode du filtre min/max sur la colonne Montant : signé (comme à l’écran) ou montant brut par type. */
+export type TransactionAmountFilterMode = "signed" | TransactionType;
+
 export interface TransactionFilterValues {
   bankFilter: { mode: "all" } | { mode: "include"; ids: string[] };
   /** null = toutes les banques (noms d’établissement) */
@@ -14,6 +17,8 @@ export interface TransactionFilterValues {
   descriptionContains: string;
   amountMin: string;
   amountMax: string;
+  /** Avec min/max : compare le montant signé (débit négatif) ou uniquement les lignes débit / crédit (montant positif stocké). */
+  amountFilterMode: TransactionAmountFilterMode;
   /** null = tous les ajouteurs */
   processedByFilter: null | { mode: "include"; names: string[] };
 }
@@ -29,6 +34,7 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
   descriptionContains: "",
   amountMin: "",
   amountMax: "",
+  amountFilterMode: "signed",
   processedByFilter: null,
 };
 
@@ -103,9 +109,24 @@ export function applyClientTransactionFilters(
 
     const minN = f.amountMin.trim() === "" ? null : Number(f.amountMin.replace(",", "."));
     const maxN = f.amountMax.trim() === "" ? null : Number(f.amountMax.replace(",", "."));
-    const signed = t.type === "DEBIT" ? -Number(t.amount) : Number(t.amount);
-    if (minN != null && !Number.isNaN(minN) && signed < minN) return false;
-    if (maxN != null && !Number.isNaN(maxN) && signed > maxN) return false;
+    const hasAmountBounds =
+      (minN != null && !Number.isNaN(minN)) || (maxN != null && !Number.isNaN(maxN));
+    if (hasAmountBounds) {
+      const raw = Number(t.amount);
+      if (f.amountFilterMode === "signed") {
+        const signed = t.type === "DEBIT" ? -raw : raw;
+        if (minN != null && !Number.isNaN(minN) && signed < minN) return false;
+        if (maxN != null && !Number.isNaN(maxN) && signed > maxN) return false;
+      } else if (f.amountFilterMode === "DEBIT") {
+        if (t.type !== "DEBIT") return false;
+        if (minN != null && !Number.isNaN(minN) && raw < minN) return false;
+        if (maxN != null && !Number.isNaN(maxN) && raw > maxN) return false;
+      } else {
+        if (t.type !== "CREDIT") return false;
+        if (minN != null && !Number.isNaN(minN) && raw < minN) return false;
+        if (maxN != null && !Number.isNaN(maxN) && raw > maxN) return false;
+      }
+    }
 
     if (f.processedByFilter !== null) {
       const names = f.processedByFilter.names;

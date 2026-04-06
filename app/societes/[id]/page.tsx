@@ -101,6 +101,7 @@ export default function SocieteDetailPage() {
   const [createAccountPinCode, setCreateAccountPinCode] = useState("");
   const [createAccountPlafondLimit, setCreateAccountPlafondLimit] = useState("");
   const [createAccountCards, setCreateAccountCards] = useState<CardItem[]>([]);
+  const [createAccountLinkTelegramEnabled, setCreateAccountLinkTelegramEnabled] = useState(true);
   const [createAccountLinkExistingGroupId, setCreateAccountLinkExistingGroupId] = useState("");
   const [addingBankAccount, setAddingBankAccount] = useState(false);
   const [bankAccountError, setBankAccountError] = useState<string | null>(null);
@@ -597,6 +598,7 @@ export default function SocieteDetailPage() {
     setCreateAccountPinCode("");
     setCreateAccountPlafondLimit("");
     setCreateAccountCards([]);
+    setCreateAccountLinkTelegramEnabled(true);
     setCreateAccountLinkExistingGroupId("");
     setBankAccountError(null);
     setBankAccountInviteWarning(null);
@@ -666,6 +668,15 @@ export default function SocieteDetailPage() {
   const handleAddBankAccount = async () => {
     const name = createAccountName.trim();
     if (!name) return;
+    if (createAccountLinkTelegramEnabled) {
+      const linkId = createAccountLinkExistingGroupId.trim();
+      if (!linkId || !/^-?\d+$/.test(linkId)) {
+        setBankAccountError(
+          "Indiquez un ID de groupe Telegram valide (nombre, ex. -100…), ou décochez « Lier un groupe Telegram existant » pour créer le compte uniquement dans le CRM."
+        );
+        return;
+      }
+    }
     setAddingBankAccount(true);
     setBankAccountError(null);
     try {
@@ -682,7 +693,21 @@ export default function SocieteDetailPage() {
           cvv: (v.cvv ?? "").trim() || undefined,
         }))
         .filter((v) => v.numero.length > 0);
-      const body: { name: string; company_id: string; bank_id?: string; account_type_id?: string; account_status_id?: string; ibans: IbanItem[]; login?: string; password?: string; pin_code?: string; plafond_limit?: string; cards?: CardItem[]; telegram_chat_id?: string } = {
+      const body: {
+        name: string;
+        company_id: string;
+        bank_id?: string;
+        account_type_id?: string;
+        account_status_id?: string;
+        ibans: IbanItem[];
+        login?: string;
+        password?: string;
+        pin_code?: string;
+        plafond_limit?: string;
+        cards?: CardItem[];
+        telegram_chat_id?: string;
+        skip_telegram?: boolean;
+      } = {
         name,
         company_id: id,
         ibans: ibansToSend,
@@ -695,8 +720,11 @@ export default function SocieteDetailPage() {
       if (createAccountPinCode.trim()) body.pin_code = createAccountPinCode.trim();
       if (createAccountPlafondLimit.trim()) body.plafond_limit = createAccountPlafondLimit.trim();
       if (cardsToSend.length > 0) body.cards = cardsToSend;
-      const linkId = createAccountLinkExistingGroupId.trim();
-      if (linkId && /^-?\d+$/.test(linkId)) body.telegram_chat_id = linkId;
+      if (createAccountLinkTelegramEnabled) {
+        body.telegram_chat_id = createAccountLinkExistingGroupId.trim();
+      } else {
+        body.skip_telegram = true;
+      }
       const res = await fetch("/api/bank-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1576,6 +1604,11 @@ export default function SocieteDetailPage() {
           }}
           onIbansChange={(v) => {
             setCreateAccountIbans(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          linkTelegramEnabled={createAccountLinkTelegramEnabled}
+          onLinkTelegramEnabledChange={(v) => {
+            setCreateAccountLinkTelegramEnabled(v);
             if (bankAccountError) setBankAccountError(null);
           }}
           linkExistingGroupId={createAccountLinkExistingGroupId}

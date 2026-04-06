@@ -61,6 +61,9 @@ export interface CreateBankAccountModalProps {
   /** Optional: link an existing Telegram group by ID (e.g. -5186500052) instead of creating a new one */
   linkExistingGroupId?: string;
   onLinkExistingGroupIdChange?: (v: string) => void;
+  /** When false with `onLinkTelegramEnabledChange`, creation skips Telegram entirely (CRM only). Default true. */
+  linkTelegramEnabled?: boolean;
+  onLinkTelegramEnabledChange?: (enabled: boolean) => void;
 }
 
 export function CreateBankAccountModal({
@@ -98,7 +101,11 @@ export function CreateBankAccountModal({
   fixedCompanyId,
   linkExistingGroupId = "",
   onLinkExistingGroupIdChange,
+  linkTelegramEnabled = true,
+  onLinkTelegramEnabledChange,
 }: CreateBankAccountModalProps) {
+  const telegramLinkActive =
+    onLinkTelegramEnabledChange != null ? linkTelegramEnabled : linkExistingGroupId !== "";
   const addIban = () => onIbansChange([...ibans, { iban: "", bic: undefined }]);
   const removeIban = (i: number) => onIbansChange(ibans.filter((_, idx) => idx !== i));
   const setIban = (i: number, iban: string) => {
@@ -124,6 +131,9 @@ export function CreateBankAccountModal({
   const lastAutoNameRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const typeId = (accountTypeId ?? "").toString().trim().toLowerCase();
+    const accType = typeId ? accountTypes.find((t) => String(t?.id ?? "").trim().toLowerCase() === typeId) : undefined;
+    const typeEmoji = (accType?.emoji ?? "").toString().trim().replace(/\s/g, "");
     const statusId = (accountStatusId ?? "").toString().trim().toLowerCase();
     const status = statusId ? accountStatuses.find((s) => String(s?.id ?? "").trim().toLowerCase() === statusId) : undefined;
     const statusEmoji = (status?.emoji ?? "").toString().trim().replace(/\s/g, "");
@@ -135,7 +145,7 @@ export function CreateBankAccountModal({
     const company = companies.find((c) => c.id === effectiveCompanyId);
     const companyName = (company?.name ?? "").trim();
     const midPart = iban2 && bankName ? `${iban2}_${bankName}` : iban2 || bankName || "";
-    const autoName = buildAutoBankAccountName(statusEmoji, midPart, companyName, bankName);
+    const autoName = buildAutoBankAccountName(typeEmoji, statusEmoji, midPart, companyName, bankName);
     if (!autoName) return;
     const nameTrimmed = name.trim();
     const canUpdate = !nameTrimmed || nameTrimmed === lastAutoNameRef.current;
@@ -143,7 +153,19 @@ export function CreateBankAccountModal({
     if (nameTrimmed === autoName) return;
     lastAutoNameRef.current = autoName;
     onNameChange(autoName);
-  }, [accountStatusId, ibans, bankId, effectiveCompanyId, accountStatuses, banks, companies, onNameChange, name]);
+  }, [
+    accountTypeId,
+    accountStatusId,
+    ibans,
+    bankId,
+    effectiveCompanyId,
+    accountTypes,
+    accountStatuses,
+    banks,
+    companies,
+    onNameChange,
+    name,
+  ]);
   const [cardsExpanded, setCardsExpanded] = useState(true);
   const [ibanLookupLoading, setIbanLookupLoading] = useState<number | null>(null);
   const [ibanValidation, setIbanValidation] = useState<Record<string, boolean>>({});
@@ -198,9 +220,9 @@ export function CreateBankAccountModal({
         <div className="shrink-0 p-6 pb-0">
         <h3 className="subsection-header mb-4 text-lg font-medium">Créer un compte bancaire</h3>
         <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-          {linkExistingGroupId !== ""
-            ? "Liez un groupe Telegram existant en entrant son ID (ex. -5186500052)."
-            : "Un groupe Telegram sera créé automatiquement et lié à ce compte. Si Telegram refuse la création (compte serveur limité ou signalé), créez le groupe à la main puis cochez « Lier un groupe Telegram existant »."}
+          {telegramLinkActive
+            ? "Liez un groupe Telegram existant avec son ID (ex. -100…). Le service Telegram appliquera titre, logo, invitations des utilisateurs CRM liés et pièces jointes (KBIS, etc.) si le service est configuré."
+            : "Aucune liaison Telegram : le compte est créé dans le CRM uniquement. Vous pourrez renseigner un ID de groupe plus tard en modifiant le compte."}
         </p>
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
@@ -220,18 +242,26 @@ export function CreateBankAccountModal({
               <label className="mb-1 flex cursor-pointer items-center gap-2 text-sm font-medium text-[var(--foreground)]">
                 <input
                   type="checkbox"
-                  checked={linkExistingGroupId !== ""}
-                  onChange={(e) => onLinkExistingGroupIdChange(e.target.checked ? (linkExistingGroupId || "-") : "")}
+                  checked={telegramLinkActive}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    if (onLinkTelegramEnabledChange) {
+                      onLinkTelegramEnabledChange(on);
+                      if (!on) onLinkExistingGroupIdChange("");
+                    } else {
+                      onLinkExistingGroupIdChange(on ? linkExistingGroupId || "-" : "");
+                    }
+                  }}
                   className="rounded border-[var(--border)]"
                 />
                 Lier un groupe Telegram existant
               </label>
-              {linkExistingGroupId !== "" && (
+              {telegramLinkActive && (
                 <input
                   type="text"
                   value={linkExistingGroupId}
                   onChange={(e) => onLinkExistingGroupIdChange(e.target.value)}
-                  placeholder="ID du groupe (ex. -5186500052)"
+                  placeholder="ID du groupe (ex. -1001234567890)"
                   className="mt-2 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono"
                 />
               )}

@@ -178,7 +178,7 @@ export interface BankAccount {
   company_id: string;
   company_name: string;
   name: string;
-  telegram_chat_id: number;
+  telegram_chat_id: number | null;
   bank_id?: string | null;
   bank_name?: string | null;
   bank_url?: string | null;

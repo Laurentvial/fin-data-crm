@@ -194,7 +194,8 @@ export function ImportBankStatementModal({
             <div>
               <h3 className="subsection-header text-lg font-medium">Importer un relevé PDF</h3>
               <p className="text-sm text-[var(--muted-foreground)]">
-                Analyse par IA, détection des doublons possibles (date, montant, type, libellé).
+                Analyse par IA. Les lignes déjà présentes en base sont signalées à titre informatif ; vous
+                pouvez tout importer, y compris des doublons.
               </p>
             </div>
           </div>
@@ -240,9 +241,9 @@ export function ImportBankStatementModal({
             reviewRows && (
               <div className="space-y-3">
                 <p className="text-sm text-[var(--muted-foreground)]">
-                  Période détectée : {previewMeta?.date_from} → {previewMeta?.date_to}. Les doublons possibles
-                  comparent aussi le libellé (comme en base). Lignes « Doublon possible » : décochées par défaut ;
-                  cochez pour forcer l&apos;import.
+                  Période détectée : {previewMeta?.date_from} → {previewMeta?.date_to}. « Doublon possible » =
+                  même date, montant, type et libellé qu&apos;une opération déjà en base (information seule). Toutes
+                  les lignes sont cochées par défaut ; décochez celles à ne pas importer.
                 </p>
                 <div className="rounded-lg border border-[var(--border)] overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">

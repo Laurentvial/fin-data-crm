@@ -117,11 +117,18 @@ export async function PATCH(
       : undefined;
     const telegram_chat_id =
       body?.telegram_chat_id !== undefined
-        ? (typeof body.telegram_chat_id === "number"
+        ? body.telegram_chat_id === null
+          ? null
+          : typeof body.telegram_chat_id === "number"
             ? body.telegram_chat_id
             : typeof body.telegram_chat_id === "string"
-              ? parseInt(body.telegram_chat_id, 10)
-              : undefined)
+              ? (() => {
+                  const s = body.telegram_chat_id.trim();
+                  if (!s) return null;
+                  const n = parseInt(s, 10);
+                  return Number.isFinite(n) ? n : null;
+                })()
+              : null
         : undefined;
     const login = body?.login !== undefined
       ? (typeof body.login === "string" ? body.login.trim() || null : null)

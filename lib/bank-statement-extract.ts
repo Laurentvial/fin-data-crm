@@ -1,5 +1,6 @@
 import {
   BlockReason,
+  FinishReason,
   GoogleGenerativeAI,
   SchemaType,
   type GenerateContentResult,
@@ -8,6 +9,28 @@ import {
 import type { TransactionType } from "@/lib/types";
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
+
+/** Relevés longs : 16k jetons de sortie coupent souvent le JSON au milieu. Les modèles récents acceptent beaucoup plus. */
+const DEFAULT_STATEMENT_MAX_OUTPUT_TOKENS = 65_536;
+const MIN_STATEMENT_MAX_OUTPUT_TOKENS = 8_192;
+const CAP_STATEMENT_MAX_OUTPUT_TOKENS = 1_048_576;
+
+function statementMaxOutputTokens(): number {
+  const raw = process.env.GEMINI_STATEMENT_MAX_OUTPUT_TOKENS;
+  if (raw == null || String(raw).trim() === "") return DEFAULT_STATEMENT_MAX_OUTPUT_TOKENS;
+  const n = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(n) || n < MIN_STATEMENT_MAX_OUTPUT_TOKENS) {
+    return DEFAULT_STATEMENT_MAX_OUTPUT_TOKENS;
+  }
+  return Math.min(n, CAP_STATEMENT_MAX_OUTPUT_TOKENS);
+}
+
+function stripMarkdownJsonFence(raw: string): string {
+  let s = raw.trim();
+  const m = /^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```$/im.exec(s);
+  if (m) return m[1]!.trim();
+  return s;
+}
 
 export interface NormalizedExtractedLine {
   transaction_date: string;
@@ -181,7 +204,7 @@ async function generateStatementContent(
     systemInstruction: SYSTEM_INSTRUCTIONS,
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 16384,
+      maxOutputTokens: statementMaxOutputTokens(),
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
     },
@@ -271,11 +294,24 @@ export async function extractTransactionsFromPdfBuffer(
     throw new Error("Réponse vide du modèle d'extraction.");
   }
 
+  const candidate = result.response.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+
+  if (finishReason === FinishReason.MAX_TOKENS) {
+    throw new Error(
+      "Réponse du modèle tronquée (limite de jetons de sortie). Le PDF contient probablement trop de mouvements pour un seul appel. " +
+        `Augmentez GEMINI_STATEMENT_MAX_OUTPUT_TOKENS (limite actuelle : ${statementMaxOutputTokens()}), ou importez un relevé plus court / découpé par période.`
+    );
+  }
+
   let parsed: { transactions?: unknown[] };
   try {
-    parsed = JSON.parse(text) as { transactions?: unknown[] };
+    parsed = JSON.parse(stripMarkdownJsonFence(text)) as { transactions?: unknown[] };
   } catch {
-    throw new Error("Impossible de lire la réponse JSON du modèle.");
+    throw new Error(
+      "Impossible de lire la réponse JSON du modèle (relevé très long, sortie coupée ou format inattendu). " +
+        `Essayez GEMINI_STATEMENT_MAX_OUTPUT_TOKENS=131072 (ou plus) dans .env.local ; limite actuelle : ${statementMaxOutputTokens()}. Redémarrez le serveur après changement.`
+    );
   }
   const arr = Array.isArray(parsed.transactions) ? parsed.transactions : [];
   return normalizeLines(arr);

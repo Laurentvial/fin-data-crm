@@ -23,11 +23,11 @@
     "migrate:033": "node scripts/run-migration-033.js",
     "migrate:034": "node scripts/run-migration-034.js",
     "migrate:039": "node scripts/run-migration-039.js",
-    "migrate:040": "node scripts/run-migration-040.js"
+    "migrate:040": "node scripts/run-migration-040.js",
+    "migrate:041": "node scripts/run-migration-041.js",
+    "migrate:042": "node scripts/run-migration-042.js"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1021.0",
-    "@aws-sdk/lib-storage": "^3.1021.0",
     "@glideapps/glide-data-grid": "^6.0.3",
     "@google/generative-ai": "^0.24.1",
     "@neondatabase/auth": "^0.2.0-beta.1",

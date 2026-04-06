@@ -1,7 +1,10 @@
-import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
-import { getS3BackupConfig, runDatabaseBackupToS3 } from "@/lib/database-s3-backup";
+import {
+  getCloudinaryBackupConfig,
+  listRecentDatabaseBackups,
+  runDatabaseBackupToCloudinary,
+} from "@/lib/database-cloudinary-backup";
 
 export const maxDuration = 300;
 
@@ -23,7 +26,7 @@ export async function GET() {
   const err = await requireAdmin(session?.user as { id: string; role?: string } | undefined);
   if (err) return err;
 
-  const config = getS3BackupConfig();
+  const config = getCloudinaryBackupConfig();
   if (!config) {
     return NextResponse.json({
       configured: false,
@@ -32,27 +35,17 @@ export async function GET() {
   }
 
   try {
-    const out = await config.client.send(
-      new ListObjectsV2Command({
-        Bucket: config.bucket,
-        Prefix: `${config.prefix}/`,
-        MaxKeys: 40,
-      })
-    );
-    const contents = out.Contents ?? [];
-    const recent = contents
-      .filter((o): o is typeof o & { Key: string } => typeof o.Key === "string")
-      .map((o) => ({
-        key: o.Key,
-        size: o.Size ?? 0,
-        last_modified: o.LastModified?.toISOString() ?? null,
-      }))
-      .sort((a, b) => (b.last_modified ?? "").localeCompare(a.last_modified ?? ""));
-    return NextResponse.json({ configured: true, bucket: config.bucket, recent });
+    const recent = await listRecentDatabaseBackups(config);
+    return NextResponse.json({
+      configured: true,
+      cloud_name: config.cloudName,
+      folder: config.folder,
+      recent,
+    });
   } catch (e) {
     console.error("GET /api/admin/database-backup:", e);
     return NextResponse.json(
-      { error: "Impossible de lister les sauvegardes S3 (droits ou configuration)." },
+      { error: "Impossible de lister les sauvegardes Cloudinary (droits ou configuration)." },
       { status: 500 }
     );
   }
@@ -63,20 +56,20 @@ export async function POST() {
   const err = await requireAdmin(session?.user as { id: string; role?: string } | undefined);
   if (err) return err;
 
-  const config = getS3BackupConfig();
+  const config = getCloudinaryBackupConfig();
   if (!config) {
     return NextResponse.json(
       {
         error:
-          "Sauvegarde S3 non configurée. Définissez S3_BACKUP_BUCKET, AWS_ACCESS_KEY_ID et AWS_SECRET_ACCESS_KEY (et optionnellement S3_BACKUP_REGION ou AWS_REGION, S3_BACKUP_PREFIX).",
+          "Sauvegarde non configurée. Définissez CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET (déjà utilisés pour les factures). Optionnel : CLOUDINARY_BACKUP_FOLDER (défaut database-backups).",
       },
       { status: 503 }
     );
   }
 
   try {
-    const { key, bucket } = await runDatabaseBackupToS3(config);
-    return NextResponse.json({ ok: true, key, bucket });
+    const { key, public_id, secure_url, cloud_name } = await runDatabaseBackupToCloudinary(config);
+    return NextResponse.json({ ok: true, key, public_id, secure_url, cloud_name });
   } catch (e) {
     console.error("POST /api/admin/database-backup:", e);
     const message = e instanceof Error ? e.message : "Échec de la sauvegarde.";

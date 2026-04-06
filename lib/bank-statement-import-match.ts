@@ -66,18 +66,3 @@ export function findDuplicateCandidates(
     );
   });
 }
-
-/** Clé pour dédoublonner plusieurs lignes identiques dans un même import (PDF + commit). */
-export function importRowDedupKey(parts: {
-  transaction_date: string;
-  amount: number;
-  type: string;
-  description: string;
-}): string {
-  return [
-    isoDateOnly(parts.transaction_date),
-    String(parts.type),
-    String(roundAmount2(Number(parts.amount))),
-    normalizeDescriptionForMatch(parts.description),
-  ].join("\u001f");
-}

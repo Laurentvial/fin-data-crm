@@ -13,6 +13,7 @@ import {
   COMPANY_EMPTY_KEY,
   getAccountStatusFilterKeys,
   getBankNameFilterKeys,
+  type TransactionAmountFilterMode,
   type TransactionFilterValues,
   PROCESSED_BY_EMPTY_KEY,
 } from "@/lib/transaction-filters";
@@ -564,7 +565,30 @@ export function TransactionColumnFilterMenu({
   } else if (columnId === "amount") {
     body = (
       <>
-        {sectionTitle("Montant (signé débit / crédit)")}
+        {sectionTitle("Montant")}
+        <div className="px-3 pb-2">
+          <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+            Type
+            <select
+              value={draft.amountFilterMode}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  amountFilterMode: e.target.value as TransactionAmountFilterMode,
+                })
+              }
+              className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
+            >
+              <option value="signed">Signé (débit −, crédit +)</option>
+              <option value="DEBIT">Débit (montant affiché en valeur absolue)</option>
+              <option value="CREDIT">Crédit</option>
+            </select>
+          </label>
+          <p className="mt-1.5 text-[11px] leading-snug text-[var(--muted-foreground)]">
+            Les bornes min / max s&apos;appliquent au type choisi. En « Débit » ou « Crédit », seules les lignes de ce type
+            sont conservées.
+          </p>
+        </div>
         <div className="grid grid-cols-2 gap-2 px-3 pb-2">
           <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
             Min

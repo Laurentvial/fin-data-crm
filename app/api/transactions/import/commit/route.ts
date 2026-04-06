@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
-import { importRowDedupKey } from "@/lib/bank-statement-import-match";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
 import type { TransactionType } from "@/lib/types";
 
@@ -104,14 +103,6 @@ export async function POST(request: NextRequest) {
       }
 
       const rounded = Math.round(n * 100) / 100;
-      const dedupKey = importRowDedupKey({
-        transaction_date,
-        amount: rounded,
-        type,
-        description,
-      });
-      if (dedupKeys.has(dedupKey)) continue;
-      dedupKeys.add(dedupKey);
 
       toInsert.push({
         transaction_date,

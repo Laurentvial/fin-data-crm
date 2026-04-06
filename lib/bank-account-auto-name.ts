@@ -19,14 +19,17 @@ export function buildAutoAccountTextPart(
   return `${m} / ${cu}`;
 }
 
-/** Status emoji only + uppercased bank/company segment (product convention). */
+/** Client (account type) + status emojis + bank/company segment (form field order). */
 export function buildAutoBankAccountName(
+  accountTypeEmoji: string,
   statusEmoji: string,
   midPart: string,
   companyName: string,
   bankName: string
 ): string {
-  const prefix = statusEmoji.trim().replace(/\s/g, "");
+  const typeE = accountTypeEmoji.trim().replace(/\s/g, "");
+  const statE = statusEmoji.trim().replace(/\s/g, "");
+  const prefix = [typeE, statE].filter(Boolean).join(" ");
   const text = buildAutoAccountTextPart(midPart, companyName, bankName);
   if (!text) return prefix || "";
   return prefix ? `${prefix} ${text}` : text;

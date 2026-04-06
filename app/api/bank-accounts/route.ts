@@ -71,7 +71,7 @@ function friendlyTelegramCreateGroupError(raw: string): string {
     return (
       "Telegram a restreint le compte utilisé par le serveur : il ne peut plus créer de groupes ou de supergroupes " +
       "(souvent après un signalement pour spam). " +
-      "Il s'agit du numéro configuré pour la création automatique (session sur le serveur), pas forcément du compte " +
+      "Il s'agit du numéro configuré sur le serveur pour Telegram (session worker), pas forcément du compte " +
       "avec lequel vous utilisez Telegram sur votre téléphone. " +
       "Que faire : (1) Paramètres de l'application (admin) → Session Telegram / création de groupes : reconnectez un autre numéro " +
       "Telegram qui n'a pas cette limitation ; " +
@@ -203,17 +203,29 @@ export async function POST(request: Request) {
             : null
         : null;
 
-    const useExistingGroup = existingTelegramChatId !== null;
+    const skipTelegram = body?.skip_telegram === true;
     const serviceUrl = process.env.TELEGRAM_GROUP_SERVICE_URL;
     const apiKey = process.env.TELEGRAM_SERVICE_API_KEY;
-    if (!serviceUrl || !apiKey) {
-      return NextResponse.json(
-        {
-          error:
-            "Service Telegram non configuré (TELEGRAM_GROUP_SERVICE_URL, TELEGRAM_SERVICE_API_KEY). Requis pour créer un groupe ou pour lier un groupe existant (invitations, logo, pièces jointes).",
-        },
-        { status: 503 },
-      );
+
+    if (!skipTelegram) {
+      if (!serviceUrl || !apiKey) {
+        return NextResponse.json(
+          {
+            error:
+              "Service Telegram non configuré (TELEGRAM_GROUP_SERVICE_URL, TELEGRAM_SERVICE_API_KEY). Requis pour lier un groupe existant.",
+          },
+          { status: 503 },
+        );
+      }
+      if (existingTelegramChatId === null) {
+        return NextResponse.json(
+          {
+            error:
+              "Liaison Telegram : indiquez l'ID du groupe existant (ex. -100…), ou créez le compte sans liaison Telegram.",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const login =
@@ -434,6 +446,16 @@ export async function POST(request: Request) {
       `BANQUE : ${bankName ?? "—"}`,
     ].join("\n\n");
 
+    let telegramChatId: string | undefined;
+    let invited: number[] = [];
+    let failed: {
+      telegram_id: number;
+      telegram_username?: string;
+      reason: string;
+    }[] = [];
+    let telegramSetupWarning: string | null = null;
+
+    if (!skipTelegram) {
     let logoBase64: string | null = null;
     let logoContentType: string | null = null;
     if (bank_id) {
@@ -449,21 +471,12 @@ export async function POST(request: Request) {
       }
     }
 
-    let telegramChatId: string | undefined;
-    let invited: number[] = [];
-    let failed: {
-      telegram_id: number;
-      telegram_username?: string;
-      reason: string;
-    }[] = [];
-    let telegramSetupWarning: string | null = null;
-
     /** Si groupe existant saisi : enregistrer l’ID malgré l’échec Telegram ; sinon erreur HTTP. */
     const abortOrRejectUnlessLink = (
       message: string,
       status: number,
     ): NextResponse | null => {
-      if (useExistingGroup && existingTelegramChatId !== null) {
+      if (!skipTelegram && existingTelegramChatId !== null) {
         telegramSetupWarning = message.trim();
         telegramChatId = String(existingTelegramChatId);
         invited = [];
@@ -504,7 +517,7 @@ export async function POST(request: Request) {
       users,
       welcome_message: welcomeMessage,
     };
-    if (useExistingGroup) {
+    if (!skipTelegram) {
       createGroupBody.existing_chat_id = existingTelegramChatId!;
     }
     if (logoBase64 && logoContentType) {
@@ -610,9 +623,8 @@ export async function POST(request: Request) {
       res: Response,
       errText: string,
     ): Promise<string> {
-      let msg = useExistingGroup
-        ? "Impossible de finaliser le groupe Telegram (invitations / fichiers)."
-        : "Impossible de créer le groupe Telegram.";
+      let msg =
+        "Impossible de finaliser le groupe Telegram (invitations / fichiers).";
       try {
         const errData = JSON.parse(errText) as {
           detail?: string | Array<string | { msg?: string }>;
@@ -731,10 +743,7 @@ export async function POST(request: Request) {
               502,
             );
             if (r) return r;
-          } else if (
-            useExistingGroup &&
-            parsedChatId !== String(existingTelegramChatId)
-          ) {
+          } else if (parsedChatId !== String(existingTelegramChatId)) {
             console.error(
               "Telegram setup: chat_id mismatch",
               parsedChatId,
@@ -746,11 +755,7 @@ export async function POST(request: Request) {
             );
             if (r) return r;
           } else {
-            if (useExistingGroup) {
-              telegramChatId = String(existingTelegramChatId);
-            } else {
-              telegramChatId = parsedChatId;
-            }
+            telegramChatId = String(existingTelegramChatId);
             invited = createData.invited ?? [];
             failed = createData.failed ?? [];
           }
@@ -762,35 +767,36 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Échec Telegram : aucun identifiant de groupe à enregistrer. Créez le groupe via le service ou utilisez « Lier un groupe Telegram existant ».",
+            "Échec Telegram : aucun identifiant de groupe à enregistrer. Vérifiez l'ID du groupe et le service Telegram.",
         },
         { status: 502 },
       );
     }
 
-    if (useExistingGroup) {
-      const [existing] = await sql`
-        SELECT ba.name AS account_name, c.name AS company_name
-        FROM bank_accounts ba
-        JOIN companies c ON c.id = ba.company_id
-        WHERE ba.telegram_chat_id = ${telegramChatId} LIMIT 1
-      `;
-      if (existing) {
-        const ex = existing as { account_name?: string; company_name?: string };
-        const label =
-          [ex.company_name, ex.account_name].filter(Boolean).join(" – ") ||
-          "un autre compte";
-        return NextResponse.json(
-          {
-            error: `Ce groupe Telegram (ID ${telegramChatId}) est déjà lié à « ${label} ». Supprimez d'abord ce compte ou utilisez un autre groupe.`,
-          },
-          { status: 409 },
-        );
-      }
+    const [existing] = await sql`
+      SELECT ba.name AS account_name, c.name AS company_name
+      FROM bank_accounts ba
+      JOIN companies c ON c.id = ba.company_id
+      WHERE ba.telegram_chat_id = ${telegramChatId} LIMIT 1
+    `;
+    if (existing) {
+      const ex = existing as { account_name?: string; company_name?: string };
+      const label =
+        [ex.company_name, ex.account_name].filter(Boolean).join(" – ") ||
+        "un autre compte";
+      return NextResponse.json(
+        {
+          error: `Ce groupe Telegram (ID ${telegramChatId}) est déjà lié à « ${label} ». Supprimez d'abord ce compte ou utilisez un autre groupe.`,
+        },
+        { status: 409 },
+      );
     }
+    }
+
+    const telegramIdForInsert = skipTelegram ? null : telegramChatId!;
     const rows = await sql`
       INSERT INTO bank_accounts (company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, login, password, pin_code, plafond_limit, company_email_id, company_phone_id)
-      VALUES (${company_id}::uuid, ${name}, ${telegramChatId}, ${bank_id || null}, ${account_type_id}, ${account_status_id}::uuid, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
+      VALUES (${company_id}::uuid, ${name}, ${telegramIdForInsert}, ${bank_id || null}, ${account_type_id}, ${account_status_id}::uuid, ${login}, ${password}, ${pin_code}, ${plafond_limit}, ${company_email_id || null}, ${company_phone_id || null})
       RETURNING id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id, created_at, updated_at
     `;
     const row = rows[0];

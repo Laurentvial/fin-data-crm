@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const rows = extracted.map((line, index) => {
       const candidates = findDuplicateCandidates(line, dbList);
       const matchStatus = candidates.length > 0 ? "possible_duplicate" : "new";
-      const defaultImport = matchStatus === "new";
+      const defaultImport = true;
       return {
         index,
         transaction_date: line.transaction_date,
