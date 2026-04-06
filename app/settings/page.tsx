@@ -1143,6 +1143,17 @@ function BanksSection() {
 
 type BackupListItem = { key: string; size: number; last_modified: string | null };
 
+function databaseBackupResponseError(data: unknown, fallback: string, status: number): string {
+  if (!data || typeof data !== "object") return status >= 400 ? `Erreur ${status}` : fallback;
+  const e = (data as { error?: unknown }).error;
+  if (typeof e === "string" && e.trim()) return e;
+  if (e && typeof e === "object") {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m;
+  }
+  return status >= 400 ? `Erreur ${status}` : fallback;
+}
+
 function DatabaseBackupSection() {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
@@ -1160,7 +1171,7 @@ function DatabaseBackupSection() {
       const res = await fetch("/api/admin/database-backup");
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error ?? "Échec du chargement");
+        throw new Error(databaseBackupResponseError(data, "Échec du chargement", res.status));
       }
       setConfigured(!!data.configured);
       setCloudName(typeof data.cloud_name === "string" ? data.cloud_name : null);
@@ -1188,7 +1199,7 @@ function DatabaseBackupSection() {
       const res = await fetch("/api/admin/database-backup", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error ?? "Échec de la sauvegarde");
+        throw new Error(databaseBackupResponseError(data, "Échec de la sauvegarde", res.status));
       }
       setLastMessage(`Instantané créé : ${data.key}`);
       await fetchStatus();

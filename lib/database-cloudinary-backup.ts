@@ -27,6 +27,22 @@ function pgQuoteIdent(name: string, kind: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/** Cloudinary callbacks often pass a plain object, not an Error — avoid new Error(String(obj)) → "[object Object]". */
+function unknownUploadErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const o = err as Record<string, unknown>;
+    if (typeof o.message === "string" && o.message.trim()) return o.message;
+    if (typeof o.error === "string" && o.error.trim()) return o.error;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Erreur d’upload Cloudinary inconnue.";
+  }
+}
+
 type ColumnMeta = { column_name: string; data_type: string; udt_name: string };
 
 /** SELECT list that keeps rows under Neon’s per-response size limit (bytea omitted, large text truncated). */
@@ -250,7 +266,7 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
 
       let rejectErr: Error | null = null;
       if (err != null) {
-        rejectErr = err instanceof Error ? err : new Error(String(err));
+        rejectErr = err instanceof Error ? err : new Error(unknownUploadErrorMessage(err));
       } else if (!res?.public_id) {
         rejectErr = new Error("Cloudinary n’a pas renvoyé d’identifiant de ressource.");
       }
