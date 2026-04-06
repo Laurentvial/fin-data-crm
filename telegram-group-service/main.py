@@ -1008,13 +1008,30 @@ async def _send_base64_file_to_channel(
         gc.collect()
 
 
+def _merge_logo_result_into_response(out: dict, logo_result: dict) -> None:
+    """Attach logo_applied / logo_error so the CRM can show real success or failure."""
+    st = logo_result.get("status")
+    if st == "none":
+        return
+    if st == "applied":
+        out["logo_applied"] = True
+        return
+    out["logo_applied"] = False
+    reason = logo_result.get("reason")
+    out["logo_error"] = reason if isinstance(reason, str) and reason.strip() else "Photo du groupe non mise à jour."
+
+
 async def _apply_group_logo_from_base64(
     tg: TelegramClient,
     group_entity: Channel | Chat,
     is_classic_chat: bool,
     logo_base64: str | None,
     logo_content_type: str | None,
-) -> None:
+) -> dict:
+    """
+    Returns a dict with status: none | applied | skipped | failed.
+    Previously failures were only logged; the API still returned 200, so the CRM showed a false success.
+    """
     chat_internal_id = group_entity.id if is_classic_chat else None
     if not (
         logo_base64
@@ -1027,85 +1044,115 @@ async def _apply_group_logo_from_base64(
             bool(logo_base64),
             bool(logo_content_type),
         )
-        return
-    b64 = logo_base64
-    ct = logo_content_type
+        return {"status": "none"}
+
+    b64 = logo_base64.strip()
+    ct = logo_content_type.strip()
+    if not b64:
+        return {"status": "skipped", "reason": "Logo vide."}
+
     logger.info("Received logo: %d bytes base64, type=%s", len(b64), ct)
     raw_path: str | None = None
     jpeg_path: str | None = None
     try:
         max_logo = _max_logo_decoded_bytes()
         if len(b64) > max_logo * 2:
-            logger.warning(
-                "Logo base64 too large, skipping profile photo (reduce image or raise TELEGRAM_MAX_LOGO_DECODED_BYTES)",
-            )
-        else:
-            decoded_logo = base64.b64decode(b64)
-            if len(decoded_logo) > max_logo:
-                logger.warning(
-                    "Logo decoded %s bytes exceeds TELEGRAM_MAX_LOGO_DECODED_BYTES, skipping profile photo",
-                    len(decoded_logo),
-                )
-            elif decoded_logo:
-                raw_path = _write_temp_file(decoded_logo, suffix=".src")
-                del decoded_logo
-                try:
-                    from PIL import Image
+            return {
+                "status": "skipped",
+                "reason": (
+                    "Image trop volumineuse (base64). Réduisez le fichier ou augmentez "
+                    "TELEGRAM_MAX_LOGO_DECODED_BYTES sur le service Telegram."
+                ),
+            }
 
-                    Image.MAX_IMAGE_PIXELS = 20_000_000
-                    fd_j, jpeg_path = tempfile.mkstemp(suffix=".jpg", dir=_temp_dir())
-                    os.close(fd_j)
-                    with Image.open(raw_path) as img:
-                        im = img
-                        if im.mode in ("RGBA", "P"):
-                            im = im.convert("RGB")
-                        elif im.mode != "RGB":
-                            im = im.convert("RGB")
-                        im.thumbnail((512, 512), Image.LANCZOS)
-                        w, h = im.size
-                        if w != h:
-                            crop_size = min(w, h)
-                            left = (w - crop_size) // 2
-                            top = (h - crop_size) // 2
-                            im = im.crop((left, top, left + crop_size, top + crop_size))
-                        im = im.resize((512, 512), Image.LANCZOS)
-                        im.save(jpeg_path, format="JPEG", quality=92)
-                except Exception as conv_err:
-                    logger.debug("PIL/JPEG encode failed, trying raw upload: %s", conv_err)
-                    _unlink_quiet(jpeg_path)
-                    jpeg_path = None
-                    if raw_path:
-                        ext = (
-                            "jpg"
-                            if "jpeg" in ct.lower() or "jpg" in ct.lower()
-                            else "png"
-                        )
-                        file_name = f"logo.{ext}"
-                        await asyncio.sleep(1)
-                        uploaded_file = await tg.upload_file(raw_path, file_name=file_name)
-                        photo = InputChatUploadedPhoto(file=uploaded_file)
-                        if is_classic_chat:
-                            await tg(EditChatPhotoRequest(chat_internal_id, photo))
-                        else:
-                            input_peer = await tg.get_input_entity(group_entity)
-                            await tg(EditPhotoRequest(channel=input_peer, photo=photo))
-                        logger.info("Group profile photo set (raw from disk)")
-                else:
-                    _unlink_quiet(raw_path)
-                    raw_path = None
-                    await asyncio.sleep(1)
-                    uploaded_file = await tg.upload_file(jpeg_path, file_name="logo.jpg")
-                    photo = InputChatUploadedPhoto(file=uploaded_file)
-                    if is_classic_chat:
-                        await tg(EditChatPhotoRequest(chat_internal_id, photo))
-                    else:
-                        input_peer = await tg.get_input_entity(group_entity)
-                        await tg(EditPhotoRequest(channel=input_peer, photo=photo))
-                    logger.info("Group profile photo set (JPEG from disk)")
-    except (PhotoInvalidError, FileReferenceInvalidError) as e:
-        logger.warning("Could not set group photo: %s", e)
-    except Exception as e:
-        logger.warning("Could not set group photo: %s", e)
+        try:
+            decoded_logo = base64.b64decode(b64, validate=False)
+        except Exception as e:
+            return {"status": "failed", "reason": f"Base64 invalide : {e!s}"}
+
+        if len(decoded_logo) > max_logo:
+            return {
+                "status": "skipped",
+                "reason": (
+                    f"Image décodée trop grande ({len(decoded_logo)} o, max {max_logo}). "
+                    "Réduisez le logo ou augmentez TELEGRAM_MAX_LOGO_DECODED_BYTES."
+                ),
+            }
+        if not decoded_logo:
+            return {"status": "skipped", "reason": "Logo décodé vide."}
+
+        raw_path = _write_temp_file(decoded_logo, suffix=".src")
+        del decoded_logo
+
+        async def _set_photo_from_file(path: str, file_name: str) -> None:
+            await asyncio.sleep(1)
+            uploaded_file = await tg.upload_file(path, file_name=file_name)
+            photo = InputChatUploadedPhoto(file=uploaded_file)
+            if is_classic_chat:
+                await tg(EditChatPhotoRequest(chat_internal_id, photo))
+            else:
+                input_peer = await tg.get_input_entity(group_entity)
+                await tg(EditPhotoRequest(channel=input_peer, photo=photo))
+
+        try:
+            from PIL import Image
+
+            Image.MAX_IMAGE_PIXELS = 20_000_000
+            fd_j, jpeg_path = tempfile.mkstemp(suffix=".jpg", dir=_temp_dir())
+            os.close(fd_j)
+            with Image.open(raw_path) as img:
+                im = img
+                if im.mode in ("RGBA", "P"):
+                    im = im.convert("RGB")
+                elif im.mode != "RGB":
+                    im = im.convert("RGB")
+                im.thumbnail((512, 512), Image.LANCZOS)
+                w, h = im.size
+                if w != h:
+                    crop_size = min(w, h)
+                    left = (w - crop_size) // 2
+                    top = (h - crop_size) // 2
+                    im = im.crop((left, top, left + crop_size, top + crop_size))
+                im = im.resize((512, 512), Image.LANCZOS)
+                im.save(jpeg_path, format="JPEG", quality=92)
+        except Exception as conv_err:
+            logger.debug("PIL/JPEG encode failed, trying raw upload: %s", conv_err)
+            _unlink_quiet(jpeg_path)
+            jpeg_path = None
+            try:
+                if raw_path:
+                    ext = (
+                        "jpg"
+                        if "jpeg" in ct.lower() or "jpg" in ct.lower()
+                        else "png"
+                    )
+                    file_name = f"logo.{ext}"
+                    await _set_photo_from_file(raw_path, file_name)
+                    logger.info("Group profile photo set (raw from disk)")
+                    return {"status": "applied"}
+            except (PhotoInvalidError, FileReferenceInvalidError) as e:
+                logger.warning("Could not set group photo (raw): %s", e)
+                return {"status": "failed", "reason": str(e)}
+            except Exception as e:
+                logger.warning("Could not set group photo (raw): %s", e)
+                return {"status": "failed", "reason": str(e)}
+            return {
+                "status": "failed",
+                "reason": f"Conversion image impossible : {conv_err!s}",
+            }
+
+        _unlink_quiet(raw_path)
+        raw_path = None
+        try:
+            await _set_photo_from_file(jpeg_path, "logo.jpg")
+            logger.info("Group profile photo set (JPEG from disk)")
+            return {"status": "applied"}
+        except (PhotoInvalidError, FileReferenceInvalidError) as e:
+            logger.warning("Could not set group photo: %s", e)
+            return {"status": "failed", "reason": str(e)}
+        except Exception as e:
+            logger.warning("Could not set group photo: %s", e)
+            return {"status": "failed", "reason": str(e)}
     finally:
         _unlink_quiet(raw_path)
         _unlink_quiet(jpeg_path)
@@ -1401,7 +1448,9 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
             logger.debug("get_entity refresh after sync link skipped: %s", refresh_err)
 
         is_classic_chat = isinstance(group_entity, Chat)
-        await _apply_group_logo_from_base64(tg, group_entity, is_classic_chat, logo_base64, logo_content_type)
+        logo_result = await _apply_group_logo_from_base64(
+            tg, group_entity, is_classic_chat, logo_base64, logo_content_type
+        )
 
         input_channel = None if is_classic_chat else await tg.get_input_entity(group_entity)
 
@@ -1454,6 +1503,7 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
             out["sync_bot_invited"] = invite_result["sync_bot_invited"]
             if invite_result.get("sync_bot_error"):
                 out["sync_bot_error"] = invite_result["sync_bot_error"]
+        _merge_logo_result_into_response(out, logo_result)
         return out
     except HTTPException:
         raise
@@ -1557,7 +1607,9 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
                 "crm_link_only": True,
             }
 
-        await _apply_group_logo_from_base64(tg, group_entity, is_classic_chat, logo_base64, logo_content_type)
+        logo_result = await _apply_group_logo_from_base64(
+            tg, group_entity, is_classic_chat, logo_base64, logo_content_type
+        )
 
         input_channel = None if is_classic_chat else await tg.get_input_entity(group_entity)
 
@@ -1664,6 +1716,7 @@ async def create_group(request: Request, x_api_key: str | None = Header(None)):
             out["sync_bot_invited"] = sync_bot_invited
             if sync_bot_error:
                 out["sync_bot_error"] = sync_bot_error
+        _merge_logo_result_into_response(out, logo_result)
         return out
     except HTTPException:
         raise

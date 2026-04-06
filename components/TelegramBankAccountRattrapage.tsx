@@ -143,7 +143,15 @@ export function TelegramBankAccountRattrapage({
         appendLog(typeof data.error === "string" ? data.error : `Erreur ${res.status}`);
         return;
       }
-      appendLog(formatSyncResponse(data, successHeadline));
+      let headline = successHeadline;
+      if (data.logo_applied === false) {
+        const le =
+          typeof data.logo_error === "string" && data.logo_error.trim()
+            ? data.logo_error.trim()
+            : "La photo du groupe n’a pas pu être mise à jour (droits administrateur sur le groupe, format d’image, ou erreur côté Telegram).";
+        headline = `Logo : ${le}`;
+      }
+      appendLog(formatSyncResponse(data, headline));
     } catch (err) {
       appendLog(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {

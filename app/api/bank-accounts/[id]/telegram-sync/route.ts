@@ -182,6 +182,16 @@ export async function POST(
       }
     }
 
+    if (applyBankLogo && !logoB64) {
+      return NextResponse.json(
+        {
+          error:
+            "Aucun logo enregistré pour cette banque. Ajoutez-le dans Paramètres → Banques, ou utilisez une image personnalisée.",
+        },
+        { status: 400 },
+      );
+    }
+
     if (logoB64 && !logoCt) {
       return NextResponse.json(
         { error: "Type MIME manquant pour le logo personnalisé." },
