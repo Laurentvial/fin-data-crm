@@ -26,19 +26,27 @@ function isValidDocType(type: string): boolean {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authError = await requireAuth();
   if (authError) return authError;
   const { id } = await params;
   try {
-    const rows = await sql`
-      SELECT id, company_id, file_type, filename, content_type, created_at
-      FROM company_files
-      WHERE company_id = ${id} AND file_type != 'logo'
-      ORDER BY file_type
-    `;
+    const includeLogo = new URL(request.url).searchParams.get("include_logo") === "1";
+    const rows = includeLogo
+      ? await sql`
+          SELECT id, company_id, file_type, filename, content_type, created_at
+          FROM company_files
+          WHERE company_id = ${id}
+          ORDER BY file_type
+        `
+      : await sql`
+          SELECT id, company_id, file_type, filename, content_type, created_at
+          FROM company_files
+          WHERE company_id = ${id} AND file_type != 'logo'
+          ORDER BY file_type
+        `;
     return NextResponse.json(rows);
   } catch (error) {
     console.error("GET /api/accounts/[id]/files error:", error);

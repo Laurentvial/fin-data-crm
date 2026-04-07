@@ -69,8 +69,9 @@ export async function POST() {
   }
 
   try {
-    const { key, public_id, secure_url, cloud_name } = await runDatabaseBackupToCloudinary(config);
-    return NextResponse.json({ ok: true, key, public_id, secure_url, cloud_name });
+    const { key, public_id, secure_url, cloud_name, part_count } =
+      await runDatabaseBackupToCloudinary(config);
+    return NextResponse.json({ ok: true, key, public_id, secure_url, cloud_name, part_count });
   } catch (e) {
     console.error("POST /api/admin/database-backup:", e);
     if (isNeonSqlResponseTooLargeError(e)) {

@@ -25,6 +25,7 @@ from telethon import TelegramClient
 from telethon.errors import (
     FileReferenceInvalidError,
     FloodWaitError,
+    ImageProcessFailedError,
     PeerFloodError,
     PhotoInvalidError,
     SessionPasswordNeededError,
@@ -51,11 +52,10 @@ from telethon.tl.types import (
     Chat,
     ChatAdminRights,
     DocumentAttributeFilename,
-    InputChatUploadedPhoto,
     InputUser,
     User,
 )
-from telethon.utils import get_peer_id
+from telethon.utils import get_input_channel, get_peer_id
 
 # Shown when Telegram blocks the MTProto user from creating channels/supergroups.
 _TELEGRAM_ACCOUNT_CANNOT_CREATE_GROUPS_FR = (
@@ -956,10 +956,10 @@ async def _send_base64_file_to_channel(
     base64_data: str | None,
     filename_hint: str | None,
     caption: str,
-) -> None:
-    """Send one base64-encoded attachment (same decoded size cap as KBIS)."""
+) -> bool:
+    """Send one base64-encoded attachment (same decoded size cap as KBIS). Returns True if sent."""
     if not base64_data or not isinstance(base64_data, str):
-        return
+        return False
     path: str | None = None
     try:
         max_kb = _max_kbis_decoded_bytes()
@@ -969,7 +969,7 @@ async def _send_base64_file_to_channel(
                 caption,
                 len(base64_data),
             )
-            return
+            return False
         decoded = base64.b64decode(base64_data)
         del base64_data
         if len(decoded) > max_kb:
@@ -978,9 +978,9 @@ async def _send_base64_file_to_channel(
                 caption,
                 len(decoded),
             )
-            return
+            return False
         if not decoded:
-            return
+            return False
         suffix = ".pdf"
         if filename_hint and isinstance(filename_hint, str) and filename_hint.strip():
             low = filename_hint.strip().lower()
@@ -1001,11 +1001,47 @@ async def _send_base64_file_to_channel(
             caption=caption,
             attributes=attrs if attrs else None,
         )
+        return True
     except Exception as e:
         logger.warning("Could not send %s: %s", caption, e)
+        return False
     finally:
         _unlink_quiet(path)
         gc.collect()
+
+
+def _normalize_logo_for_telegram_group_photo(src_path: str):
+    """
+    Telegram often returns IMAGE_PROCESS_FAILED (ImageProcessFailedError) for odd JPEGs
+    (progressive, subsampling, metadata). We output a plain 640×640 RGB image.
+    """
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = 20_000_000
+    target = 640
+    with Image.open(src_path) as img:
+        im = img
+        if im.mode == "P":
+            im = im.convert("RGBA")
+        if im.mode == "RGBA":
+            background = Image.new("RGB", im.size, (255, 255, 255))
+            background.paste(im, mask=im.split()[3])
+            im = background
+        else:
+            im = im.convert("RGB")
+        flat = Image.new("RGB", im.size)
+        flat.paste(im)
+        im = flat
+        im.thumbnail((target, target), Image.LANCZOS)
+        w, h = im.size
+        if w != h:
+            side = min(w, h)
+            left = (w - side) // 2
+            top = (h - side) // 2
+            im = im.crop((left, top, left + side, top + side))
+        if im.size != (target, target):
+            im = im.resize((target, target), Image.LANCZOS)
+        return im.copy()
 
 
 def _merge_logo_result_into_response(out: dict, logo_result: dict) -> None:
@@ -1054,6 +1090,7 @@ async def _apply_group_logo_from_base64(
     logger.info("Received logo: %d bytes base64, type=%s", len(b64), ct)
     raw_path: str | None = None
     jpeg_path: str | None = None
+    png_path: str | None = None
     try:
         max_logo = _max_logo_decoded_bytes()
         if len(b64) > max_logo * 2:
@@ -1085,40 +1122,43 @@ async def _apply_group_logo_from_base64(
         del decoded_logo
 
         async def _set_photo_from_file(path: str, file_name: str) -> None:
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.75)
             uploaded_file = await tg.upload_file(path, file_name=file_name)
-            photo = InputChatUploadedPhoto(file=uploaded_file)
             if is_classic_chat:
-                await tg(EditChatPhotoRequest(chat_internal_id, photo))
+                await tg(EditChatPhotoRequest(chat_internal_id, uploaded_file))
             else:
-                input_peer = await tg.get_input_entity(group_entity)
-                await tg(EditPhotoRequest(channel=input_peer, photo=photo))
+                channel_arg = get_input_channel(await tg.get_input_entity(group_entity))
+                await tg(EditPhotoRequest(channel=channel_arg, photo=uploaded_file))
+
+        async def _upload_normalized_jpeg_then_png() -> None:
+            assert jpeg_path and png_path
+            try:
+                await _set_photo_from_file(jpeg_path, "logo.jpg")
+            except ImageProcessFailedError as e:
+                logger.warning("Telegram IMAGE_PROCESS_FAILED on JPEG, retrying as PNG: %s", e)
+                await _set_photo_from_file(png_path, "logo.png")
 
         try:
-            from PIL import Image
-
-            Image.MAX_IMAGE_PIXELS = 20_000_000
+            im = _normalize_logo_for_telegram_group_photo(raw_path)
             fd_j, jpeg_path = tempfile.mkstemp(suffix=".jpg", dir=_temp_dir())
             os.close(fd_j)
-            with Image.open(raw_path) as img:
-                im = img
-                if im.mode in ("RGBA", "P"):
-                    im = im.convert("RGB")
-                elif im.mode != "RGB":
-                    im = im.convert("RGB")
-                im.thumbnail((512, 512), Image.LANCZOS)
-                w, h = im.size
-                if w != h:
-                    crop_size = min(w, h)
-                    left = (w - crop_size) // 2
-                    top = (h - crop_size) // 2
-                    im = im.crop((left, top, left + crop_size, top + crop_size))
-                im = im.resize((512, 512), Image.LANCZOS)
-                im.save(jpeg_path, format="JPEG", quality=92)
+            fd_p, png_path = tempfile.mkstemp(suffix=".png", dir=_temp_dir())
+            os.close(fd_p)
+            im.save(
+                jpeg_path,
+                format="JPEG",
+                quality=87,
+                optimize=False,
+                progressive=False,
+                subsampling=0,
+            )
+            im.save(png_path, format="PNG", compress_level=6)
         except Exception as conv_err:
-            logger.debug("PIL/JPEG encode failed, trying raw upload: %s", conv_err)
+            logger.debug("PIL normalize/save failed, trying raw upload: %s", conv_err)
             _unlink_quiet(jpeg_path)
+            _unlink_quiet(png_path)
             jpeg_path = None
+            png_path = None
             try:
                 if raw_path:
                     ext = (
@@ -1130,6 +1170,15 @@ async def _apply_group_logo_from_base64(
                     await _set_photo_from_file(raw_path, file_name)
                     logger.info("Group profile photo set (raw from disk)")
                     return {"status": "applied"}
+            except ImageProcessFailedError as e:
+                logger.warning("Could not set group photo (raw, image process): %s", e)
+                return {
+                    "status": "failed",
+                    "reason": (
+                        "Telegram n'a pas accepté le fichier image brut. "
+                        "Ré-enregistrez le logo en JPG ou PNG simple (évitez WebP/SVG côté banque si possible)."
+                    ),
+                }
             except (PhotoInvalidError, FileReferenceInvalidError) as e:
                 logger.warning("Could not set group photo (raw): %s", e)
                 return {"status": "failed", "reason": str(e)}
@@ -1144,9 +1193,18 @@ async def _apply_group_logo_from_base64(
         _unlink_quiet(raw_path)
         raw_path = None
         try:
-            await _set_photo_from_file(jpeg_path, "logo.jpg")
-            logger.info("Group profile photo set (JPEG from disk)")
+            await _upload_normalized_jpeg_then_png()
+            logger.info("Group profile photo set (normalized upload)")
             return {"status": "applied"}
+        except ImageProcessFailedError as e:
+            logger.warning("Could not set group photo (Telegram rejected JPEG and PNG): %s", e)
+            return {
+                "status": "failed",
+                "reason": (
+                    "Telegram n'a pas pu traiter l'image (IMAGE_PROCESS_FAILED). "
+                    "Essayez une autre image (JPG/PNG carré, évitez les fichiers très compressés ou exotiques)."
+                ),
+            }
         except (PhotoInvalidError, FileReferenceInvalidError) as e:
             logger.warning("Could not set group photo: %s", e)
             return {"status": "failed", "reason": str(e)}
@@ -1156,6 +1214,7 @@ async def _apply_group_logo_from_base64(
     finally:
         _unlink_quiet(raw_path)
         _unlink_quiet(jpeg_path)
+        _unlink_quiet(png_path)
         gc.collect()
 
 
@@ -1404,6 +1463,9 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
     body = await request.json()
     logo_base64 = body.pop("logo_base64", None)
     logo_content_type = body.pop("logo_content_type", None)
+    attachment_base64 = body.pop("attachment_base64", None)
+    attachment_filename = body.pop("attachment_filename", None)
+    attachment_caption = body.pop("attachment_caption", None)
     chat_raw = body.get("chat_id")
     if chat_raw is None:
         raise HTTPException(status_code=400, detail="chat_id is required")
@@ -1435,6 +1497,8 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
         tg = await get_client()
         me = await tg.get_me()
         my_id = me.id if me else None
+        requested_invite_ids = [tid for tid, _ in users_to_invite]
+        requested_promote_only = list(promote_only)
         if my_id is not None:
             users_to_invite = [(tid, un) for tid, un in users_to_invite if tid != my_id]
             promote_only = [x for x in promote_only if x != my_id]
@@ -1452,7 +1516,9 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
             tg, group_entity, is_classic_chat, logo_base64, logo_content_type
         )
 
-        input_channel = None if is_classic_chat else await tg.get_input_entity(group_entity)
+        input_channel = None if is_classic_chat else get_input_channel(
+            await tg.get_input_entity(group_entity)
+        )
 
         if title_str:
             await _apply_group_display_name(tg, group_entity, is_classic_chat, input_channel, title_str)
@@ -1483,6 +1549,29 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
             except Exception as e:
                 logger.warning("Could not send welcome message (sync): %s", e)
 
+        had_attachment = isinstance(attachment_base64, str) and attachment_base64.strip() != ""
+        attachment_sent = False
+        attachment_error: str | None = None
+        if had_attachment:
+            cap = (
+                attachment_caption.strip()
+                if isinstance(attachment_caption, str) and attachment_caption.strip()
+                else "Document société"
+            )
+            fn = attachment_filename if isinstance(attachment_filename, str) else None
+            attachment_sent = await _send_base64_file_to_channel(
+                tg,
+                group_entity,
+                attachment_base64.strip(),
+                fn,
+                cap,
+            )
+            if not attachment_sent:
+                attachment_error = (
+                    "Envoi impossible (fichier trop volumineux côté serveur, ou erreur Telegram). "
+                    "Vérifiez la taille (limite TELEGRAM_MAX_KBIS_DECODED_BYTES) et le format."
+                )
+
         out: dict = {
             "chat_id": str(chat_id),
             "invited": invited,
@@ -1503,6 +1592,27 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
             out["sync_bot_invited"] = invite_result["sync_bot_invited"]
             if invite_result.get("sync_bot_error"):
                 out["sync_bot_error"] = invite_result["sync_bot_error"]
+
+        invite_notes: list[str] = []
+        if my_id is not None:
+            if requested_invite_ids and any(tid == my_id for tid in requested_invite_ids):
+                invite_notes.append(
+                    "Invitation : le compte Telegram utilisé par le serveur (session MTProto) ne peut pas "
+                    "s’inviter lui-même. Rejoignez le groupe avec ce profil à la main, ou choisissez un autre "
+                    "utilisateur dans la liste."
+                )
+            if requested_promote_only and any(x == my_id for x in requested_promote_only):
+                invite_notes.append(
+                    "Promotion ignorée pour le compte Telegram du serveur (session MTProto)."
+                )
+        if invite_notes:
+            out["invite_note"] = " ".join(invite_notes)
+
+        if had_attachment:
+            out["attachment_sent"] = attachment_sent
+            if not attachment_sent and attachment_error:
+                out["attachment_error"] = attachment_error
+
         _merge_logo_result_into_response(out, logo_result)
         return out
     except HTTPException:

@@ -1,8 +1,11 @@
 import { v2 as cloudinary } from "cloudinary";
-import { Readable, type Writable } from "node:stream";
-import { createGzip } from "node:zlib";
+import { Readable } from "node:stream";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
 import { configureCloudinary } from "@/lib/invoicing/cloudinary";
 import { sql } from "@/lib/db";
+
+const gzipAsync = promisify(gzip);
 
 /** Neon HTTP driver caps each query response (~64 MiB). Large base64 file columns require small batches + truncation. */
 const DEFAULT_BACKUP_PAGE_SIZE = 25;
@@ -11,6 +14,21 @@ const MAX_BACKUP_PAGE_SIZE = 200;
 /** Max characters per cell for known heavy text columns (data_base64 logos, etc.). */
 const BACKUP_DATA_BASE64_MAX_CHARS = 262_144;
 const BACKUP_TEMPLATE_CONTENT_MAX_CHARS = 524_288;
+
+/** Free-tier Cloudinary raw uploads are capped at 10 MiB; stay under with a margin. */
+const DEFAULT_CLOUDINARY_MAX_PART_BYTES = 9 * 1024 * 1024;
+const MIN_CLOUDINARY_MAX_PART_BYTES = 256 * 1024;
+
+function maxCloudinaryPartBytes(): number {
+  const raw = process.env.DATABASE_BACKUP_CLOUDINARY_MAX_PART_BYTES;
+  if (raw == null || String(raw).trim() === "") return DEFAULT_CLOUDINARY_MAX_PART_BYTES;
+  const n = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(n)) return DEFAULT_CLOUDINARY_MAX_PART_BYTES;
+  return Math.min(10 * 1024 * 1024 - 1, Math.max(MIN_CLOUDINARY_MAX_PART_BYTES, n));
+}
+
+/** Target uncompressed batch size before gzipping (reduces how often we split). */
+const BACKUP_MULTIPART_BATCH_UNCOMPRESSED = 5 * 1024 * 1024;
 
 function backupPageSize(): number {
   const raw = process.env.DATABASE_BACKUP_PAGE_SIZE;
@@ -123,7 +141,7 @@ async function* backupLines(): AsyncGenerator<string, void, undefined> {
     format_version: 1,
     created_at: new Date().toISOString(),
     note:
-      "Export logique NDJSON (gzip). Compatible limite Neon HTTP (~64 Mo par requête) : lots réduits, colonnes bytea exportées en NULL, data_base64 et template_content tronqués. Variable DATABASE_BACKUP_PAGE_SIZE si besoin.",
+      "Export logique NDJSON (plusieurs fichiers gzip si Cloudinary : chaque part-*.gz autonome, concaténer les flux décompressés dans l’ordre). Limite Neon HTTP (~64 Mo/requête) : lots réduits, bytea → NULL, data_base64 et template_content tronqués. DATABASE_BACKUP_PAGE_SIZE si besoin.",
     backup_page_size: backupPageSize(),
   };
   yield jsonLine(meta);
@@ -177,30 +195,151 @@ async function* backupLines(): AsyncGenerator<string, void, undefined> {
   }
 }
 
-export async function listRecentDatabaseBackups(
-  config: CloudinaryBackupConfig
-): Promise<{ key: string; size: number; last_modified: string | null }[]> {
+export type BackupListItem = {
+  key: string;
+  size: number;
+  last_modified: string | null;
+  /** Nombre de ressources Cloudinary (segments part-XXX + manifest pour le format actuel ; 1 pour un ancien fichier unique). */
+  parts?: number;
+};
+
+function groupKeyFromBackupPublicId(publicId: string): {
+  groupKey: string;
+  isDataPart: boolean;
+} {
+  if (publicId.endsWith("/manifest")) {
+    return { groupKey: publicId.slice(0, -"/manifest".length), isDataPart: false };
+  }
+  const m = publicId.match(/^(.*)\/part-\d{3}$/);
+  if (m) return { groupKey: m[1], isDataPart: true };
+  return { groupKey: publicId, isDataPart: false };
+}
+
+function maxIsoDate(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
+export async function listRecentDatabaseBackups(config: CloudinaryBackupConfig): Promise<BackupListItem[]> {
   configureCloudinary();
   const prefix = `${config.folder}/`;
   const out = await cloudinary.api.resources({
     resource_type: "raw",
     type: "upload",
     prefix,
-    max_results: 40,
+    max_results: 500,
   });
   type RawResource = { public_id?: string; bytes?: number; created_at?: string };
   const resources = (Array.isArray(out.resources) ? out.resources : []) as RawResource[];
-  return resources
-    .filter((r): r is RawResource & { public_id: string } => typeof r.public_id === "string")
-    .map((r) => ({
-      key: r.public_id,
-      size: typeof r.bytes === "number" ? r.bytes : 0,
-      last_modified:
-        typeof r.created_at === "string"
-          ? new Date(r.created_at).toISOString()
-          : null,
-    }))
-    .sort((a, b) => (b.last_modified ?? "").localeCompare(a.last_modified ?? ""));
+  const rows = resources.filter(
+    (r): r is RawResource & { public_id: string } => typeof r.public_id === "string"
+  );
+
+  const grouped = new Map<
+    string,
+    { size: number; last_modified: string | null; parts: number; legacyFile: boolean }
+  >();
+
+  for (const r of rows) {
+    const { groupKey, isDataPart } = groupKeyFromBackupPublicId(r.public_id);
+    const prev = grouped.get(groupKey) ?? {
+      size: 0,
+      last_modified: null,
+      parts: 0,
+      legacyFile: false,
+    };
+    const created =
+      typeof r.created_at === "string" ? new Date(r.created_at).toISOString() : null;
+    prev.size += typeof r.bytes === "number" ? r.bytes : 0;
+    prev.last_modified = maxIsoDate(prev.last_modified, created);
+    if (isDataPart) prev.parts += 1;
+    else if (!r.public_id.endsWith("/manifest")) prev.legacyFile = true;
+    grouped.set(groupKey, prev);
+  }
+
+  const list: BackupListItem[] = [];
+  for (const [key, g] of grouped) {
+    const item: BackupListItem = {
+      key,
+      size: g.size,
+      last_modified: g.last_modified,
+    };
+    if (g.parts > 0) item.parts = g.parts + 1;
+    else if (g.legacyFile) item.parts = 1;
+    list.push(item);
+  }
+
+  return list.sort((a, b) => (b.last_modified ?? "").localeCompare(a.last_modified ?? ""));
+}
+
+async function uploadRawBuffer(
+  config: CloudinaryBackupConfig,
+  publicId: string,
+  buffer: Buffer,
+  extraTags: string[] = [],
+): Promise<{ public_id: string; secure_url?: string }> {
+  configureCloudinary();
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "raw",
+        folder: config.folder,
+        public_id: publicId,
+        type: "upload",
+        unique_filename: false,
+        tags: [
+          "database-backup",
+          "bigboss-ndjson-v1",
+          ...extraTags,
+        ],
+      },
+      (error, result) => {
+        if (error != null) {
+          reject(error instanceof Error ? error : new Error(unknownUploadErrorMessage(error)));
+          return;
+        }
+        if (!result?.public_id) {
+          reject(new Error("Cloudinary n’a pas renvoyé d’identifiant de ressource."));
+          return;
+        }
+        resolve({ public_id: result.public_id, secure_url: result.secure_url });
+      },
+    );
+    Readable.from(buffer).pipe(uploadStream);
+  });
+}
+
+async function uploadGzippedLinesChunk(
+  lines: string[],
+  config: CloudinaryBackupConfig,
+  basePublicId: string,
+  maxBytes: number,
+  partCounter: { n: number },
+): Promise<void> {
+  if (lines.length === 0) return;
+  const body = `${lines.join("\n")}\n`;
+  const gz = await gzipAsync(Buffer.from(body, "utf8"), { level: 6 });
+  const buf = Buffer.from(gz);
+  if (buf.length <= maxBytes) {
+    const idx = partCounter.n;
+    partCounter.n += 1;
+    await uploadRawBuffer(
+      config,
+      `${basePublicId}/part-${String(idx).padStart(3, "0")}`,
+      buf,
+      ["bigboss-ndjson-multipart"],
+    );
+    return;
+  }
+  if (lines.length === 1) {
+    throw new Error(
+      `Un fragment d’export dépasse la taille max par fichier Cloudinary (${maxBytes} o après gzip). Réduisez DATABASE_BACKUP_PAGE_SIZE et réessayez.`,
+    );
+  }
+  const mid = Math.floor(lines.length / 2);
+  await uploadGzippedLinesChunk(lines.slice(0, mid), config, basePublicId, maxBytes, partCounter);
+  await uploadGzippedLinesChunk(lines.slice(mid), config, basePublicId, maxBytes, partCounter);
 }
 
 export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConfig): Promise<{
@@ -208,102 +347,63 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
   public_id: string;
   secure_url: string;
   cloud_name: string;
+  part_count: number;
 }> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const publicId = `snapshot-${stamp}`;
+  const basePublicId = `snapshot-${stamp}`;
+  const maxPart = maxCloudinaryPartBytes();
+  const partCounter = { n: 0 };
 
-  configureCloudinary();
-
-  const gzip = createGzip({ level: 6 });
   const lineIterator = backupLines();
-  const lineStream = Readable.from(
-    (async function* () {
-      try {
-        for await (const line of lineIterator) {
-          yield line + "\n";
-        }
-      } finally {
-        await lineIterator.return();
+  let batch: string[] = [];
+  let batchUnc = 0;
+
+  try {
+    for await (const line of lineIterator) {
+      const lineB = Buffer.byteLength(`${line}\n`, "utf8");
+      if (
+        batchUnc + lineB > BACKUP_MULTIPART_BATCH_UNCOMPRESSED &&
+        batch.length > 0
+      ) {
+        await uploadGzippedLinesChunk(batch, config, basePublicId, maxPart, partCounter);
+        batch = [];
+        batchUnc = 0;
       }
-    })()
-  );
+      batch.push(line);
+      batchUnc += lineB;
+    }
+    if (batch.length > 0) {
+      await uploadGzippedLinesChunk(batch, config, basePublicId, maxPart, partCounter);
+    }
+  } finally {
+    await lineIterator.return();
+  }
 
-  const result = await new Promise<{
-    public_id: string;
-    secure_url?: string;
-  }>((resolve, reject) => {
-    let settled = false;
-    let uploadStream!: Writable;
+  if (partCounter.n === 0) {
+    throw new Error("Export vide : aucune donnée à envoyer.");
+  }
 
-    const destroyPipeline = (cause?: Error) => {
-      try {
-        lineStream.unpipe(gzip);
-      } catch {
-        /* ignore */
-      }
-      try {
-        gzip.unpipe(uploadStream);
-      } catch {
-        /* ignore */
-      }
-      lineStream.removeAllListeners("error");
-      gzip.removeAllListeners("error");
-      uploadStream.removeAllListeners("error");
-      if (!lineStream.destroyed) {
-        lineStream.destroy(cause);
-      }
-      if (!gzip.destroyed) {
-        gzip.destroy(cause);
-      }
-      if (typeof uploadStream.destroy === "function" && !uploadStream.destroyed) {
-        uploadStream.destroy(cause);
-      }
-    };
-
-    const finish = (err: unknown, res?: { public_id?: string; secure_url?: string }) => {
-      if (settled) return;
-      settled = true;
-
-      let rejectErr: Error | null = null;
-      if (err != null) {
-        rejectErr = err instanceof Error ? err : new Error(unknownUploadErrorMessage(err));
-      } else if (!res?.public_id) {
-        rejectErr = new Error("Cloudinary n’a pas renvoyé d’identifiant de ressource.");
-      }
-
-      destroyPipeline(rejectErr ?? undefined);
-
-      if (rejectErr) {
-        reject(rejectErr);
-        return;
-      }
-      resolve({ public_id: res!.public_id!, secure_url: res!.secure_url });
-    };
-
-    uploadStream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: "raw",
-        folder: config.folder,
-        public_id: publicId,
-        type: "upload",
-        unique_filename: false,
-        tags: ["database-backup", "bigboss-ndjson-v1"],
-      },
-      (error, uploadResult) => finish(error, uploadResult ?? undefined)
-    ) as Writable;
-
-    const onStreamError = (streamErr: unknown) => finish(streamErr, undefined);
-    lineStream.on("error", onStreamError);
-    gzip.on("error", onStreamError);
-    uploadStream.on("error", onStreamError);
-
-    lineStream.pipe(gzip).pipe(uploadStream);
-  });
+  const fullBaseId = `${config.folder}/${basePublicId}`;
+  const manifest = {
+    format: "bigboss-ndjson-gzip-multipart-v1" as const,
+    base_public_id: fullBaseId,
+    part_count: partCounter.n,
+    max_part_bytes: maxPart,
+    created_at: new Date().toISOString(),
+    restore:
+      "Télécharger tous les segments part-000 … dans l’ordre ; concaténer les sorties de gunzip -c (chaque fichier est un gzip autonome) pour obtenir le NDJSON complet.",
+  };
+  const manifestBody = Buffer.from(`${JSON.stringify(manifest, null, 0)}\n`, "utf8");
+  const manifestRes = await uploadRawBuffer(config, `${basePublicId}/manifest`, manifestBody, [
+    "bigboss-ndjson-multipart",
+    "bigboss-backup-manifest",
+  ]);
 
   return {
-    key: result.public_id,
-    public_id: result.public_id,
-    secure_url: result.secure_url ?? "",
+    key: fullBaseId,
+    public_id: fullBaseId,
+    secure_url: manifestRes.secure_url ?? "",
     cloud_name: config.cloudName,
+    part_count: partCounter.n,
   };
 }

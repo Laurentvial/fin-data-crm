@@ -1141,7 +1141,7 @@ function BanksSection() {
   );
 }
 
-type BackupListItem = { key: string; size: number; last_modified: string | null };
+type BackupListItem = { key: string; size: number; last_modified: string | null; parts?: number };
 
 function databaseBackupResponseError(data: unknown, fallback: string, status: number): string {
   if (!data || typeof data !== "object") return status >= 400 ? `Erreur ${status}` : fallback;
@@ -1201,7 +1201,13 @@ function DatabaseBackupSection() {
       if (!res.ok) {
         throw new Error(databaseBackupResponseError(data, "Échec de la sauvegarde", res.status));
       }
-      setLastMessage(`Instantané créé : ${data.key}`);
+      const n =
+        typeof data.part_count === "number" && data.part_count > 0 ? data.part_count : null;
+      setLastMessage(
+        n != null
+          ? `Instantané créé : ${data.key} (${n} segment(s) gzip + manifest)`
+          : `Instantané créé : ${data.key}`,
+      );
       await fetchStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1228,6 +1234,10 @@ function DatabaseBackupSection() {
         <span className="font-mono text-xs">.jsonl.gz</span>). Réutilise les mêmes identifiants que pour les
         factures PDF. Le schéma reste défini par les migrations du dépôt. Avec Neon (HTTP), chaque requête est
         limitée (~64 Mo) : l’export utilise de petits lots et tronque les gros champs (fichiers base64, etc.).
+        Sur Cloudinary gratuit, un fichier raw ne peut pas dépasser ~10 Mo : la sauvegarde est découpée en plusieurs
+        segments <span className="font-mono text-xs">part-000</span>, <span className="font-mono text-xs">part-001</span>, etc. (gzip autonomes) et un petit{" "}
+        <span className="font-mono text-xs">manifest</span>. Option :{" "}
+        <span className="font-mono text-xs">DATABASE_BACKUP_CLOUDINARY_MAX_PART_BYTES</span> (défaut 9 Mo).
       </p>
 
       {!configured ? (
@@ -1240,7 +1250,8 @@ function DatabaseBackupSection() {
             <span className="font-mono">CLOUDINARY_BACKUP_FOLDER</span> (défaut{" "}
             <span className="font-mono">database-backups</span>) — dossier des fichiers raw de sauvegarde ;{" "}
             <span className="font-mono">DATABASE_BACKUP_PAGE_SIZE</span> (défaut 25) si une erreur « response is
-            too large » persiste.
+            too large » persiste ; <span className="font-mono">DATABASE_BACKUP_CLOUDINARY_MAX_PART_BYTES</span> si un
+            segment gzip dépasse encore la limite Cloudinary.
           </p>
         </div>
       ) : null}
@@ -1292,6 +1303,7 @@ function DatabaseBackupSection() {
             <thead className="sticky top-0 z-10 bg-[var(--primary-muted)]">
               <tr>
                 <th className="table-header px-4 py-2 text-left font-medium">Identifiant (public_id)</th>
+                <th className="table-header px-4 py-2 text-right font-medium">Fichiers sur Cloudinary</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Taille</th>
                 <th className="table-header px-4 py-2 text-left font-medium">Date</th>
               </tr>
@@ -1300,6 +1312,9 @@ function DatabaseBackupSection() {
               {recent.map((r) => (
                 <tr key={r.key} className="border-t border-[var(--border)]">
                   <td className="px-4 py-2 font-mono text-xs break-all text-[var(--foreground)]">{r.key}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--muted-foreground)]">
+                    {(typeof r.parts === "number" && r.parts > 0 ? r.parts : 1).toLocaleString("fr-FR")}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums text-[var(--muted-foreground)]">
                     {r.size.toLocaleString("fr-FR")} o
                   </td>

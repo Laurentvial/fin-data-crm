@@ -22,8 +22,26 @@ function btnClass(disabled: boolean) {
   return `rounded-lg border border-[var(--border)] bg-[var(--primary)] px-2.5 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 shrink-0`;
 }
 
+function companyFileTypeLabel(fileType: string): string {
+  const labels: Record<string, string> = {
+    logo: "Logo société",
+    kbis: "KBIS",
+    statut: "Statuts",
+    pi_gerant: "Pièce d’identité gérant",
+    pi_recto: "Pièce d’identité recto",
+    pi_verso: "Pièce d’identité verso",
+    selfie: "Selfie",
+  };
+  if (labels[fileType]) return labels[fileType];
+  if (fileType.startsWith("autre_")) return `Autre (${fileType.slice(6)})`;
+  return fileType || "Document";
+}
+
 function formatSyncResponse(data: Record<string, unknown>, headline: string): string {
   const lines: string[] = [headline];
+  if (typeof data.invite_note === "string" && data.invite_note.trim()) {
+    lines.push(data.invite_note.trim());
+  }
   if (typeof data.classic_chat_admin_note === "string") {
     lines.push(data.classic_chat_admin_note);
   }
@@ -57,15 +75,25 @@ export interface TelegramBankAccountRattrapageProps {
   accountName: string;
   telegramChatId: string;
   hasBankLogo: boolean;
+  /** Société liée au compte : documents à envoyer un par un sur le groupe Telegram. */
+  companyId?: string | null;
   defaultExpanded?: boolean;
   welcomeDraft?: string;
 }
+
+type CompanyFileRow = {
+  id: string;
+  file_type: string;
+  filename: string | null;
+  content_type?: string | null;
+};
 
 export function TelegramBankAccountRattrapage({
   bankAccountId,
   accountName,
   telegramChatId,
   hasBankLogo,
+  companyId = null,
   defaultExpanded = false,
   welcomeDraft = "",
 }: TelegramBankAccountRattrapageProps) {
@@ -78,6 +106,8 @@ export function TelegramBankAccountRattrapage({
     { telegram_id: number; telegram_username?: string; name?: string }[]
   >([]);
   const [telegramUsersLoading, setTelegramUsersLoading] = useState(false);
+  const [companyFiles, setCompanyFiles] = useState<CompanyFileRow[]>([]);
+  const [companyFilesLoading, setCompanyFilesLoading] = useState(false);
   /** Clef de l’action en cours (ex. title, logo-bank, invite-123, promote-456). */
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [telegramSyncResult, setTelegramSyncResult] = useState<string | null>(null);
@@ -94,7 +124,8 @@ export function TelegramBankAccountRattrapage({
     setTelegramSyncResult(null);
     setBusyKey(null);
     setTelegramCatchUpExpanded(defaultExpanded);
-  }, [bankAccountId, accountName, defaultExpanded, welcomeDraft]);
+    setCompanyFiles([]);
+  }, [bankAccountId, accountName, companyId, defaultExpanded, welcomeDraft]);
 
   useEffect(() => {
     if (!telegramCatchUpExpanded) return;
@@ -120,6 +151,35 @@ export function TelegramBankAccountRattrapage({
     };
   }, [telegramCatchUpExpanded]);
 
+  useEffect(() => {
+    if (!telegramCatchUpExpanded || !companyId?.trim()) {
+      setCompanyFiles([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setCompanyFilesLoading(true);
+      try {
+        const res = await fetch(
+          `/api/accounts/${encodeURIComponent(companyId.trim())}/files?include_logo=1`,
+        );
+        const data = (await res.json()) as unknown;
+        if (!cancelled && res.ok && Array.isArray(data)) {
+          setCompanyFiles(data as CompanyFileRow[]);
+        } else if (!cancelled) {
+          setCompanyFiles([]);
+        }
+      } catch {
+        if (!cancelled) setCompanyFiles([]);
+      } finally {
+        if (!cancelled) setCompanyFilesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [telegramCatchUpExpanded, companyId]);
+
   const appendLog = (block: string) => {
     setTelegramSyncResult((prev) => (prev ? `${prev}\n\n—\n\n${block}` : block));
   };
@@ -144,7 +204,13 @@ export function TelegramBankAccountRattrapage({
         return;
       }
       let headline = successHeadline;
-      if (data.logo_applied === false) {
+      if (data.attachment_sent === false) {
+        const ae =
+          typeof data.attachment_error === "string" && data.attachment_error.trim()
+            ? data.attachment_error.trim()
+            : "Le fichier n’a pas été envoyé sur Telegram.";
+        headline = `Fichier : ${ae}`;
+      } else if (data.logo_applied === false) {
         const le =
           typeof data.logo_error === "string" && data.logo_error.trim()
             ? data.logo_error.trim()
@@ -194,6 +260,12 @@ export function TelegramBankAccountRattrapage({
 
   const sendBankLogo = () =>
     runAction("logo-bank", { apply_bank_logo: true }, "Logo banque envoyé sur le groupe.");
+
+  const sendCompanyFileToTelegram = (file: CompanyFileRow) => {
+    const label = companyFileTypeLabel(file.file_type);
+    const short = file.filename?.trim() ? `${label} (${file.filename.trim()})` : label;
+    return runAction(`company-file-${file.id}`, { company_file_id: file.id }, `Fichier société envoyé : ${short}.`);
+  };
 
   const sendCustomLogo = () => {
     const custom = telegramCustomLogoRef.current;
@@ -316,6 +388,52 @@ export function TelegramBankAccountRattrapage({
               </button>
             </div>
           </div>
+
+          {companyId?.trim() ? (
+            <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+              <p className="text-xs font-medium text-[var(--foreground)]">Documents de la société</p>
+              <p className="text-[11px] leading-snug text-[var(--muted-foreground)]">
+                Fichiers enregistrés sur la fiche Société (KBIS, statuts, pièces d’identité, logo, etc.). Chaque bouton
+                envoie un seul document dans le groupe.
+              </p>
+              {companyFilesLoading ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Chargement des documents…</p>
+              ) : companyFiles.length === 0 ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Aucun document sur la société.</p>
+              ) : (
+                <ul className="max-h-48 space-y-2 overflow-y-auto text-xs">
+                  {companyFiles.map((f) => {
+                    const typeLabel = companyFileTypeLabel(f.file_type);
+                    const subtitle = f.filename?.trim() ? f.filename.trim() : (f.content_type ?? "");
+                    const busy = busyKey === `company-file-${f.id}`;
+                    return (
+                      <li
+                        key={f.id}
+                        className="flex flex-col gap-2 rounded-md border border-[var(--border)] p-2 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <span className="font-medium text-[var(--foreground)]">{typeLabel}</span>
+                          {subtitle ? (
+                            <span className="mt-0.5 block text-[11px] text-[var(--muted-foreground)]">
+                              {subtitle}
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void sendCompanyFileToTelegram(f)}
+                          disabled={!chatOk || busyKey !== null}
+                          className={btnClass(!chatOk || busyKey !== null)}
+                        >
+                          {busy ? "Envoi…" : "Envoyer sur Telegram"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : null}
 
           <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
             <p className="text-xs font-medium text-[var(--foreground)]">Message dans le groupe</p>
