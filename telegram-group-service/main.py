@@ -46,6 +46,7 @@ from telethon.tl.functions.messages import (
     EditChatAdminRequest,
     EditChatPhotoRequest,
     EditChatTitleRequest,
+    MigrateChatRequest,
 )
 from telethon.tl.types import (
     Channel,
@@ -594,6 +595,48 @@ async def _elevate_migrated_basic_group(tg: TelegramClient, ent: Channel | Chat)
         )
         return ch
     return ent
+
+
+async def _upgrade_basic_group_to_supergroup_if_requested(
+    tg: TelegramClient,
+    ent: Channel | Chat,
+    *,
+    upgrade_requested: bool,
+) -> Channel | Chat:
+    """
+    If upgrade_requested and the entity is a classic Chat, ask Telegram to migrate it to a supergroup.
+    Returns a Channel entity when migration succeeds, otherwise returns the original entity.
+    """
+    if not upgrade_requested:
+        return ent
+    if not isinstance(ent, Chat):
+        return ent
+    migrated = getattr(ent, "migrated_to", None)
+    if migrated is not None and migrated is not False:
+        return await _elevate_migrated_basic_group(tg, ent)
+    try:
+        mig_res = await tg(MigrateChatRequest(ent.id))
+    except Exception as e:
+        # Common causes: not admin / Telegram restrictions.
+        logger.warning("Could not migrate basic chat %s to supergroup: %s", ent.id, e)
+        return ent
+    # After migration, refresh from Telegram: the old `ent` object is stale and will not have
+    # `migrated_to` set locally, so elevation would otherwise be a no-op.
+    try:
+        chats = getattr(mig_res, "chats", None)
+        if isinstance(chats, list):
+            for ch in chats:
+                if isinstance(ch, Channel) and getattr(ch, "megagroup", False):
+                    return ch
+    except Exception as e:
+        logger.debug("Could not extract migrated channel from MigrateChatRequest response: %s", e)
+
+    try:
+        refreshed = await tg.get_entity(get_peer_id(ent))
+    except Exception as e:
+        logger.debug("Could not refresh chat entity after migration: %s", e)
+        return ent
+    return await _elevate_migrated_basic_group(tg, refreshed)
 
 
 async def _promote_invited_user_to_admin(
@@ -1466,6 +1509,7 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
     attachment_base64 = body.pop("attachment_base64", None)
     attachment_filename = body.pop("attachment_filename", None)
     attachment_caption = body.pop("attachment_caption", None)
+    upgrade_to_supergroup = body.pop("upgrade_to_supergroup", False) is True
     chat_raw = body.get("chat_id")
     if chat_raw is None:
         raise HTTPException(status_code=400, detail="chat_id is required")
@@ -1504,6 +1548,11 @@ async def sync_group(request: Request, x_api_key: str | None = Header(None)):
             promote_only = [x for x in promote_only if x != my_id]
 
         group_entity = await _resolve_group_for_link(tg, eid)
+        group_entity = await _upgrade_basic_group_to_supergroup_if_requested(
+            tg,
+            group_entity,
+            upgrade_requested=upgrade_to_supergroup,
+        )
         group_entity = await _elevate_migrated_basic_group(tg, group_entity)
         chat_id = get_peer_id(group_entity)
         try:

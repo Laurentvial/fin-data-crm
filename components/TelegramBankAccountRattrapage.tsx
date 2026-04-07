@@ -39,6 +39,11 @@ function companyFileTypeLabel(fileType: string): string {
 
 function formatSyncResponse(data: Record<string, unknown>, headline: string): string {
   const lines: string[] = [headline];
+  if (data.telegram_chat_id_updated === true) {
+    const prev = typeof data.telegram_chat_id_prev === "string" ? data.telegram_chat_id_prev : "";
+    const next = typeof data.telegram_chat_id_next === "string" ? data.telegram_chat_id_next : "";
+    if (prev && next) lines.push(`ID Telegram mis à jour : ${prev} → ${next}`);
+  }
   if (typeof data.invite_note === "string" && data.invite_note.trim()) {
     lines.push(data.invite_note.trim());
   }
@@ -285,6 +290,13 @@ export function TelegramBankAccountRattrapage({
   const sendBankLogo = () =>
     runAction("logo-bank", { apply_bank_logo: true }, "Logo banque envoyé sur le groupe.");
 
+  const upgradeToSupergroup = () =>
+    runAction(
+      "upgrade-supergroup",
+      { upgrade_to_supergroup: true },
+      "Passage en supergroupe demandé (si groupe classique).",
+    );
+
   const sendCompanyFileToTelegram = (file: CompanyFileRow) => {
     const label = companyFileTypeLabel(file.file_type);
     const short = file.filename?.trim() ? `${label} (${file.filename.trim()})` : label;
@@ -357,6 +369,23 @@ export function TelegramBankAccountRattrapage({
               {telegramSyncResult}
             </div>
           )}
+
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+            <p className="text-xs font-medium text-[var(--foreground)]">Supergroupe / ID Telegram</p>
+            <p className="text-[11px] leading-snug text-[var(--muted-foreground)]">
+              Si le groupe est encore un petit groupe classique, Telegram peut le migrer en supergroupe et l’ID devient
+              un <span className="font-mono">-100…</span>. Ce bouton déclenche la migration et met à jour l’ID stocké
+              dans le CRM.
+            </p>
+            <button
+              type="button"
+              onClick={() => void upgradeToSupergroup()}
+              disabled={!chatOk || busyKey !== null}
+              className={btnClass(!chatOk || busyKey !== null)}
+            >
+              {busyKey === "upgrade-supergroup" ? "Envoi…" : "Passer en supergroupe (mettre à jour l’ID)"}
+            </button>
+          </div>
 
           <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
             <p className="text-xs font-medium text-[var(--foreground)]">Nom du groupe Telegram</p>

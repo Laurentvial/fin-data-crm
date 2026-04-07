@@ -79,6 +79,8 @@ export async function POST(
   const welcomeMessage =
     typeof body.welcome_message === "string" ? body.welcome_message.trim() : "";
 
+  const upgradeToSupergroup = body.upgrade_to_supergroup === true;
+
   const companyFileIdRaw = body.company_file_id;
   const companyFileId =
     typeof companyFileIdRaw === "string" && companyFileIdRaw.trim()
@@ -125,6 +127,7 @@ export async function POST(
   const hasWork =
     Boolean(titleForService) ||
     hasLogoRequest ||
+    upgradeToSupergroup ||
     inviteTelegramIds.length > 0 ||
     promoteOnlyIds.length > 0 ||
     Boolean(welcomeMessage) ||
@@ -246,6 +249,7 @@ export async function POST(
       payload.promote_only_telegram_ids = promoteOnlyIds.map((id) => String(id));
     }
     if (welcomeMessage) payload.welcome_message = welcomeMessage;
+    if (upgradeToSupergroup) payload.upgrade_to_supergroup = true;
 
     if (companyFileId) {
       const [cf] = await sql`
