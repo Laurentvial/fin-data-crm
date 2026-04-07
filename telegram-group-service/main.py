@@ -714,50 +714,88 @@ async def _invite_single_to_channel(
     max_flood_wait_sec: int,
     pause_after: float,
 ) -> None:
-    """One user per InviteToChannel (fallback when batch fails)."""
-    try:
-        await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
-        invited.append(telegram_id)
-    except (UserAlreadyParticipantError, UserAlreadyInvitedError):
-        invited.append(telegram_id)
-    except FloodWaitError as e:
-        ws = _flood_wait_seconds(e)
-        if ws <= max_flood_wait_sec:
-            logger.info("FloodWait %ds for single invite, retrying...", ws)
-            await asyncio.sleep(ws)
-            try:
-                await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
-                invited.append(telegram_id)
-            except (UserAlreadyParticipantError, UserAlreadyInvitedError):
-                invited.append(telegram_id)
-            except Exception as ex:
-                if _is_already_participant_err(ex):
-                    invited.append(telegram_id)
-                else:
-                    failed.append(
-                        {
-                            "telegram_id": telegram_id,
-                            "telegram_username": username,
-                            "reason": str(ex),
-                        }
-                    )
-        else:
-            failed.append(
-                {
-                    "telegram_id": telegram_id,
-                    "telegram_username": username,
-                    "reason": f"FloodWaitError:{ws}s",
-                }
+    """
+    One user per InviteToChannel (fallback when batch fails).
+
+    Telegram often surfaces invite rate limits as PeerFloodError ('Too many requests') rather than
+    FloodWaitError; retry with backoff (same env as classic groups: TELEGRAM_PEER_FLOOD_RETRY_SEC).
+    """
+    peer_flood_pause = max(25.0, _env_float("TELEGRAM_PEER_FLOOD_RETRY_SEC", 75.0))
+    max_peer_flood_attempts = max(1, min(12, _env_int("TELEGRAM_PEER_FLOOD_INVITE_ATTEMPTS", 4)))
+
+    for attempt in range(max_peer_flood_attempts):
+        if attempt > 0:
+            logger.info(
+                "Megagroup invite rate limit (PeerFlood/backoff), sleeping %.0fs (attempt %s/%s, id=%s)",
+                peer_flood_pause,
+                attempt + 1,
+                max_peer_flood_attempts,
+                telegram_id,
             )
-    except (UserNotMutualContactError, UserPrivacyRestrictedError) as e:
-        failed.append(
-            {"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__}
-        )
-    except Exception as e:
-        if _is_already_participant_err(e):
+            await asyncio.sleep(peer_flood_pause)
+        try:
+            await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
             invited.append(telegram_id)
-        else:
-            failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
+            break
+        except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+            invited.append(telegram_id)
+            break
+        except PeerFloodError:
+            if attempt >= max_peer_flood_attempts - 1:
+                failed.append(
+                    {
+                        "telegram_id": telegram_id,
+                        "telegram_username": username,
+                        "reason": (
+                            "PeerFloodError: trop d’invitations en peu de temps. "
+                            "Réessayez plus tard ou augmentez TELEGRAM_PEER_FLOOD_RETRY_SEC / "
+                            "TELEGRAM_DELAY_BETWEEN_SINGLE_INVITES_SEC."
+                        ),
+                    }
+                )
+            continue
+        except FloodWaitError as e:
+            ws = _flood_wait_seconds(e)
+            if ws <= max_flood_wait_sec:
+                logger.info("FloodWait %ds for single channel invite, retrying...", ws)
+                await asyncio.sleep(ws)
+                try:
+                    await tg(InviteToChannelRequest(channel=input_channel, users=[input_user]))
+                    invited.append(telegram_id)
+                except (UserAlreadyParticipantError, UserAlreadyInvitedError):
+                    invited.append(telegram_id)
+                except Exception as ex:
+                    if _is_already_participant_err(ex):
+                        invited.append(telegram_id)
+                    else:
+                        failed.append(
+                            {
+                                "telegram_id": telegram_id,
+                                "telegram_username": username,
+                                "reason": str(ex),
+                            }
+                        )
+            else:
+                failed.append(
+                    {
+                        "telegram_id": telegram_id,
+                        "telegram_username": username,
+                        "reason": f"FloodWaitError:{ws}s",
+                    }
+                )
+            break
+        except (UserNotMutualContactError, UserPrivacyRestrictedError) as e:
+            failed.append(
+                {"telegram_id": telegram_id, "telegram_username": username, "reason": type(e).__name__}
+            )
+            break
+        except Exception as e:
+            if _is_already_participant_err(e):
+                invited.append(telegram_id)
+            else:
+                failed.append({"telegram_id": telegram_id, "telegram_username": username, "reason": str(e)})
+            break
+
     await asyncio.sleep(pause_after)
 
 
@@ -1279,7 +1317,7 @@ async def _invite_and_promote_users_in_group(
     delay_after_invite_batch = max(1.0, _env_float("TELEGRAM_DELAY_AFTER_INVITE_BATCH_SEC", 5.0))
     delay_between_resolve = max(0.2, _env_float("TELEGRAM_DELAY_BETWEEN_RESOLVE_SEC", 0.9))
     delay_before_invite_batch = max(0.5, _env_float("TELEGRAM_DELAY_BEFORE_INVITE_BATCH_SEC", 2.0))
-    delay_single_invite = max(1.5, _env_float("TELEGRAM_DELAY_BETWEEN_SINGLE_INVITES_SEC", 4.0))
+    delay_single_invite = max(3.0, _env_float("TELEGRAM_DELAY_BETWEEN_SINGLE_INVITES_SEC", 8.0))
     delay_before_each_classic = max(3.0, _env_float("TELEGRAM_DELAY_BEFORE_EACH_CLASSIC_INVITE_SEC", 10.0))
     pause_after_classic_invite = max(
         delay_single_invite,
@@ -1398,6 +1436,28 @@ async def _invite_and_promote_users_in_group(
                             logger.warning("Invite batch retry failed: %s", retry_err)
                 else:
                     logger.warning("Invite batch FloodWait %ds (> max retry %ds)", ws, max_flood_wait_sec)
+            except PeerFloodError:
+                pf = max(25.0, _env_float("TELEGRAM_PEER_FLOOD_RETRY_SEC", 75.0))
+                logger.info(
+                    "Invite batch PeerFlood (too many requests), sleeping %.0fs then one retry",
+                    pf,
+                )
+                await asyncio.sleep(pf)
+                try:
+                    await tg(InviteToChannelRequest(channel=input_channel, users=users_inputs))
+                    for tid, _, _ in batch:
+                        invited.append(tid)
+                    batch_ok = True
+                except Exception as retry_err:
+                    if _is_already_participant_err(retry_err):
+                        for tid, _, _ in batch:
+                            invited.append(tid)
+                        batch_ok = True
+                    else:
+                        logger.info(
+                            "Invite batch still rate-limited after backoff (%s), using per-user invites",
+                            retry_err,
+                        )
             except Exception as e:
                 if _is_already_participant_err(e):
                     for tid, _, _ in batch:
