@@ -125,10 +125,21 @@ export function TelegramBankAccountRattrapage({
     setBusyKey(null);
     setTelegramCatchUpExpanded(defaultExpanded);
     setCompanyFiles([]);
-  }, [bankAccountId, accountName, companyId, defaultExpanded, welcomeDraft]);
+    setTelegramUsersList([]);
+    setTelegramUsersLoading(false);
+    setCompanyFilesLoading(false);
+    // welcomeDraft volontairement exclu : recalcul parent (IBAN, etc.) ne doit pas réinitialiser le panneau ni annuler le fetch utilisateurs.
+  }, [bankAccountId, accountName, companyId, defaultExpanded]);
 
   useEffect(() => {
-    if (!telegramCatchUpExpanded) return;
+    setTelegramWelcome(welcomeDraft ?? "");
+  }, [welcomeDraft]);
+
+  useEffect(() => {
+    if (!telegramCatchUpExpanded) {
+      setTelegramUsersLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setTelegramUsersLoading(true);
@@ -139,6 +150,8 @@ export function TelegramBankAccountRattrapage({
         };
         if (!cancelled && res.ok && Array.isArray(data.users)) {
           setTelegramUsersList(data.users);
+        } else if (!cancelled) {
+          setTelegramUsersList([]);
         }
       } catch {
         if (!cancelled) setTelegramUsersList([]);
@@ -154,6 +167,7 @@ export function TelegramBankAccountRattrapage({
   useEffect(() => {
     if (!telegramCatchUpExpanded || !companyId?.trim()) {
       setCompanyFiles([]);
+      setCompanyFilesLoading(false);
       return;
     }
     let cancelled = false;
@@ -187,11 +201,14 @@ export function TelegramBankAccountRattrapage({
   const runAction = async (key: string, body: Record<string, unknown>, successHeadline: string) => {
     if (!chatOk) return;
     setBusyKey(key);
+    const ctrl = new AbortController();
+    const t = window.setTimeout(() => ctrl.abort(), 300_000);
     try {
       const res = await fetch(`/api/bank-accounts/${bankAccountId}/telegram-sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: ctrl.signal,
       });
       let data: Record<string, unknown> = {};
       try {
@@ -219,8 +236,15 @@ export function TelegramBankAccountRattrapage({
       }
       appendLog(formatSyncResponse(data, headline));
     } catch (err) {
-      appendLog(err instanceof Error ? err.message : "Erreur inconnue");
+      if (err instanceof Error && err.name === "AbortError") {
+        appendLog(
+          "Délai dépassé (5 min). Le service Telegram est peut‑être occupé (invitations / flood‑wait). Réessayez ou consultez les logs du service.",
+        );
+      } else {
+        appendLog(err instanceof Error ? err.message : "Erreur inconnue");
+      }
     } finally {
+      window.clearTimeout(t);
       setBusyKey(null);
     }
   };
