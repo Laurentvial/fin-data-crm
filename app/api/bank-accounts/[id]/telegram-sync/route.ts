@@ -333,6 +333,33 @@ export async function POST(
         { status: 502 },
       );
     }
+
+    // Telegram can silently upgrade a classic group (Chat) into a supergroup (Channel).
+    // In that case the peer id changes (becomes -100…), and some actions like invitations
+    // require the updated supergroup id. Persist the new id when the service returns it.
+    try {
+      if (data && typeof data === "object") {
+        const nextChatIdRaw = (data as { chat_id?: unknown }).chat_id;
+        const nextChatIdStr = typeof nextChatIdRaw === "string" ? nextChatIdRaw.trim() : "";
+        if (nextChatIdStr && nextChatIdStr !== chatIdPayload) {
+          const nextChatIdBig = BigInt(nextChatIdStr);
+          const prevChatIdBig =
+            typeof chatId === "bigint" ? chatId : BigInt(String(chatId).trim());
+          if (nextChatIdBig !== prevChatIdBig) {
+            await sql`
+              UPDATE bank_accounts
+              SET telegram_chat_id = ${nextChatIdBig}
+              WHERE id = ${id}::uuid
+            `;
+            (data as Record<string, unknown>).telegram_chat_id_updated = true;
+            (data as Record<string, unknown>).telegram_chat_id_prev = String(prevChatIdBig);
+            (data as Record<string, unknown>).telegram_chat_id_next = String(nextChatIdBig);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("telegram-sync: could not persist upgraded chat id:", e);
+    }
     return NextResponse.json(data);
   } catch (e) {
     console.error("POST /api/bank-accounts/[id]/telegram-sync error:", e);
