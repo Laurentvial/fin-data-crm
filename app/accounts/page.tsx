@@ -984,6 +984,7 @@ function EditBankAccountModal({
             accountName={name}
             telegramChatId={telegramChatId}
             hasBankLogo={!!bankAccount.has_logo}
+            hasRib={hasRib}
             companyId={companyId}
             welcomeDraft={telegramWelcomeDraft}
           />
@@ -1156,6 +1157,7 @@ function AccountsPageContent() {
     accountName: string;
     telegramChatId: string;
     hasBankLogo: boolean;
+    hasRib: boolean;
     companyId: string;
     welcomeDraft: string;
   } | null>(null);
@@ -1896,6 +1898,7 @@ function AccountsPageContent() {
           accountName: typeof created.name === "string" ? created.name : createName.trim(),
           telegramChatId: String(created.telegram_chat_id),
           hasBankLogo: !!(created as { has_logo?: boolean }).has_logo,
+          hasRib: !!(created as BankAccount).has_rib,
           companyId: String((created as BankAccount).company_id ?? createCompanyId ?? ""),
           welcomeDraft,
         });

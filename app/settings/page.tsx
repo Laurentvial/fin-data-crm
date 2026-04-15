@@ -298,21 +298,34 @@ function UserRow({
 
 function EditUserModal({
   user,
+  currentUserId,
   name,
   email,
+  newPassword,
+  confirmPassword,
   onNameChange,
   onEmailChange,
+  onNewPasswordChange,
+  onConfirmPasswordChange,
   onSave,
   onClose,
+  savePending,
 }: {
   user: User;
+  currentUserId: string | null;
   name: string;
   email: string;
+  newPassword: string;
+  confirmPassword: string;
   onNameChange: (v: string) => void;
   onEmailChange: (v: string) => void;
+  onNewPasswordChange: (v: string) => void;
+  onConfirmPasswordChange: (v: string) => void;
   onSave: () => void;
   onClose: () => void;
+  savePending: boolean;
 }) {
+  const isOtherUser = user.id !== currentUserId;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -344,21 +357,62 @@ function EditUserModal({
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
+          {isOtherUser && (
+            <>
+              <div className="border-t border-[var(--border)] pt-4">
+                <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+                  Définir un nouveau mot de passe pour ce compte (laisser vide pour ne pas modifier).
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                      Nouveau mot de passe
+                    </label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => onNewPasswordChange(e.target.value)}
+                      autoComplete="new-password"
+                      minLength={8}
+                      placeholder="••••••••"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                      Confirmer le mot de passe
+                    </label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => onConfirmPasswordChange(e.target.value)}
+                      autoComplete="new-password"
+                      minLength={8}
+                      placeholder="••••••••"
+                      className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+            disabled={savePending}
+            className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
           >
             Annuler
           </button>
           <button
             type="button"
             onClick={onSave}
-            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+            disabled={savePending}
+            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
           >
-            Enregistrer
+            {savePending ? "Enregistrement…" : "Enregistrer"}
           </button>
         </div>
       </div>
@@ -3106,6 +3160,9 @@ export default function SettingsPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editNewPassword, setEditNewPassword] = useState("");
+  const [editConfirmPassword, setEditConfirmPassword] = useState("");
+  const [editSavePending, setEditSavePending] = useState(false);
 
   const loadUsers = useCallback(async () => {
     const session = await getCachedSession();
@@ -3218,11 +3275,40 @@ export default function SettingsPage() {
     setEditingUser(user);
     setEditName(user.name);
     setEditEmail(user.email);
+    setEditNewPassword("");
+    setEditConfirmPassword("");
     setActionError(null);
+  };
+
+  const closeEditUserModal = () => {
+    setEditingUser(null);
+    setEditNewPassword("");
+    setEditConfirmPassword("");
   };
 
   const handleUpdateUser = async () => {
     if (!editingUser) return;
+    const np = editNewPassword.trim();
+    const cp = editConfirmPassword.trim();
+    const anyPasswordField = np !== "" || cp !== "";
+    const isOtherUser = editingUser.id !== currentUserId;
+
+    if (isOtherUser && anyPasswordField) {
+      if (!np || !cp) {
+        setActionError("Remplissez les deux champs de mot de passe ou laissez-les vides.");
+        return;
+      }
+      if (np !== cp) {
+        setActionError("Les mots de passe ne correspondent pas.");
+        return;
+      }
+      if (np.length < 8) {
+        setActionError("Le mot de passe doit contenir au moins 8 caractères.");
+        return;
+      }
+    }
+
+    setEditSavePending(true);
     setActionError(null);
     const { error } = await authClient.admin.updateUser({
       userId: editingUser.id,
@@ -3230,8 +3316,22 @@ export default function SettingsPage() {
     });
     if (error) {
       setActionError(error.message ?? "Échec de la mise à jour.");
+      setEditSavePending(false);
       return;
     }
+
+    if (isOtherUser && np.length >= 8) {
+      const { error: pwError } = await authClient.admin.setUserPassword({
+        userId: editingUser.id,
+        newPassword: np,
+      });
+      if (pwError) {
+        setActionError(pwError.message ?? "Échec du changement de mot de passe.");
+        setEditSavePending(false);
+        return;
+      }
+    }
+
     setUsers((prev) =>
       prev.map((u) =>
         u.id === editingUser.id
@@ -3239,7 +3339,8 @@ export default function SettingsPage() {
           : u
       )
     );
-    setEditingUser(null);
+    closeEditUserModal();
+    setEditSavePending(false);
   };
 
   const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -3431,12 +3532,18 @@ export default function SettingsPage() {
             {editingUser && (
               <EditUserModal
                 user={editingUser}
+                currentUserId={currentUserId}
                 name={editName}
                 email={editEmail}
+                newPassword={editNewPassword}
+                confirmPassword={editConfirmPassword}
                 onNameChange={setEditName}
                 onEmailChange={setEditEmail}
+                onNewPasswordChange={setEditNewPassword}
+                onConfirmPasswordChange={setEditConfirmPassword}
                 onSave={handleUpdateUser}
-                onClose={() => setEditingUser(null)}
+                onClose={closeEditUserModal}
+                savePending={editSavePending}
               />
             )}
           </section>

@@ -71,6 +71,7 @@ export interface CreateBankAccountModalProps {
     accountName: string;
     telegramChatId: string;
     hasBankLogo: boolean;
+    hasRib?: boolean;
     companyId: string;
     welcomeDraft: string;
   } | null;
@@ -271,6 +272,7 @@ export function CreateBankAccountModal({
               accountName={postCreateTelegram.accountName}
               telegramChatId={postCreateTelegram.telegramChatId}
               hasBankLogo={postCreateTelegram.hasBankLogo}
+              hasRib={!!postCreateTelegram.hasRib}
               companyId={postCreateTelegram.companyId}
               welcomeDraft={postCreateTelegram.welcomeDraft}
               defaultExpanded

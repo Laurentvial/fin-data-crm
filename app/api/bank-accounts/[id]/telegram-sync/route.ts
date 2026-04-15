@@ -87,6 +87,8 @@ export async function POST(
       ? companyFileIdRaw.trim()
       : undefined;
 
+  const sendRib = body.send_rib === true;
+
   const inviteIdsRaw = body.invite_telegram_ids;
   const inviteTelegramIds: number[] = Array.isArray(inviteIdsRaw)
     ? inviteIdsRaw
@@ -131,13 +133,24 @@ export async function POST(
     inviteTelegramIds.length > 0 ||
     promoteOnlyIds.length > 0 ||
     Boolean(welcomeMessage) ||
-    Boolean(companyFileId);
+    Boolean(companyFileId) ||
+    sendRib;
+
+  if (companyFileId && sendRib) {
+    return NextResponse.json(
+      {
+        error:
+          "Une seule pièce jointe par requête : envoyez un document société ou le RIB, pas les deux à la fois.",
+      },
+      { status: 400 },
+    );
+  }
 
   if (!hasWork) {
     return NextResponse.json(
       {
         error:
-          "Aucune action sélectionnée : titre, logo, fichiers société, invitations, promotions ou message.",
+          "Aucune action sélectionnée : titre, logo, fichiers société, RIB du compte, invitations, promotions ou message.",
       },
       { status: 400 },
     );
@@ -283,6 +296,27 @@ export async function POST(
       const fn = (cf.filename as string | null) ?? null;
       const caption = fn?.trim() ? `${base} — ${fn.trim()}` : base;
       payload.attachment_base64 = cf.data_base64 as string;
+      payload.attachment_filename = fn;
+      payload.attachment_caption = caption;
+    } else if (sendRib) {
+      const [rib] = await sql`
+        SELECT baf.data_base64, baf.filename
+        FROM bank_account_files baf
+        WHERE baf.bank_account_id = ${id}::uuid AND baf.file_type = 'rib'
+        LIMIT 1
+      `;
+      if (!rib || typeof rib.data_base64 !== "string") {
+        return NextResponse.json(
+          {
+            error:
+              "Aucun RIB enregistré pour ce compte. Ajoutez-le sur la fiche du compte (document RIB) puis réessayez.",
+          },
+          { status: 404 },
+        );
+      }
+      const fn = (rib.filename as string | null) ?? null;
+      const caption = fn?.trim() ? `RIB — ${fn.trim()}` : "RIB";
+      payload.attachment_base64 = rib.data_base64 as string;
       payload.attachment_filename = fn;
       payload.attachment_caption = caption;
     }

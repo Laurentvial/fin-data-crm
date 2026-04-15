@@ -80,6 +80,8 @@ export interface TelegramBankAccountRattrapageProps {
   accountName: string;
   telegramChatId: string;
   hasBankLogo: boolean;
+  /** RIB enregistré sur la fiche du compte bancaire (envoi séparé des documents société). */
+  hasRib?: boolean;
   /** Société liée au compte : documents à envoyer un par un sur le groupe Telegram. */
   companyId?: string | null;
   defaultExpanded?: boolean;
@@ -98,6 +100,7 @@ export function TelegramBankAccountRattrapage({
   accountName,
   telegramChatId,
   hasBankLogo,
+  hasRib = false,
   companyId = null,
   defaultExpanded = false,
   welcomeDraft = "",
@@ -303,6 +306,9 @@ export function TelegramBankAccountRattrapage({
     return runAction(`company-file-${file.id}`, { company_file_id: file.id }, `Fichier société envoyé : ${short}.`);
   };
 
+  const sendRibToTelegram = () =>
+    runAction("rib", { send_rib: true }, "RIB du compte envoyé sur le groupe.");
+
   const sendCustomLogo = () => {
     const custom = telegramCustomLogoRef.current;
     if (!custom) {
@@ -487,6 +493,24 @@ export function TelegramBankAccountRattrapage({
               )}
             </div>
           ) : null}
+
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
+            <p className="text-xs font-medium text-[var(--foreground)]">RIB du compte</p>
+            <p className="text-[11px] leading-snug text-[var(--muted-foreground)]">
+              Document RIB enregistré sur ce compte bancaire (distinct des pièces de la société).
+            </p>
+            <button
+              type="button"
+              onClick={() => void sendRibToTelegram()}
+              disabled={!chatOk || !hasRib || busyKey !== null}
+              className={btnClass(!chatOk || !hasRib || busyKey !== null)}
+            >
+              {busyKey === "rib" ? "Envoi…" : "Envoyer le RIB sur Telegram"}
+            </button>
+            {!hasRib ? (
+              <p className="text-xs text-[var(--muted-foreground)]">Aucun RIB enregistré pour ce compte.</p>
+            ) : null}
+          </div>
 
           <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--background)]/50 p-3">
             <p className="text-xs font-medium text-[var(--foreground)]">Message dans le groupe</p>
