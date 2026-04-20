@@ -244,11 +244,11 @@ export function GenerateInvoiceModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={(e) => modalBackdropClose(e, onClose)}
+      onMouseDown={(e) => modalBackdropClose(e, onClose)}
     >
       <div
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <h3 className="subsection-header mb-4 text-lg font-medium">
           {isMulti ? `Générer une facture groupée (${transactions.length})` : "Générer une facture"}
@@ -430,14 +430,14 @@ export function GenerateInvoiceModal({
                       className="border-b border-[var(--border)] last:border-b-0"
                     >
                       <td className="px-3 py-2">
-                        <input
-                          type="text"
+                        <textarea
                           value={row.description}
                           onChange={(e) =>
                             updateLineItem(row.id, "description", e.target.value)
                           }
                           placeholder="Description"
-                          className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+                          rows={2}
+                          className="w-full resize-y rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
                         />
                       </td>
                       <td className="px-3 py-2 text-right">

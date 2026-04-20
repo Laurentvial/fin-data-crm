@@ -112,6 +112,10 @@
       border-bottom: 1px solid #e9ecef;
       vertical-align: top;
     }
+    table.line-items tbody td .description {
+      line-height: 1.4;
+      white-space: pre-line;
+    }
     table.line-items tbody tr:last-child td {
       border-bottom: 2px solid #dee2e6;
     }
@@ -198,7 +202,7 @@
       <tbody>
         {{#each lineItems}}
         <tr>
-          <td>{{this.description}}</td>
+          <td><div class="description">{{this.description}}</div></td>
           <td class="text-right">{{this.quantity}}</td>
           <td class="text-right">{{formatNumber this.unit_price}} {{../invoice.currency}}</td>
           <td class="text-right">{{this.vat_rate}}%</td>
