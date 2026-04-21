@@ -52,6 +52,9 @@ export interface CreateBankAccountModalProps {
   onPinCodeChange?: (v: string) => void;
   onPlafondLimitChange?: (v: string) => void;
   onCardsChange?: (v: CardItem[]) => void;
+  /** Optional RIB file selection (uploaded after creation by parent). */
+  ribFileLabel?: string | null;
+  onRibFileChange?: (file: File | null) => void;
   onSubmit: () => void;
   onClose: () => void;
   saving: boolean;
@@ -104,6 +107,8 @@ export function CreateBankAccountModal({
   onPinCodeChange,
   onPlafondLimitChange,
   onCardsChange,
+  ribFileLabel = null,
+  onRibFileChange,
   onSubmit,
   onClose,
   saving,
@@ -218,6 +223,12 @@ export function CreateBankAccountModal({
     } finally {
       setIbanLookupLoading(null);
     }
+  };
+
+  const handleRibFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    onRibFileChange?.(file);
   };
 
   return (
@@ -588,6 +599,50 @@ export function CreateBankAccountModal({
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>
+
+          {onRibFileChange && (
+            <div className="col-span-3">
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">RIB (document)</label>
+              {ribFileLabel ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-[var(--foreground)]">{ribFileLabel}</span>
+                  <span className="text-xs text-[var(--muted-foreground)]">·</span>
+                  <label className="cursor-pointer text-sm text-[var(--primary)] hover:underline">
+                    Changer
+                    <input
+                      type="file"
+                      accept=".pdf,image/*"
+                      className="hidden"
+                      disabled={saving}
+                      onChange={handleRibFilePick}
+                    />
+                  </label>
+                  <span className="text-xs text-[var(--muted-foreground)]">·</span>
+                  <button
+                    type="button"
+                    onClick={() => onRibFileChange(null)}
+                    disabled={saving}
+                    className="text-sm text-[var(--muted-foreground)] hover:underline disabled:opacity-50"
+                  >
+                    Retirer
+                  </button>
+                </div>
+              ) : (
+                <label className="flex cursor-pointer flex-col items-start gap-2 rounded-lg border border-dashed border-[var(--border)] p-4 py-3">
+                  <span className="text-sm text-[var(--muted-foreground)]">
+                    Choisir un fichier (PDF ou image) — envoyé après la création
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    className="hidden"
+                    disabled={saving}
+                    onChange={handleRibFilePick}
+                  />
+                </label>
+              )}
+            </div>
+          )}
         </div>
         )}
         </div>

@@ -1151,6 +1151,7 @@ function AccountsPageContent() {
   const [createPinCode, setCreatePinCode] = useState("");
   const [createPlafondLimit, setCreatePlafondLimit] = useState("");
   const [createCards, setCreateCards] = useState<CardItem[]>([]);
+  const [createRibFile, setCreateRibFile] = useState<File | null>(null);
   const [createLinkTelegramEnabled, setCreateLinkTelegramEnabled] = useState(true);
   const [createPostTelegram, setCreatePostTelegram] = useState<{
     accountId: string;
@@ -1729,6 +1730,7 @@ function AccountsPageContent() {
       setCreatePinCode("");
       setCreatePlafondLimit("");
       setCreateCards([]);
+      setCreateRibFile(null);
       setCreateLinkTelegramEnabled(true);
       setCreateLinkExistingGroupId("");
       setCreatePostTelegram(null);
@@ -1843,6 +1845,38 @@ function AccountsPageContent() {
         telegram_setup_warning?: string;
         telegram_invite_warnings?: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[];
       };
+
+      let ribUploadedOk = false;
+      let ribUploadFailed = false;
+      if (createRibFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", createRibFile);
+          formData.append("type", "rib");
+          const upRes = await fetch(`/api/bank-accounts/${String(created.id)}/files`, {
+            method: "POST",
+            body: formData,
+          });
+          const upText = await upRes.text();
+          let upJson: unknown = {};
+          try {
+            upJson = upText ? JSON.parse(upText) : {};
+          } catch {
+            upJson = {};
+          }
+          if (!upRes.ok) {
+            const err = upJson as { error?: string };
+            throw new Error(err.error ?? "Échec upload RIB");
+          }
+          ribUploadedOk = true;
+          // Optimistic UI: the file now exists.
+          (created as BankAccount).has_rib = true;
+        } catch (e) {
+          ribUploadFailed = true;
+          setError(e instanceof Error ? `Compte créé, mais upload RIB impossible : ${e.message}` : "Compte créé, mais upload RIB impossible.");
+        }
+      }
+
       setBankAccounts((prev) =>
         [...prev, created as BankAccount].sort(
           (a, b) => (a.company_name ?? "").localeCompare(b.company_name ?? "") || a.name.localeCompare(b.name)
@@ -1898,11 +1932,11 @@ function AccountsPageContent() {
           accountName: typeof created.name === "string" ? created.name : createName.trim(),
           telegramChatId: String(created.telegram_chat_id),
           hasBankLogo: !!(created as { has_logo?: boolean }).has_logo,
-          hasRib: !!(created as BankAccount).has_rib,
+          hasRib: ribUploadedOk ? true : !!(created as BankAccount).has_rib,
           companyId: String((created as BankAccount).company_id ?? createCompanyId ?? ""),
           welcomeDraft,
         });
-      } else if (inviteParts.length === 0) {
+      } else if (inviteParts.length === 0 && !ribUploadFailed) {
         closeCreateModal();
       }
     } catch (e) {
@@ -2729,6 +2763,11 @@ function AccountsPageContent() {
           }}
           onCardsChange={(v) => {
             setCreateCards(v);
+            setError(null);
+          }}
+          ribFileLabel={createRibFile?.name ?? null}
+          onRibFileChange={(file) => {
+            setCreateRibFile(file);
             setError(null);
           }}
           linkTelegramEnabled={createLinkTelegramEnabled}
