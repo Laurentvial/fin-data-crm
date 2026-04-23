@@ -37,6 +37,7 @@ import {
   debitStatusPillStyle,
   type DebitTransactionStatus,
 } from "@/lib/debit-status";
+import { isCreditLikeType, transactionTypeLabel } from "@/lib/transaction-type";
 
 const LIGHT_THEME: Partial<Theme> = {
   accentColor: "#0d9488",
@@ -189,8 +190,14 @@ interface TransactionsGridProps {
   fournisseurs?: Fournisseur[];
   /** Clients = account_types (Paramètres › Clients) pour la colonne Client. */
   settingsClients?: AccountType[];
+  /** Création rapide « + Nouveau fournisseur… » dans l’éditeur de cellule (retourner null si annulé). */
+  onQuickCreateFournisseur?: () => Promise<Fournisseur | null>;
+  /** Création rapide « + Nouveau client… » dans l’éditeur de cellule (retourner null si annulé). */
+  onQuickCreateSettingsClient?: () => Promise<AccountType | null>;
   /** Incrémenter après une action parent (ex. suppression groupée) pour effacer coches / stats. */
   selectionResetNonce?: number;
+  /** Ouvre le modal d’appariement crédit interne (colonne Type). */
+  onBeginInternalCreditPair?: (creditId: string) => void;
 }
 
 interface DateCellData {
@@ -354,8 +361,89 @@ interface FournisseurCellData {
   id: string | null;
 }
 
+const CREATE_FOURNISSEUR_SENTINEL = "__create_fournisseur__";
+
+function FournisseurSelectEditor({
+  cellProps,
+  fournisseurs,
+  onQuickCreate,
+}: {
+  cellProps: {
+    value: CustomCell<FournisseurCellData>;
+    onChange: (cell: CustomCell<FournisseurCellData>) => void;
+    onFinishedEditing: (cell: CustomCell<FournisseurCellData> | undefined) => void;
+    theme: Theme;
+  };
+  fournisseurs: Fournisseur[];
+  onQuickCreate?: () => Promise<Fournisseur | null>;
+}) {
+  const { value, onChange, onFinishedEditing, theme: gridTheme } = cellProps;
+  const currentId = value.data.id ?? "";
+  const [busy, setBusy] = useState(false);
+  const inputStyle: React.CSSProperties = {
+    height: 36,
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingLeft: 8,
+    border: `1px solid ${gridTheme.borderColor ?? "#e2e8f0"}`,
+    borderRadius: 6,
+    fontSize: 14,
+    fontFamily: "inherit",
+    backgroundColor: gridTheme.bgCell ?? "#fff",
+    color: gridTheme.textDark ?? "#171717",
+    width: "100%",
+    minWidth: 160,
+    maxWidth: 360,
+  };
+  return (
+    <select
+      autoFocus
+      disabled={busy}
+      value={currentId}
+      style={inputStyle}
+      className="focus:outline-none focus:border-[var(--muted)]"
+      onChange={async (e) => {
+        const v = e.target.value;
+        if (v === CREATE_FOURNISSEUR_SENTINEL) {
+          if (!onQuickCreate || busy) return;
+          setBusy(true);
+          try {
+            const created = await onQuickCreate();
+            if (created) {
+              const next = {
+                ...value,
+                data: { type: "fournisseur" as const, id: created.id },
+              };
+              onChange(next);
+              onFinishedEditing(next);
+            }
+          } finally {
+            setBusy(false);
+          }
+          return;
+        }
+        const nextId = v === "" ? null : v;
+        const next = { ...value, data: { type: "fournisseur" as const, id: nextId } };
+        onChange(next);
+        onFinishedEditing(next);
+      }}
+    >
+      <option value="">—</option>
+      {fournisseurs.map((f) => (
+        <option key={f.id} value={f.id}>
+          {f.name}
+        </option>
+      ))}
+      {onQuickCreate ? (
+        <option value={CREATE_FOURNISSEUR_SENTINEL}>+ Nouveau fournisseur…</option>
+      ) : null}
+    </select>
+  );
+}
+
 function createFournisseurRenderer(
-  fournisseurs: Fournisseur[]
+  fournisseurs: Fournisseur[],
+  opts?: { onQuickCreate?: () => Promise<Fournisseur | null> }
 ): CustomRenderer<CustomCell<FournisseurCellData>> {
   return {
     kind: GridCellKind.Custom,
@@ -367,47 +455,13 @@ function createFournisseurRenderer(
       const label = fid ? fournisseurs.find((f) => f.id === fid)?.name ?? "" : "";
       drawTextCell(args as Parameters<typeof drawTextCell>[0], label);
     },
-    provideEditor: () => (p) => {
-      const theme = p.theme;
-      const currentId = p.value.data.id ?? "";
-      const inputStyle: React.CSSProperties = {
-        height: 36,
-        paddingTop: 6,
-        paddingBottom: 6,
-        paddingLeft: 8,
-        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
-        borderRadius: 6,
-        fontSize: 14,
-        fontFamily: "inherit",
-        backgroundColor: theme.bgCell ?? "#fff",
-        color: theme.textDark ?? "#171717",
-        width: "100%",
-        minWidth: 160,
-        maxWidth: 360,
-      };
-      return (
-        <select
-          autoFocus
-          value={currentId}
-          style={inputStyle}
-          className="focus:outline-none focus:border-[var(--muted)]"
-          onChange={(e) => {
-            const v = e.target.value;
-            const nextId = v === "" ? null : v;
-            const next = { ...p.value, data: { type: "fournisseur" as const, id: nextId } };
-            p.onChange(next);
-            p.onFinishedEditing(next);
-          }}
-        >
-          <option value="">—</option>
-          {fournisseurs.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-      );
-    },
+    provideEditor: () => (p) => (
+      <FournisseurSelectEditor
+        cellProps={p}
+        fournisseurs={fournisseurs}
+        onQuickCreate={opts?.onQuickCreate}
+      />
+    ),
     getAccessibilityString: (cell: CustomCell<FournisseurCellData>) => {
       const fid = cell.data.id;
       return fid ? fournisseurs.find((f) => f.id === fid)?.name ?? "" : "";
@@ -423,8 +477,104 @@ interface SettingsClientCellData {
   defaultDisplayName: string;
 }
 
+const CREATE_CLIENT_SENTINEL = "__create_client__";
+
+function SettingsClientSelectEditor({
+  cellProps,
+  sortedClients,
+  onQuickCreate,
+}: {
+  cellProps: {
+    value: CustomCell<SettingsClientCellData>;
+    onChange: (cell: CustomCell<SettingsClientCellData>) => void;
+    onFinishedEditing: (cell: CustomCell<SettingsClientCellData> | undefined) => void;
+    theme: Theme;
+  };
+  sortedClients: AccountType[];
+  onQuickCreate?: () => Promise<AccountType | null>;
+}) {
+  const { value, onChange, onFinishedEditing, theme: gridTheme } = cellProps;
+  const currentOverride = value.data.overrideId ?? "";
+  const [busy, setBusy] = useState(false);
+  const inputStyle: React.CSSProperties = {
+    height: 36,
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingLeft: 8,
+    border: `1px solid ${gridTheme.borderColor ?? "#e2e8f0"}`,
+    borderRadius: 6,
+    fontSize: 14,
+    fontFamily: "inherit",
+    backgroundColor: gridTheme.bgCell ?? "#fff",
+    color: gridTheme.textDark ?? "#171717",
+    width: "100%",
+    minWidth: 160,
+    maxWidth: 360,
+  };
+  return (
+    <select
+      autoFocus
+      disabled={busy}
+      value={currentOverride}
+      style={inputStyle}
+      className="focus:outline-none focus:border-[var(--muted)]"
+      onChange={async (e) => {
+        const v = e.target.value;
+        if (v === CREATE_CLIENT_SENTINEL) {
+          if (!onQuickCreate || busy) return;
+          setBusy(true);
+          try {
+            const created = await onQuickCreate();
+            if (created) {
+              const next = {
+                ...value,
+                data: {
+                  type: "settings_client" as const,
+                  overrideId: created.id,
+                  displayName: created.name,
+                  defaultDisplayName: value.data.defaultDisplayName,
+                },
+              };
+              onChange(next);
+              onFinishedEditing(next);
+            }
+          } finally {
+            setBusy(false);
+          }
+          return;
+        }
+        const nextId = v === "" ? null : v;
+        const label =
+          nextId === null
+            ? (value.data.defaultDisplayName ?? "")
+            : (sortedClients.find((c) => c.id === nextId)?.name ?? value.data.displayName);
+        const next = {
+          ...value,
+          data: {
+            type: "settings_client" as const,
+            overrideId: nextId,
+            displayName: label,
+            defaultDisplayName: value.data.defaultDisplayName,
+          },
+        };
+        onChange(next);
+        onFinishedEditing(next);
+      }}
+    >
+      <option value="">Compte (défaut)</option>
+      {sortedClients.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+      {onQuickCreate ? <option value={CREATE_CLIENT_SENTINEL}>+ Nouveau client…</option> : null}
+    </select>
+  );
+}
+
 function createSettingsClientRenderer(
-  settingsClients: AccountType[]
+  settingsClients: AccountType[],
+  opts?: { onQuickCreate?: () => Promise<AccountType | null> }
 ): CustomRenderer<CustomCell<SettingsClientCellData>> {
   const sorted = [...settingsClients].sort((a, b) => a.sort_order - b.sort_order);
   return {
@@ -435,59 +585,13 @@ function createSettingsClientRenderer(
     draw: (args: DrawArgs<CustomCell<SettingsClientCellData>>, cell) => {
       drawTextCell(args as Parameters<typeof drawTextCell>[0], cell.data.displayName ?? "");
     },
-    provideEditor: () => (p) => {
-      const theme = p.theme;
-      const currentOverride = p.value.data.overrideId ?? "";
-      const inputStyle: React.CSSProperties = {
-        height: 36,
-        paddingTop: 6,
-        paddingBottom: 6,
-        paddingLeft: 8,
-        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
-        borderRadius: 6,
-        fontSize: 14,
-        fontFamily: "inherit",
-        backgroundColor: theme.bgCell ?? "#fff",
-        color: theme.textDark ?? "#171717",
-        width: "100%",
-        minWidth: 160,
-        maxWidth: 360,
-      };
-      return (
-        <select
-          autoFocus
-          value={currentOverride}
-          style={inputStyle}
-          className="focus:outline-none focus:border-[var(--muted)]"
-          onChange={(e) => {
-            const v = e.target.value;
-            const nextId = v === "" ? null : v;
-            const label =
-              nextId === null
-                ? (p.value.data.defaultDisplayName ?? "")
-                : (sorted.find((c) => c.id === nextId)?.name ?? p.value.data.displayName);
-            const next = {
-              ...p.value,
-              data: {
-                type: "settings_client" as const,
-                overrideId: nextId,
-                displayName: label,
-                defaultDisplayName: p.value.data.defaultDisplayName,
-              },
-            };
-            p.onChange(next);
-            p.onFinishedEditing(next);
-          }}
-        >
-          <option value="">Compte (défaut)</option>
-          {sorted.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      );
-    },
+    provideEditor: () => (p) => (
+      <SettingsClientSelectEditor
+        cellProps={p}
+        sortedClients={sorted}
+        onQuickCreate={opts?.onQuickCreate}
+      />
+    ),
     getAccessibilityString: (cell: CustomCell<SettingsClientCellData>) => cell.data.displayName ?? "",
   } as CustomRenderer<CustomCell<SettingsClientCellData>>;
 }
@@ -589,6 +693,95 @@ function createDebitStatusRenderer(): CustomRenderer<CustomCell<DebitStatusCellD
       return debitStatusLabel(v);
     },
   } as CustomRenderer<CustomCell<DebitStatusCellData>>;
+}
+
+interface TransactionTypeCellData {
+  type: "txn_type";
+  value: TransactionType;
+  transactionId: string;
+  /** Ligne CREDIT éligible pour ouvrir le modal crédit interne. */
+  canBeInternalSource: boolean;
+}
+
+function createTransactionTypeRenderer(
+  onBeginInternalCreditPair?: (creditId: string) => void
+): CustomRenderer<CustomCell<TransactionTypeCellData>> {
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<TransactionTypeCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<TransactionTypeCellData>).data?.type === "txn_type",
+    draw: (args: DrawArgs<CustomCell<TransactionTypeCellData>>, cell) => {
+      drawTextCell(
+        args as Parameters<typeof drawTextCell>[0],
+        transactionTypeLabel(cell.data.value)
+      );
+    },
+    provideEditor: () => (p) => {
+      const theme = p.theme;
+      const data = p.value.data;
+      const current = data.value;
+      const inputStyle: React.CSSProperties = {
+        height: 36,
+        paddingTop: 6,
+        paddingBottom: 6,
+        paddingLeft: 8,
+        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+        borderRadius: 6,
+        fontSize: 14,
+        fontFamily: "inherit",
+        backgroundColor: theme.bgCell ?? "#fff",
+        color: theme.textDark ?? "#171717",
+        width: "100%",
+        minWidth: 120,
+        maxWidth: 220,
+      };
+      const isInternal = current === "INTERNAL_CREDIT";
+      return (
+        <select
+          autoFocus
+          value={current}
+          style={inputStyle}
+          className="focus:outline-none focus:border-[var(--muted)]"
+          onChange={(e) => {
+            const v = e.target.value as TransactionType;
+            if (v === "INTERNAL_CREDIT" && data.canBeInternalSource) {
+              onBeginInternalCreditPair?.(data.transactionId);
+              p.onFinishedEditing({
+                ...p.value,
+                data: { ...data, value: "CREDIT" as const },
+              });
+              return;
+            }
+            const next = {
+              ...p.value,
+              data: { ...data, value: v },
+            } satisfies CustomCell<TransactionTypeCellData>;
+            p.onChange(next);
+            p.onFinishedEditing(next);
+          }}
+        >
+          {!isInternal && (
+            <>
+              <option value="DEBIT">Débit</option>
+              <option value="CREDIT">Crédit</option>
+            </>
+          )}
+          {isInternal && (
+            <>
+              <option value="CREDIT">Crédit</option>
+              <option value="INTERNAL_CREDIT">Crédit interne</option>
+            </>
+          )}
+          {data.canBeInternalSource && !isInternal && (
+            <option value="INTERNAL_CREDIT">Crédit interne…</option>
+          )}
+        </select>
+      );
+    },
+    getAccessibilityString: (cell: CustomCell<TransactionTypeCellData>) =>
+      transactionTypeLabel(cell.data.value),
+  } as CustomRenderer<CustomCell<TransactionTypeCellData>>;
 }
 
 /** Même géométrie / rendu que le pilule « Statut » (débit), couleurs type OK. */
@@ -725,10 +918,6 @@ function formatAmount(value: string | undefined, type: TransactionType): string 
   }).format(signed);
 }
 
-function formatType(value: string | undefined): string {
-  return value === "CREDIT" ? "Crédit" : "Débit";
-}
-
 export function TransactionsGrid({
   transactions,
   loading = false,
@@ -748,18 +937,31 @@ export function TransactionsGrid({
   transactionsForFilterOptions = [],
   fournisseurs = [],
   settingsClients = [],
+  onQuickCreateFournisseur,
+  onQuickCreateSettingsClient,
   selectionResetNonce,
+  onBeginInternalCreditPair,
 }: TransactionsGridProps) {
   const scale = zoom / 100;
   const fournisseurRenderer = useMemo(
-    () => createFournisseurRenderer(fournisseurs),
-    [fournisseurs]
+    () =>
+      createFournisseurRenderer(fournisseurs, {
+        onQuickCreate: onQuickCreateFournisseur,
+      }),
+    [fournisseurs, onQuickCreateFournisseur]
   );
   const settingsClientRenderer = useMemo(
-    () => createSettingsClientRenderer(settingsClients),
-    [settingsClients]
+    () =>
+      createSettingsClientRenderer(settingsClients, {
+        onQuickCreate: onQuickCreateSettingsClient,
+      }),
+    [settingsClients, onQuickCreateSettingsClient]
   );
   const debitStatusRenderer = useMemo(() => createDebitStatusRenderer(), []);
+  const transactionTypeRenderer = useMemo(
+    () => createTransactionTypeRenderer(onBeginInternalCreditPair),
+    [onBeginInternalCreditPair]
+  );
   const invoiceLinkRenderer = useMemo(() => createInvoiceLinkRenderer(), []);
   const deleteActionRenderer = useMemo(() => createDeleteActionRenderer(), []);
   const [selection, setSelection] = useState<GridSelection>({
@@ -1020,11 +1222,16 @@ export function TransactionsGrid({
         };
       }
       if (field === "type") {
-        const display = formatType(txn.type);
+        const value = (txn.type ?? "DEBIT") as TransactionType;
         return {
-          kind: GridCellKind.Text,
-          data: txn.type ?? "",
-          displayData: display,
+          kind: GridCellKind.Custom,
+          data: {
+            type: "txn_type" as const,
+            value,
+            transactionId: txn.id,
+            canBeInternalSource: txn.type === "CREDIT",
+          },
+          copyData: transactionTypeLabel(value),
           allowOverlay: true,
         };
       }
@@ -1221,19 +1428,19 @@ export function TransactionsGrid({
         if (value === undefined) return;
       } else if (newValue.kind === GridCellKind.Number) {
         value = newValue.data;
-      } else if (newValue.kind === GridCellKind.Text) {
-        if (field === "type") {
-          const raw = (newValue.data as string).toUpperCase();
-          value = raw === "DEBIT" || raw === "DÉBIT" ? "DEBIT" : raw === "CREDIT" || raw === "CRÉDIT" ? "CREDIT" : raw;
-          try {
-            await onCellValueChanged(txn.id, field, value);
-          } catch {
-            // Page handles error display
-          }
-          return;
-        } else {
-          value = newValue.data;
+      } else if (newValue.kind === GridCellKind.Custom && field === "type") {
+        const d = (newValue as CustomCell<TransactionTypeCellData>).data;
+        if (d?.type !== "txn_type") return;
+        const nextType = d.value;
+        if (nextType === "INTERNAL_CREDIT") return;
+        try {
+          await onCellValueChanged(txn.id, "type", nextType);
+        } catch {
+          // Page handles error display
         }
+        return;
+      } else if (newValue.kind === GridCellKind.Text) {
+        value = newValue.data;
       } else {
         return;
       }
@@ -1273,7 +1480,7 @@ export function TransactionsGrid({
         if (txn.type === "DEBIT") {
           debitsTotal += num;
           sum -= num;
-        } else {
+        } else if (isCreditLikeType(txn.type)) {
           creditsTotal += num;
           sum += num;
         }
@@ -1574,6 +1781,7 @@ export function TransactionsGrid({
                   fournisseurRenderer,
                   settingsClientRenderer,
                   debitStatusRenderer,
+                  transactionTypeRenderer,
                   invoiceLinkRenderer,
                   deleteActionRenderer,
                 ]}

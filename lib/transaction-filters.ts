@@ -1,4 +1,5 @@
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
+import { isCreditLikeType } from "@/lib/transaction-type";
 
 /** Mode du filtre min/max sur la colonne Montant : signé (comme à l’écran) ou montant brut par type. */
 export type TransactionAmountFilterMode = "signed" | TransactionType;
@@ -122,7 +123,7 @@ export function applyClientTransactionFilters(
         if (minN != null && !Number.isNaN(minN) && raw < minN) return false;
         if (maxN != null && !Number.isNaN(maxN) && raw > maxN) return false;
       } else {
-        if (t.type !== "CREDIT") return false;
+        if (!isCreditLikeType(t.type)) return false;
         if (minN != null && !Number.isNaN(minN) && raw < minN) return false;
         if (maxN != null && !Number.isNaN(maxN) && raw > maxN) return false;
       }
@@ -246,7 +247,8 @@ export function normalizeTransactionFilters(
 
   if (f.typeFilter.mode === "include") {
     const types = f.typeFilter.types;
-    if (types.includes("DEBIT") && types.includes("CREDIT") && types.length === 2) {
+    const allTypes: TransactionType[] = ["DEBIT", "CREDIT", "INTERNAL_CREDIT"];
+    if (types.length === allTypes.length && allTypes.every((t) => types.includes(t))) {
       out.typeFilter = { mode: "all" };
     }
   }

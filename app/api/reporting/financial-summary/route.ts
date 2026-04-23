@@ -43,9 +43,25 @@ export async function GET(request: NextRequest) {
     const rows = await sql`
       SELECT
         COALESCE(SUM(CASE WHEN t.type = 'CREDIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS chiffre_affaires,
-        COALESCE(SUM(CASE WHEN t.type = 'DEBIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS debits_total,
+        COALESCE(SUM(CASE
+          WHEN t.type = 'DEBIT'::transactiontype
+            AND NOT EXISTS (
+              SELECT 1 FROM transactions ic
+              WHERE ic.internal_transfer_debit_id = t.id
+                AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+            )
+          THEN t.amount::numeric
+          ELSE 0
+        END), 0)::float AS debits_total,
         COUNT(*) FILTER (WHERE t.type = 'CREDIT'::transactiontype)::int AS credits_count,
-        COUNT(*) FILTER (WHERE t.type = 'DEBIT'::transactiontype)::int AS debits_count
+        COUNT(*) FILTER (
+          WHERE t.type = 'DEBIT'::transactiontype
+            AND NOT EXISTS (
+              SELECT 1 FROM transactions ic
+              WHERE ic.internal_transfer_debit_id = t.id
+                AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+            )
+        )::int AS debits_count
       FROM transactions t
       LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
       LEFT JOIN banks b ON b.id = ba.bank_id

@@ -264,10 +264,7 @@ export function GenerateInvoiceModal({
                 {transactions.map((t) => {
                   const num = Number(t.amount);
                   const mag = Math.abs(num);
-                  const signed =
-                    t.type === "DEBIT"
-                      ? -mag
-                      : mag;
+                  const signed = t.type === "DEBIT" ? -mag : mag;
                   const line = new Intl.NumberFormat("fr-FR", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,

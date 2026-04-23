@@ -6,7 +6,8 @@ import type { TransactionType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
+/** Types modifiables via PATCH (INTERNAL_CREDIT : route dédiée `internal-credit-pair`). */
+const PATCHABLE_TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -64,7 +65,16 @@ export async function PATCH(
       updates.description = body.description;
     }
     if (body.type !== undefined) {
-      if (!TRANSACTION_TYPES.includes(body.type)) {
+      if (body.type === "INTERNAL_CREDIT") {
+        return NextResponse.json(
+          {
+            error:
+              "Utilisez la sélection « Crédit interne » dans le tableau et le modal d’appariement (POST internal-credit-pair).",
+          },
+          { status: 400 }
+        );
+      }
+      if (!PATCHABLE_TRANSACTION_TYPES.includes(body.type)) {
         return NextResponse.json(
           { error: "Invalid type (expected DEBIT or CREDIT)" },
           { status: 400 }
@@ -159,7 +169,7 @@ export async function PATCH(
     }
 
     const existingRows = await sql`
-      SELECT bank_account_id, transaction_date, amount, description, type
+      SELECT bank_account_id, transaction_date, amount, description, type, internal_transfer_debit_id
       FROM transactions
       WHERE id = ${id}::uuid
     `;
@@ -169,8 +179,20 @@ export async function PATCH(
     }
 
     const existingType = String((existing as { type?: string }).type ?? "");
+    const existingPairId = (existing as { internal_transfer_debit_id?: string | null })
+      .internal_transfer_debit_id;
     const effectiveType =
       updates.type !== undefined ? String(updates.type) : existingType;
+
+    if (existingType === "INTERNAL_CREDIT" && updates.type === "DEBIT") {
+      return NextResponse.json(
+        { error: "Impasse de passer un crédit interne en débit." },
+        { status: 400 }
+      );
+    }
+
+    const clearInternalPair =
+      updates.type === "CREDIT" && existingType === "INTERNAL_CREDIT";
 
     if (
       updates.debit_status !== undefined &&
@@ -218,6 +240,9 @@ export async function PATCH(
       setClauses.push(`debit_status = $${idx++}`);
       values.push(updates.debit_status);
     }
+    if (clearInternalPair) {
+      setClauses.push("internal_transfer_debit_id = NULL");
+    }
     values.push(id);
 
     const queryText = `
@@ -228,6 +253,32 @@ export async function PATCH(
 
     try {
       await sql.query(queryText, values);
+
+      const finalType = updates.type !== undefined ? String(updates.type) : existingType;
+      let pairedDebitId: string | null =
+        existingPairId != null && String(existingPairId) !== ""
+          ? String(existingPairId)
+          : null;
+      if (clearInternalPair || finalType !== "INTERNAL_CREDIT") {
+        pairedDebitId = null;
+      }
+      if (
+        updates.fournisseur_id !== undefined &&
+        finalType === "INTERNAL_CREDIT" &&
+        pairedDebitId
+      ) {
+        const fid = updates.fournisseur_id;
+        if (fid === null || fid === "") {
+          await sql`
+            UPDATE transactions SET fournisseur_id = NULL WHERE id = ${pairedDebitId}::uuid
+          `;
+        } else {
+          await sql`
+            UPDATE transactions SET fournisseur_id = ${fid}::uuid WHERE id = ${pairedDebitId}::uuid
+          `;
+        }
+      }
+
       const fullRows = await sql`
         SELECT
           t.id,
@@ -236,6 +287,7 @@ export async function PATCH(
           t.amount,
           t.description,
           t.type,
+          t.internal_transfer_debit_id,
           t.raw_image_path,
           t.extracted_data_json,
           t.created_at,

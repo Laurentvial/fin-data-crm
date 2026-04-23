@@ -82,7 +82,16 @@ export async function GET(request: NextRequest) {
         SELECT
           t.transaction_date::text AS day,
           COALESCE(SUM(CASE WHEN t.type = 'CREDIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS credits,
-          COALESCE(SUM(CASE WHEN t.type = 'DEBIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS debits
+          COALESCE(SUM(CASE
+            WHEN t.type = 'DEBIT'::transactiontype
+              AND NOT EXISTS (
+                SELECT 1 FROM transactions ic
+                WHERE ic.internal_transfer_debit_id = t.id
+                  AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+              )
+            THEN t.amount::numeric
+            ELSE 0
+          END), 0)::float AS debits
         FROM transactions t
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
         LEFT JOIN banks b ON b.id = ba.bank_id
@@ -138,7 +147,16 @@ export async function GET(request: NextRequest) {
         SELECT
           date_trunc('hour', t.created_at AT TIME ZONE 'Europe/Paris') AS bh,
           COALESCE(SUM(CASE WHEN t.type = 'CREDIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS credits,
-          COALESCE(SUM(CASE WHEN t.type = 'DEBIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS debits
+          COALESCE(SUM(CASE
+            WHEN t.type = 'DEBIT'::transactiontype
+              AND NOT EXISTS (
+                SELECT 1 FROM transactions ic
+                WHERE ic.internal_transfer_debit_id = t.id
+                  AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+              )
+            THEN t.amount::numeric
+            ELSE 0
+          END), 0)::float AS debits
         FROM transactions t
         LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
         LEFT JOIN banks b ON b.id = ba.bank_id

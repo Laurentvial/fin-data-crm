@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
 
     const withAccount = await sql`
       SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
+        t.internal_transfer_debit_id,
         t.raw_image_path, t.extracted_data_json, t.created_at, t.processed_by_user_id,
         t.debit_status,
         t.fournisseur_id, fn.name AS fournisseur_name,
@@ -153,6 +154,7 @@ export async function GET(request: NextRequest) {
           t.amount,
           t.description,
           t.type,
+          t.internal_transfer_debit_id,
           t.raw_image_path,
           t.extracted_data_json,
           t.created_at,

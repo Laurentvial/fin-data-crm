@@ -17,12 +17,9 @@ import {
   type TransactionFilterValues,
   PROCESSED_BY_EMPTY_KEY,
 } from "@/lib/transaction-filters";
+import { transactionTypeLabel } from "@/lib/transaction-type";
 
-const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
-
-function typeLabel(t: TransactionType): string {
-  return t === "CREDIT" ? "Crédit" : "Débit";
-}
+const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT", "INTERNAL_CREDIT"];
 
 export interface FilterMenuAnchor {
   left: number;
@@ -504,7 +501,7 @@ export function TransactionColumnFilterMenu({
           {sectionTitle("Filtrer par valeurs")}
           <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
             <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
-              Tout sélectionner (2)
+              Tout sélectionner ({TRANSACTION_TYPES.length})
             </button>
             <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
               Effacer
@@ -526,21 +523,21 @@ export function TransactionColumnFilterMenu({
           </div>
         </div>
         <ul className={valueListUlClass}>
-          {TRANSACTION_TYPES.filter((t) => typeLabel(t).toLowerCase().includes(valueSearch.trim().toLowerCase())).map(
-            (t) => (
-              <li key={t}>
-                <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(t)}
-                    onChange={() => toggle(t)}
-                    className="rounded border-[var(--border)]"
-                  />
-                  {typeLabel(t)}
-                </label>
-              </li>
-            )
-          )}
+          {TRANSACTION_TYPES.filter((t) =>
+            transactionTypeLabel(t).toLowerCase().includes(valueSearch.trim().toLowerCase())
+          ).map((t) => (
+            <li key={t}>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={selected.has(t)}
+                  onChange={() => toggle(t)}
+                  className="rounded border-[var(--border)]"
+                />
+                {transactionTypeLabel(t)}
+              </label>
+            </li>
+          ))}
         </ul>
       </>
     );

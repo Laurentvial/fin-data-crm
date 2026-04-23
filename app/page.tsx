@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InternalCreditPairModal } from "@/components/InternalCreditPairModal";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { ImportBankStatementModal } from "@/components/ImportBankStatementModal";
 import { GenerateInvoiceModal } from "@/components/GenerateInvoiceModal";
@@ -17,6 +18,7 @@ import {
   singleInvoiceDisabledReason,
 } from "@/lib/grouped-invoice-selection";
 import { DEFAULT_TRANSACTION_TABLE_SORT } from "@/lib/transaction-sort";
+import { isCreditLikeType, transactionTypeLabel } from "@/lib/transaction-type";
 import {
   applyClientTransactionFilters,
   DEFAULT_TRANSACTION_FILTERS,
@@ -41,7 +43,7 @@ const TransactionsGrid = dynamic(
 
 function signedAmount(t: Transaction): number {
   const num = Number(t.amount);
-  return (Number.isNaN(num) ? 0 : t.type === "DEBIT" ? -num : num);
+  return Number.isNaN(num) ? 0 : t.type === "DEBIT" ? -num : num;
 }
 
 /** Jour courant en fuseau local (YYYY-MM-DD). */
@@ -107,6 +109,7 @@ function HomeContent() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [importStatementModalOpen, setImportStatementModalOpen] = useState(false);
   const [invoiceModalTransactions, setInvoiceModalTransactions] = useState<Transaction[] | null>(null);
+  const [internalCreditModalTxn, setInternalCreditModalTxn] = useState<Transaction | null>(null);
   const [zoom, setZoom] = useState(100);
   const [sortState, setSortState] = useState<{
     column: string;
@@ -159,9 +162,13 @@ function HomeContent() {
           cmp = sa - sb;
           break;
         }
-        case "type":
-          cmp = (a.type === "DEBIT" ? 0 : 1) - (b.type === "DEBIT" ? 0 : 1);
+        case "type": {
+          const rank = (x: Transaction) =>
+            x.type === "DEBIT" ? 0 : x.type === "CREDIT" ? 1 : x.type === "INTERNAL_CREDIT" ? 2 : 3;
+          cmp = rank(a) - rank(b);
+          if (cmp === 0) cmp = (a.type ?? "").localeCompare(b.type ?? "");
           break;
+        }
         case "debit_status": {
           const key = (t: Transaction) =>
             t.type === "DEBIT" ? (t.debit_status ?? "") : "\uFFFF";
@@ -229,7 +236,7 @@ function HomeContent() {
       const num = Number(t.amount);
       if (Number.isNaN(num)) continue;
       if (t.type === "DEBIT") debits += num;
-      else credits += num;
+      else if (isCreditLikeType(t.type)) credits += num;
     }
     return { summaryDebitsTotal: debits, summaryCreditsTotal: credits };
   }, [transactionsForSummaryTotals]);
@@ -397,6 +404,62 @@ function HomeContent() {
     setFilterValues(DEFAULT_TRANSACTION_FILTERS);
   }, []);
 
+  const handleQuickCreateFournisseur = useCallback(async (): Promise<Fournisseur | null> => {
+    const name = window.prompt("Nom du nouveau fournisseur :");
+    if (name == null) return null;
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    try {
+      const res = await fetch("/api/fournisseurs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, sort_order: fournisseurs.length }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string } & Partial<Fournisseur>;
+      if (!res.ok) {
+        window.alert(typeof data.error === "string" ? data.error : `Erreur HTTP ${res.status}`);
+        return null;
+      }
+      if (!data.id || !data.name) {
+        window.alert("Réponse serveur inattendue.");
+        return null;
+      }
+      await fetchFournisseurs();
+      return data as Fournisseur;
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Erreur réseau.");
+      return null;
+    }
+  }, [fournisseurs.length, fetchFournisseurs]);
+
+  const handleQuickCreateSettingsClient = useCallback(async (): Promise<AccountType | null> => {
+    const name = window.prompt("Nom du nouveau client :");
+    if (name == null) return null;
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    try {
+      const res = await fetch("/api/account-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, sort_order: settingsClients.length }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string } & Partial<AccountType>;
+      if (!res.ok) {
+        window.alert(typeof data.error === "string" ? data.error : `Erreur HTTP ${res.status}`);
+        return null;
+      }
+      if (!data.id || !data.name) {
+        window.alert("Réponse serveur inattendue.");
+        return null;
+      }
+      await fetchSettingsClients();
+      return data as AccountType;
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Erreur réseau.");
+      return null;
+    }
+  }, [settingsClients.length, fetchSettingsClients]);
+
   const handleCellValueChanged = useCallback(
     async (id: string, field: string, value: unknown) => {
       const body: Record<string, unknown> = { [field]: value };
@@ -476,6 +539,16 @@ function HomeContent() {
     setAddModalOpen(false);
     fetchTransactions();
   }, [fetchTransactions]);
+
+  const handleBeginInternalCreditPair = useCallback(
+    (creditId: string) => {
+      const t = transactions.find((x) => x.id === creditId);
+      if (t?.type === "CREDIT") {
+        setInternalCreditModalTxn(t);
+      }
+    },
+    [transactions]
+  );
 
   const handleImportStatementSuccess = useCallback(
     (insertedCount: number) => {
@@ -598,7 +671,7 @@ function HomeContent() {
         t.bank_name ?? "",
         t.company_name ?? "",
         signed,
-        t.type,
+        transactionTypeLabel(t.type),
         t.description ?? "",
         t.fournisseur_name ?? "",
         t.client_name ?? "",
@@ -667,7 +740,10 @@ function HomeContent() {
               transactionsForFilterOptions={sortedTransactions}
               fournisseurs={fournisseurs}
               settingsClients={settingsClients}
+              onQuickCreateFournisseur={handleQuickCreateFournisseur}
+              onQuickCreateSettingsClient={handleQuickCreateSettingsClient}
               selectionResetNonce={transactionGridSelectionResetNonce}
+              onBeginInternalCreditPair={handleBeginInternalCreditPair}
             />
           </div>
         </div>
@@ -702,6 +778,15 @@ function HomeContent() {
           transactions={invoiceModalTransactions}
           onClose={() => setInvoiceModalTransactions(null)}
           onSuccess={handleInvoiceSuccess}
+        />
+      )}
+      {internalCreditModalTxn && (
+        <InternalCreditPairModal
+          credit={internalCreditModalTxn}
+          fournisseurs={fournisseurs}
+          onQuickCreateFournisseur={handleQuickCreateFournisseur}
+          onClose={() => setInternalCreditModalTxn(null)}
+          onPaired={() => void fetchTransactions()}
         />
       )}
       <SheetFooter

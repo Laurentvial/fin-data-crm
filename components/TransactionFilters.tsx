@@ -90,6 +90,7 @@ export function TransactionFilters({
           <option value="">Tous</option>
           <option value="DEBIT">Débit</option>
           <option value="CREDIT">Crédit</option>
+          <option value="INTERNAL_CREDIT">Crédit interne</option>
         </select>
       </div>
       <button
