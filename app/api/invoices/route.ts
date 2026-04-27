@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 import { generateInvoice } from "@/lib/invoicing/generate-invoice";
+import { createManualInvoice } from "@/lib/invoicing/create-manual-invoice";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -12,6 +13,13 @@ async function requireAuth() {
     );
   }
   return null;
+}
+
+function isValidDate(s: string): boolean {
+  if (typeof s !== "string") return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime());
 }
 
 function parseTransactionIds(body: unknown): string[] | null {
@@ -39,16 +47,28 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const transactionIds = parseTransactionIds(body);
+    const companyId =
+      typeof (body as { company_id?: unknown })?.company_id === "string"
+        ? ((body as { company_id: string }).company_id.trim() || null)
+        : null;
     const customerName = typeof body?.customer_name === "string" ? body.customer_name.trim() : "";
     const customerAddress =
       typeof body?.customer_address === "string" ? body.customer_address.trim() || undefined : undefined;
     const customerVat =
       typeof body?.customer_vat === "string" ? body.customer_vat.trim() || undefined : undefined;
+    const issueDate =
+      typeof (body as { issue_date?: unknown })?.issue_date === "string"
+        ? (body as { issue_date: string }).issue_date.trim()
+        : "";
+    const dueDate =
+      typeof (body as { due_date?: unknown })?.due_date === "string"
+        ? (body as { due_date: string }).due_date.trim()
+        : "";
     const lineItemsRaw = Array.isArray(body?.line_items) ? body.line_items : [];
 
-    if (!transactionIds || transactionIds.length === 0) {
+    if ((!transactionIds || transactionIds.length === 0) && !companyId) {
       return NextResponse.json(
-        { error: "transaction_ids (tableau non vide) ou transaction_id est requis" },
+        { error: "transaction_ids (tableau non vide) / transaction_id, ou company_id est requis" },
         { status: 400 }
       );
     }
@@ -93,18 +113,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await generateInvoice({
-      transactionIds,
-      customerName,
-      customerAddress,
-      customerVat,
-      lineItems,
-    });
+    const isManual = !transactionIds || transactionIds.length === 0;
+    if (isManual) {
+      if (!issueDate || !isValidDate(issueDate)) {
+        return NextResponse.json(
+          { error: "issue_date est requis (format YYYY-MM-DD)" },
+          { status: 400 }
+        );
+      }
+      if (!dueDate || !isValidDate(dueDate)) {
+        return NextResponse.json(
+          { error: "due_date est requis (format YYYY-MM-DD)" },
+          { status: 400 }
+        );
+      }
+      if (new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()) {
+        return NextResponse.json(
+          { error: "due_date doit être postérieur ou égal à issue_date" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const result = isManual
+      ? await createManualInvoice({
+          companyId: companyId as string,
+          customerName,
+          customerAddress,
+          customerVat,
+          issueDate,
+          dueDate,
+          lineItems,
+        })
+      : await generateInvoice({
+          transactionIds: transactionIds as string[],
+          customerName,
+          customerAddress,
+          customerVat,
+          lineItems,
+        });
 
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("POST /api/invoices error:", err);
+    if (msg.includes("Société introuvable")) {
+      return NextResponse.json({ error: msg }, { status: 404 });
+    }
     if (msg.includes("Transaction introuvable")) {
       return NextResponse.json({ error: "Transaction introuvable" }, { status: 404 });
     }

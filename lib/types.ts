@@ -78,7 +78,7 @@ export interface Customer {
 export interface Invoice {
   id: string;
   company_id: string;
-  transaction_id: string;
+  transaction_id?: string | null;
   invoice_number: string;
   issue_date: string;
   due_date: string;

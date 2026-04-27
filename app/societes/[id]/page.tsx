@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
+import { CreateManualInvoiceModal } from "@/components/CreateManualInvoiceModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
 import {
@@ -25,6 +26,7 @@ import type {
   BankAccount,
   Transaction,
   IbanItem,
+  Invoice,
 } from "@/lib/types";
 
 function formatDateDisplay(iso: string | null | undefined): string {
@@ -32,6 +34,17 @@ function formatDateDisplay(iso: string | null | undefined): string {
   const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   return iso;
+}
+
+function formatAmountDisplay(n: number, currency: string): string {
+  return (
+    new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n) +
+    " " +
+    currency
+  );
 }
 
 function ChevronLeftIcon({ className }: { className?: string }) {
@@ -80,6 +93,10 @@ export default function SocieteDetailPage() {
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [latestInvoices, setLatestInvoices] = useState<Invoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
 
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -211,6 +228,19 @@ export default function SocieteDetailPage() {
             is_default: t.is_default,
           }))
         );
+      }
+
+      setLoadingInvoices(true);
+      try {
+        const resInv = await fetch(`/api/invoices?company_id=${id}&limit=5`);
+        if (resInv.ok) {
+          const invData = await resInv.json();
+          setLatestInvoices(Array.isArray(invData) ? invData : []);
+        } else {
+          setLatestInvoices([]);
+        }
+      } finally {
+        setLoadingInvoices(false);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1177,12 +1207,6 @@ export default function SocieteDetailPage() {
                 >
                   Modifier les informations
                 </Link>
-                <Link
-                  href={`/societes/${id}/factures`}
-                  className="text-sm text-[var(--primary)] hover:underline"
-                >
-                  Voir les factures
-                </Link>
               </div>
             </section>
 
@@ -1415,6 +1439,73 @@ export default function SocieteDetailPage() {
           </section>
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="section-header text-lg font-medium">Factures</h2>
+              <div className="flex items-center gap-3">
+                <Link
+                  href={`/societes/${id}/factures`}
+                  className="text-sm text-[var(--primary)] hover:underline"
+                >
+                  Voir tout
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceModalOpen(true)}
+                  className="rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                >
+                  Créer une facture
+                </button>
+              </div>
+            </div>
+
+            {loadingInvoices ? (
+              <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+            ) : latestInvoices.length === 0 ? (
+              <p className="text-sm text-[var(--muted-foreground)]">Aucune facture pour cette société.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)] bg-[var(--muted)]/50">
+                      <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">N°</th>
+                      <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Date</th>
+                      <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Client</th>
+                      <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">Montant</th>
+                      <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {latestInvoices.map((inv) => (
+                      <tr key={inv.id} className="border-t border-[var(--border)]">
+                        <td className="px-4 py-3 font-medium">{inv.invoice_number}</td>
+                        <td className="px-4 py-3">{formatDateDisplay(inv.issue_date)}</td>
+                        <td className="px-4 py-3">{inv.customer_name}</td>
+                        <td className="px-4 py-3 text-right">
+                          {formatAmountDisplay(inv.total, inv.currency)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {inv.pdf_url ? (
+                            <a
+                              href={`/api/invoices/${inv.id}/pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[var(--primary)] hover:underline"
+                            >
+                              Voir
+                            </a>
+                          ) : (
+                            <span className="text-[var(--muted-foreground)]">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
               <h2 className="section-header text-lg font-medium">Comptes bancaires</h2>
               <button
@@ -1470,6 +1561,17 @@ export default function SocieteDetailPage() {
           }}
           onClose={() => setBankAccountToDelete(null)}
           deleting={deletingBankAccountId === bankAccountToDelete.id}
+        />
+      )}
+
+      {invoiceModalOpen && company?.id && (
+        <CreateManualInvoiceModal
+          companyId={company.id}
+          companyName={company.name}
+          onClose={() => setInvoiceModalOpen(false)}
+          onSuccess={() => {
+            void fetchData();
+          }}
         />
       )}
 

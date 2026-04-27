@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type { Invoice } from "@/lib/types";
+import { CreateManualInvoiceModal } from "@/components/CreateManualInvoiceModal";
 
 function ChevronLeftIcon({ className }: { className?: string }) {
   return (
@@ -21,6 +22,7 @@ export default function SocieteFacturesPage() {
   const [companyName, setCompanyName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -81,6 +83,17 @@ export default function SocieteFacturesPage() {
           Factures – {companyName || "Société"}
         </h1>
 
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div />
+          <button
+            type="button"
+            onClick={() => setCreateInvoiceOpen(true)}
+            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+          >
+            Créer une facture
+          </button>
+        </div>
+
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
             {error}
@@ -133,6 +146,17 @@ export default function SocieteFacturesPage() {
           </div>
         )}
       </main>
+
+      {createInvoiceOpen && (
+        <CreateManualInvoiceModal
+          companyId={id}
+          companyName={companyName}
+          onClose={() => setCreateInvoiceOpen(false)}
+          onSuccess={() => {
+            void fetchData();
+          }}
+        />
+      )}
     </div>
   );
 }
