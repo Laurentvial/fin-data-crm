@@ -14,6 +14,8 @@ const DEFAULT_TEMPLATE = readFileSync(
 
 export interface CreateManualInvoiceInput {
   companyId: string;
+  /** Optional bank account used for payment (IBAN/BIC) display in PDF. */
+  bankAccountId?: string;
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
@@ -71,6 +73,7 @@ export async function createManualInvoice(
 ): Promise<CreateManualInvoiceResult> {
   const {
     companyId,
+    bankAccountId,
     customerName,
     customerAddress,
     customerVat,
@@ -166,14 +169,28 @@ export async function createManualInvoice(
 
   // Payment info: pick first available IBAN of any account of the company.
   let payment: { iban?: string; bic?: string } | undefined;
-  const ibanRows = await sql`
-    SELECT i.iban, i.bic
-    FROM bank_accounts ba
-    JOIN bank_account_ibans i ON i.bank_account_id = ba.id
-    WHERE ba.company_id = ${companyId}::uuid
-    ORDER BY i.created_at
-    LIMIT 1
-  `;
+  const bankAccountIdNorm =
+    typeof bankAccountId === "string" && bankAccountId.trim()
+      ? bankAccountId.trim()
+      : null;
+  const ibanRows = bankAccountIdNorm
+    ? await sql`
+        SELECT i.iban, i.bic
+        FROM bank_accounts ba
+        JOIN bank_account_ibans i ON i.bank_account_id = ba.id
+        WHERE ba.company_id = ${companyId}::uuid
+          AND ba.id = ${bankAccountIdNorm}::uuid
+        ORDER BY i.created_at
+        LIMIT 1
+      `
+    : await sql`
+        SELECT i.iban, i.bic
+        FROM bank_accounts ba
+        JOIN bank_account_ibans i ON i.bank_account_id = ba.id
+        WHERE ba.company_id = ${companyId}::uuid
+        ORDER BY i.created_at
+        LIMIT 1
+      `;
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
   if (ibanRow?.iban) {
     const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();

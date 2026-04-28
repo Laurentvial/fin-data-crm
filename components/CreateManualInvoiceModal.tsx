@@ -41,6 +41,17 @@ export function CreateManualInvoiceModal({
   onClose,
   onSuccess,
 }: CreateManualInvoiceModalProps) {
+  const [bankAccounts, setBankAccounts] = useState<
+    Array<{
+      id: string;
+      company_id: string;
+      name: string;
+      bank_name?: string | null;
+      ibans?: Array<{ iban: string; bic?: string | null }> | null;
+    }>
+  >([]);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("");
+
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerVat, setCustomerVat] = useState("");
@@ -68,6 +79,11 @@ export function CreateManualInvoiceModal({
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Company changed: reset bank selection immediately to avoid carrying an ID from another company.
+    setSelectedBankAccountId("");
+  }, [companyId]);
+
+  useEffect(() => {
     if (!companyId) return;
     fetch(`/api/accounts/${companyId}`)
       .then((res) => (res.ok ? res.json() : null))
@@ -88,6 +104,28 @@ export function CreateManualInvoiceModal({
         );
       })
       .catch(() => {});
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetch("/api/bank-accounts")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const filtered = list.filter((ba) => ba?.company_id === companyId);
+        setBankAccounts(filtered);
+        setSelectedBankAccountId((prev) => {
+          // Keep previous selection only if it still belongs to the current company.
+          if (prev && filtered.some((ba) => String(ba?.id ?? "") === prev)) return prev;
+          // If there's exactly one bank account, preselect it.
+          if (filtered.length === 1) return String(filtered[0]?.id ?? "");
+          // Otherwise fall back to "Automatique".
+          return "";
+        });
+      })
+      .catch(() => {
+        setBankAccounts([]);
+      });
   }, [companyId]);
 
   const fetchCustomers = useCallback(
@@ -206,11 +244,14 @@ export function CreateManualInvoiceModal({
     setError(null);
     setSaving(true);
     try {
+      const bankAccountId =
+        selectedBankAccountId.trim() ? selectedBankAccountId.trim() : undefined;
       const res = await fetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           company_id: companyId,
+          bank_account_id: bankAccountId,
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
@@ -270,6 +311,34 @@ export function CreateManualInvoiceModal({
               />
             </div>
           </div>
+
+          {bankAccounts.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                Compte bancaire (pour l’IBAN/BIC sur la facture)
+              </label>
+              <Select
+                value={selectedBankAccountId}
+                onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                className="w-full py-2 text-sm"
+              >
+                <option value="">Automatique (premier IBAN de la société)</option>
+                {bankAccounts.map((ba) => {
+                  const ibans = Array.isArray(ba.ibans) ? ba.ibans : [];
+                  const firstIban = typeof ibans[0]?.iban === "string" ? ibans[0]!.iban : "";
+                  const ibanLabel = firstIban ? ` — ${firstIban.slice(0, 6)}…${firstIban.slice(-4)}` : "";
+                  const bankLabel = ba.bank_name ? `${ba.bank_name} · ` : "";
+                  return (
+                    <option key={ba.id} value={ba.id}>
+                      {bankLabel}
+                      {ba.name}
+                      {ibanLabel}
+                    </option>
+                  );
+                })}
+              </Select>
+            </div>
+          )}
 
           <div ref={customerListRef} className="relative">
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du client *</label>

@@ -51,6 +51,10 @@ export async function POST(request: NextRequest) {
       typeof (body as { company_id?: unknown })?.company_id === "string"
         ? ((body as { company_id: string }).company_id.trim() || null)
         : null;
+    const bankAccountId =
+      typeof (body as { bank_account_id?: unknown })?.bank_account_id === "string"
+        ? ((body as { bank_account_id: string }).bank_account_id.trim() || undefined)
+        : undefined;
     const customerName = typeof body?.customer_name === "string" ? body.customer_name.trim() : "";
     const customerAddress =
       typeof body?.customer_address === "string" ? body.customer_address.trim() || undefined : undefined;
@@ -133,11 +137,27 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (bankAccountId && companyId) {
+        const checkRows = await sql`
+          SELECT 1
+          FROM bank_accounts
+          WHERE id = ${bankAccountId}::uuid AND company_id = ${companyId}::uuid
+          LIMIT 1
+        `;
+        const ok = Array.isArray(checkRows) ? checkRows[0] : checkRows;
+        if (!ok) {
+          return NextResponse.json(
+            { error: "bank_account_id invalide (ne correspond pas à cette société)" },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     const result = isManual
       ? await createManualInvoice({
           companyId: companyId as string,
+          bankAccountId,
           customerName,
           customerAddress,
           customerVat,
