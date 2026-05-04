@@ -250,7 +250,7 @@ export async function generateInvoice(
 
   let invoiceNumber = "";
   let invoiceId = "";
-  let pdfBuffer: Buffer;
+  let pdfBytes: Buffer | null = null;
 
   const maxAttempts = 12;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -301,7 +301,7 @@ export async function generateInvoice(
     };
 
     const html = renderHandlebarsTemplate(templateContent, templateData);
-    pdfBuffer = await htmlToPdfBuffer(html);
+    pdfBytes = await htmlToPdfBuffer(html);
 
     let insertRows: unknown;
     try {
@@ -340,7 +340,7 @@ export async function generateInvoice(
     break;
   }
 
-  if (!invoiceId || !invoiceNumber) {
+  if (!invoiceId || !invoiceNumber || !pdfBytes) {
     throw new Error(
       "Impossible d'allouer un numéro de facture unique après plusieurs tentatives " +
         "(conflits sur `invoice_number`). Vérifiez les doublons existants ou les préfixes partagés entre sociétés."
@@ -353,7 +353,7 @@ export async function generateInvoice(
     FROM unnest(${transactionIds}::uuid[]) AS u(tid)
   `;
 
-  const pdfUrl = await uploadPdfToCloudinary(pdfBuffer, companyId, invoiceId);
+  const pdfUrl = await uploadPdfToCloudinary(pdfBytes, companyId, invoiceId);
 
   await sql`
     UPDATE invoices SET pdf_url = ${pdfUrl}, updated_at = NOW() WHERE id = ${invoiceId}::uuid

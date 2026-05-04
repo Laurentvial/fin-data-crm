@@ -125,17 +125,19 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (!dueDate || !isValidDate(dueDate)) {
-        return NextResponse.json(
-          { error: "due_date est requis (format YYYY-MM-DD)" },
-          { status: 400 }
-        );
-      }
-      if (new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()) {
-        return NextResponse.json(
-          { error: "due_date doit être postérieur ou égal à issue_date" },
-          { status: 400 }
-        );
+      if (dueDate) {
+        if (!isValidDate(dueDate)) {
+          return NextResponse.json(
+            { error: "due_date doit être au format YYYY-MM-DD (ou omis)" },
+            { status: 400 }
+          );
+        }
+        if (new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()) {
+          return NextResponse.json(
+            { error: "due_date doit être postérieur ou égal à issue_date" },
+            { status: 400 }
+          );
+        }
       }
       if (bankAccountId && companyId) {
         const checkRows = await sql`
@@ -162,7 +164,7 @@ export async function POST(request: NextRequest) {
           customerAddress,
           customerVat,
           issueDate,
-          dueDate,
+          dueDate: dueDate || undefined,
           lineItems,
         })
       : await generateInvoice({

@@ -20,7 +20,8 @@ export interface CreateManualInvoiceInput {
   customerAddress?: string;
   customerVat?: string;
   issueDate: string; // YYYY-MM-DD
-  dueDate: string; // YYYY-MM-DD
+  /** Optional due date (YYYY-MM-DD). */
+  dueDate?: string;
   lineItems: InvoiceLineItemInput[];
 }
 
@@ -81,6 +82,11 @@ export async function createManualInvoice(
     dueDate,
     lineItems: lineItemsInput,
   } = input;
+
+  const dueDateSql =
+    typeof dueDate === "string" && dueDate.trim() && /^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())
+      ? dueDate.trim()
+      : null;
 
   const companyRows = await sql`
     SELECT
@@ -215,7 +221,7 @@ export async function createManualInvoice(
 
   let invoiceNumber = "";
   let invoiceId = "";
-  let pdfBuffer: Buffer;
+  let pdfBytes: Buffer | null = null;
 
   const maxAttempts = 12;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -249,7 +255,7 @@ export async function createManualInvoice(
       invoice: {
         number: invoiceNumber,
         issueDate,
-        dueDate,
+        dueDate: dueDateSql ?? "",
         subtotal,
         taxAmount,
         total,
@@ -266,7 +272,7 @@ export async function createManualInvoice(
     };
 
     const html = renderHandlebarsTemplate(templateContent, templateData);
-    pdfBuffer = await htmlToPdfBuffer(html);
+    pdfBytes = await htmlToPdfBuffer(html);
 
     let insertRows: unknown;
     try {
@@ -278,7 +284,7 @@ export async function createManualInvoice(
         )
         VALUES (
           ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
-          ${issueDate}::date, ${dueDate}::date,
+          ${issueDate}::date, ${dueDateSql}::date,
           ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
           ${JSON.stringify(lineItems)}::jsonb,
           ${subtotal}, ${taxAmount},
@@ -299,6 +305,16 @@ export async function createManualInvoice(
             "(ex: `npm run migrate:045`)."
         );
       }
+      if (
+        pg?.code === "23502" &&
+        (msg.includes("due_date") || msg.includes('"due_date"'))
+      ) {
+        throw new Error(
+          "Schéma DB obsolète: `invoices.due_date` est encore NOT NULL. " +
+            "Appliquez la migration `migrations/046_invoices_due_date_nullable.sql` " +
+            "(ex: `npm run migrate:046`)."
+        );
+      }
       const isInvoiceNumberDup =
         pg?.code === "23505" &&
         (pg.constraint === "invoices_invoice_number_key" ||
@@ -315,14 +331,14 @@ export async function createManualInvoice(
     break;
   }
 
-  if (!invoiceId || !invoiceNumber) {
+  if (!invoiceId || !invoiceNumber || !pdfBytes) {
     throw new Error(
       "Impossible d'allouer un numéro de facture unique après plusieurs tentatives " +
         "(conflits sur `invoice_number`). Vérifiez les doublons existants ou les préfixes partagés entre sociétés."
     );
   }
 
-  const pdfUrl = await uploadPdfToCloudinary(pdfBuffer, companyId, invoiceId);
+  const pdfUrl = await uploadPdfToCloudinary(pdfBytes, companyId, invoiceId);
 
   await sql`
     UPDATE invoices SET pdf_url = ${pdfUrl}, updated_at = NOW() WHERE id = ${invoiceId}::uuid

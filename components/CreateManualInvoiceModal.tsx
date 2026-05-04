@@ -58,11 +58,7 @@ export function CreateManualInvoiceModal({
 
   const today = useRef(new Date());
   const [issueDate, setIssueDate] = useState<string>(() => toDateStr(today.current));
-  const [dueDate, setDueDate] = useState<string>(() => {
-    const d = new Date(today.current);
-    d.setDate(d.getDate() + 30);
-    return toDateStr(d);
-  });
+  const [dueDate, setDueDate] = useState<string>("");
 
   const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
   const [horsTaxes, setHorsTaxes] = useState(false);
@@ -213,7 +209,6 @@ export function CreateManualInvoiceModal({
     companyId &&
     customerName.trim() &&
     issueDate &&
-    dueDate &&
     getPayloadLineItems().length > 0 &&
     !saving;
 
@@ -227,11 +222,10 @@ export function CreateManualInvoiceModal({
       setError("La date d'émission est requise");
       return;
     }
-    if (!dueDate) {
-      setError("La date d'échéance est requise");
-      return;
-    }
-    if (new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()) {
+    if (
+      dueDate.trim() &&
+      new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()
+    ) {
       setError("La date d'échéance doit être postérieure ou égale à la date d'émission");
       return;
     }
@@ -256,7 +250,7 @@ export function CreateManualInvoiceModal({
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
           issue_date: issueDate,
-          due_date: dueDate,
+          ...(dueDate.trim() ? { due_date: dueDate.trim() } : {}),
           line_items: payloadItems,
         }),
       });
@@ -302,7 +296,7 @@ export function CreateManualInvoiceModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Date d’échéance *</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Date d’échéance (optionnel)</label>
               <input
                 type="date"
                 value={dueDate}

@@ -167,8 +167,10 @@
         <strong>Date d'émission</strong>
         {{formatDate invoice.issueDate}}
         <br><br>
+        {{#if invoice.dueDate}}
         <strong>Échéance</strong>
         {{formatDate invoice.dueDate}}
+        {{/if}}
       </div>
     </header>
 

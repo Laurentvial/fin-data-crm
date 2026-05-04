@@ -81,7 +81,7 @@ export interface Invoice {
   transaction_id?: string | null;
   invoice_number: string;
   issue_date: string;
-  due_date: string;
+  due_date?: string | null;
   customer_name: string;
   customer_address?: string | null;
   customer_vat?: string | null;
