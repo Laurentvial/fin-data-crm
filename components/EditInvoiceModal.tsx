@@ -38,9 +38,15 @@ interface InvoiceDetailsResponse {
   }>;
 }
 
+function createRowId(): string {
+  const maybeCrypto = globalThis.crypto as Crypto | undefined;
+  if (maybeCrypto?.randomUUID) return maybeCrypto.randomUUID();
+  return `row_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function createEmptyRow(defaultVatRate: number): LineItemRow {
   return {
-    id: crypto.randomUUID(),
+    id: createRowId(),
     description: "",
     quantity: 1,
     unit_price_ttc: 0,
@@ -122,7 +128,7 @@ export function EditInvoiceModal({
                   const vatRate = !Number.isNaN(vatRateRaw) ? vatRateRaw : rates[0] ?? 20;
                   if (!li.description || qty <= 0 || unitPriceTtc <= 0) return null;
                   return {
-                    id: crypto.randomUUID(),
+                    id: createRowId(),
                     description: li.description,
                     quantity: qty,
                     unit_price_ttc: unitPriceTtc,
