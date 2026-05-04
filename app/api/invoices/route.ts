@@ -177,6 +177,12 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("POST /api/invoices error:", err);
+    if (msg.includes("Schéma DB obsolète")) {
+      return NextResponse.json({ error: msg }, { status: 503 });
+    }
+    if (msg.includes("Impossible d'allouer un numéro de facture unique")) {
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
     if (msg.includes("Société introuvable")) {
       return NextResponse.json({ error: msg }, { status: 404 });
     }

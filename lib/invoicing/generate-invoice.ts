@@ -166,18 +166,7 @@ export async function generateInvoice(
   const invoiceVatRate = allLinesZeroVat ? 0 : defaultVatRatePct;
 
   const invoicePrefix = (txn.invoice_prefix as string) ?? "FAC-";
-  const nextNumRows = await sql`
-    UPDATE companies
-    SET invoice_next_number = COALESCE(invoice_next_number, 1) + 1,
-        updated_at = NOW()
-    WHERE id = ${companyId}::uuid
-    RETURNING invoice_next_number
-  `;
-  const nextNum = (Array.isArray(nextNumRows) ? nextNumRows[0] : nextNumRows)
-    ?.invoice_next_number as number;
-  const seq = nextNum ?? 1;
   const year = new Date().getFullYear();
-  const invoiceNumber = `${invoicePrefix}${year}-${String(seq).padStart(4, "0")}`;
 
   const dueDate = new Date(issueDate);
   dueDate.setDate(dueDate.getDate() + 30);
@@ -230,43 +219,6 @@ export async function generateInvoice(
     payment = { iban, bic: (ibanRow.bic as string) || undefined };
   }
 
-  const templateData = {
-    company: {
-      name: txn.company_name,
-      address: txn.company_address,
-      siret: txn.siret,
-      directeur: txn.directeur,
-      vat_number: txn.vat_number,
-      website: (txn.company_website as string) || undefined,
-      logo_url: logoUrl,
-    },
-    customer: {
-      name: customerName,
-      address: customerAddress ?? "",
-      vat: customerVat ?? "",
-    },
-    invoice: {
-      number: invoiceNumber,
-      issueDate,
-      dueDate: dueDateStr,
-      subtotal,
-      taxAmount,
-      total,
-      currency,
-      vatRate: invoiceVatRate,
-      isEur: currency === "EUR",
-    },
-    lineItems,
-    payment,
-    countryRules: {
-      requiredMentions: countryRules.requiredMentions,
-      vatLabel: countryRules.vatLabel,
-    },
-  };
-
-  const html = renderHandlebarsTemplate(templateContent, templateData);
-  const pdfBuffer = await htmlToPdfBuffer(html);
-
   const nameNorm = customerName.trim().toLowerCase();
   const existingCustomerRows = await sql`
     SELECT id FROM customers
@@ -296,24 +248,104 @@ export async function generateInvoice(
 
   const anchorTransactionId = txn.id as string;
 
-  const insertRows = await sql`
-    INSERT INTO invoices (
-      company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-      customer_name, customer_address, customer_vat, line_items,
-      subtotal, tax_amount, total, currency, status
-    )
-    VALUES (
-      ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
-      ${issueDate}::date, ${dueDateStr}::date,
-      ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
-      ${JSON.stringify(lineItems)}::jsonb,
-      ${subtotal}, ${taxAmount},
-      ${total}, ${currency}, 'issued'
-    )
-    RETURNING id
-  `;
-  const inserted = Array.isArray(insertRows) ? insertRows[0] : insertRows;
-  const invoiceId = (inserted?.id as string) ?? "";
+  let invoiceNumber = "";
+  let invoiceId = "";
+  let pdfBuffer: Buffer;
+
+  const maxAttempts = 12;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const nextNumRows = await sql`
+      UPDATE companies
+      SET invoice_next_number = COALESCE(invoice_next_number, 1) + 1,
+          updated_at = NOW()
+      WHERE id = ${companyId}::uuid
+      RETURNING invoice_next_number
+    `;
+    const nextNum = (Array.isArray(nextNumRows) ? nextNumRows[0] : nextNumRows)
+      ?.invoice_next_number as number;
+    const seq = nextNum ?? 1;
+    invoiceNumber = `${invoicePrefix}${year}-${String(seq).padStart(4, "0")}`;
+
+    const templateData = {
+      company: {
+        name: txn.company_name,
+        address: txn.company_address,
+        siret: txn.siret,
+        directeur: txn.directeur,
+        vat_number: txn.vat_number,
+        website: (txn.company_website as string) || undefined,
+        logo_url: logoUrl,
+      },
+      customer: {
+        name: customerName,
+        address: customerAddress ?? "",
+        vat: customerVat ?? "",
+      },
+      invoice: {
+        number: invoiceNumber,
+        issueDate,
+        dueDate: dueDateStr,
+        subtotal,
+        taxAmount,
+        total,
+        currency,
+        vatRate: invoiceVatRate,
+        isEur: currency === "EUR",
+      },
+      lineItems,
+      payment,
+      countryRules: {
+        requiredMentions: countryRules.requiredMentions,
+        vatLabel: countryRules.vatLabel,
+      },
+    };
+
+    const html = renderHandlebarsTemplate(templateContent, templateData);
+    pdfBuffer = await htmlToPdfBuffer(html);
+
+    let insertRows: unknown;
+    try {
+      insertRows = await sql`
+        INSERT INTO invoices (
+          company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+          customer_name, customer_address, customer_vat, line_items,
+          subtotal, tax_amount, total, currency, status
+        )
+        VALUES (
+          ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
+          ${issueDate}::date, ${dueDateStr}::date,
+          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
+          ${JSON.stringify(lineItems)}::jsonb,
+          ${subtotal}, ${taxAmount},
+          ${total}, ${currency}, 'issued'
+        )
+        RETURNING id
+      `;
+    } catch (err) {
+      const pg = err as { code?: string; message?: string; constraint?: string };
+      const msg = String(pg?.message ?? err);
+      const isInvoiceNumberDup =
+        pg?.code === "23505" &&
+        (pg.constraint === "invoices_invoice_number_key" ||
+          msg.includes("invoices_invoice_number_key") ||
+          msg.includes("invoice_number"));
+      if (isInvoiceNumberDup && attempt < maxAttempts) {
+        continue;
+      }
+      throw err;
+    }
+
+    const inserted = Array.isArray(insertRows) ? insertRows[0] : insertRows;
+    invoiceId = (inserted?.id as string) ?? "";
+    break;
+  }
+
+  if (!invoiceId || !invoiceNumber) {
+    throw new Error(
+      "Impossible d'allouer un numéro de facture unique après plusieurs tentatives " +
+        "(conflits sur `invoice_number`). Vérifiez les doublons existants ou les préfixes partagés entre sociétés."
+    );
+  }
 
   await sql`
     INSERT INTO invoice_transactions (invoice_id, transaction_id)
