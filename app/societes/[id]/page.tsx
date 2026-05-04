@@ -97,6 +97,8 @@ export default function SocieteDetailPage() {
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [latestInvoices, setLatestInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [regeneratingInvoiceId, setRegeneratingInvoiceId] = useState<string | null>(null);
+  const [invoiceInfoMessage, setInvoiceInfoMessage] = useState<string | null>(null);
 
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -427,6 +429,29 @@ export default function SocieteDetailPage() {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setSavingTemplate(false);
+    }
+  };
+
+  const handleRegenerateInvoice = async (invoiceId: string) => {
+    if (regeneratingInvoiceId) return;
+    setRegeneratingInvoiceId(invoiceId);
+    setInvoiceInfoMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/regenerate`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof data?.error === "string" ? data.error : "Échec de la régénération";
+        throw new Error(msg);
+      }
+      setInvoiceInfoMessage("Facture régénérée avec le template actuel.");
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setRegeneratingInvoiceId(null);
     }
   };
 
@@ -1457,6 +1482,11 @@ export default function SocieteDetailPage() {
                 </button>
               </div>
             </div>
+            {invoiceInfoMessage && (
+              <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400">
+                {invoiceInfoMessage}
+              </div>
+            )}
 
             {loadingInvoices ? (
               <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
@@ -1472,6 +1502,7 @@ export default function SocieteDetailPage() {
                       <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Client</th>
                       <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">Montant</th>
                       <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">PDF</th>
+                      <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1496,6 +1527,18 @@ export default function SocieteDetailPage() {
                           ) : (
                             <span className="text-[var(--muted-foreground)]">—</span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleRegenerateInvoice(inv.id);
+                            }}
+                            disabled={!!regeneratingInvoiceId}
+                            className="text-[var(--primary)] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {regeneratingInvoiceId === inv.id ? "Régénération…" : "Régénérer"}
+                          </button>
                         </td>
                       </tr>
                     ))}

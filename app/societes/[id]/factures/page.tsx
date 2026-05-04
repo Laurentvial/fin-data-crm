@@ -23,6 +23,8 @@ export default function SocieteFacturesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -68,6 +70,29 @@ export default function SocieteFacturesPage() {
     }).format(n) + " " + currency;
   };
 
+  const handleRegenerateInvoice = async (invoiceId: string) => {
+    if (regeneratingId) return;
+    setError(null);
+    setInfoMessage(null);
+    setRegeneratingId(invoiceId);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/regenerate`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof data?.error === "string" ? data.error : "Échec de la régénération";
+        throw new Error(msg);
+      }
+      setInfoMessage("Facture régénérée avec le template actuel.");
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
@@ -99,6 +124,11 @@ export default function SocieteFacturesPage() {
             {error}
           </div>
         )}
+        {infoMessage && (
+          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400">
+            {infoMessage}
+          </div>
+        )}
 
         {loading ? (
           <p className="text-[var(--muted-foreground)]">Chargement…</p>
@@ -115,6 +145,7 @@ export default function SocieteFacturesPage() {
                   <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">Montant</th>
                   <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">Statut</th>
                   <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">PDF</th>
+                  <th className="px-4 py-3 text-right font-medium text-[var(--muted-foreground)]">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,6 +169,18 @@ export default function SocieteFacturesPage() {
                       ) : (
                         <span className="text-[var(--muted-foreground)]">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleRegenerateInvoice(inv.id);
+                        }}
+                        disabled={!!regeneratingId}
+                        className="text-[var(--primary)] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {regeneratingId === inv.id ? "Régénération…" : "Régénérer"}
+                      </button>
                     </td>
                   </tr>
                 ))}
