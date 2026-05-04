@@ -60,6 +60,10 @@ export async function POST(request: NextRequest) {
       typeof body?.customer_address === "string" ? body.customer_address.trim() || undefined : undefined;
     const customerVat =
       typeof body?.customer_vat === "string" ? body.customer_vat.trim() || undefined : undefined;
+    const customerSiret =
+      typeof (body as { customer_siret?: unknown })?.customer_siret === "string"
+        ? (body as { customer_siret: string }).customer_siret.trim() || undefined
+        : undefined;
     const issueDate =
       typeof (body as { issue_date?: unknown })?.issue_date === "string"
         ? (body as { issue_date: string }).issue_date.trim()
@@ -163,6 +167,7 @@ export async function POST(request: NextRequest) {
           customerName,
           customerAddress,
           customerVat,
+          customerSiret,
           issueDate,
           dueDate: dueDate || undefined,
           lineItems,
@@ -172,6 +177,7 @@ export async function POST(request: NextRequest) {
           customerName,
           customerAddress,
           customerVat,
+          customerSiret,
           lineItems,
         });
 
@@ -230,7 +236,7 @@ export async function GET(request: NextRequest) {
     const rows = await sql`
       SELECT
         i.id, i.company_id, i.transaction_id, i.invoice_number, i.issue_date, i.due_date,
-        i.customer_name, i.customer_address, i.customer_vat, i.line_items,
+        i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
         i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
         i.created_at, i.updated_at,
         c.name AS company_name
@@ -262,6 +268,7 @@ export async function GET(request: NextRequest) {
       customer_name: r.customer_name,
       customer_address: r.customer_address,
       customer_vat: r.customer_vat,
+      customer_siret: r.customer_siret ?? null,
       line_items: r.line_items,
       subtotal: Number(r.subtotal),
       tax_amount: Number(r.tax_amount),

@@ -34,19 +34,20 @@ export async function GET(request: NextRequest) {
 
     const rows = searchTerm
       ? await sql`
-          SELECT id, company_id, name, address, vat_number, created_at
+          SELECT id, company_id, name, address, vat_number, siret, created_at
           FROM customers
           WHERE company_id = ${companyId}::uuid
             AND (
               lower(name) LIKE ${"%" + searchTerm + "%"}
               OR (address IS NOT NULL AND lower(address) LIKE ${"%" + searchTerm + "%"})
               OR (vat_number IS NOT NULL AND lower(vat_number) LIKE ${"%" + searchTerm + "%"})
+              OR (siret IS NOT NULL AND lower(siret) LIKE ${"%" + searchTerm + "%"})
             )
           ORDER BY name ASC
           LIMIT ${limit}
         `
       : await sql`
-          SELECT id, company_id, name, address, vat_number, created_at
+          SELECT id, company_id, name, address, vat_number, siret, created_at
           FROM customers
           WHERE company_id = ${companyId}::uuid
           ORDER BY name ASC
@@ -59,6 +60,7 @@ export async function GET(request: NextRequest) {
       name: r.name,
       address: r.address ?? null,
       vat_number: r.vat_number ?? null,
+      siret: r.siret ?? null,
       created_at: r.created_at,
     }));
 

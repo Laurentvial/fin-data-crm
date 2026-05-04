@@ -187,6 +187,7 @@
         <h3>Client</h3>
         <div class="name">{{customer.name}}</div>
         {{#if customer.address}}<p>{{customer.address}}</p>{{/if}}
+        {{#if customer.siret}}<p>SIRET : {{customer.siret}}</p>{{/if}}
         {{#if customer.vat}}<p>{{countryRules.vatLabel}} client : {{customer.vat}}</p>{{/if}}
       </div>
     </div>

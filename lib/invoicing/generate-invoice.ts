@@ -18,6 +18,7 @@ export interface GenerateInvoiceInput {
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
+  customerSiret?: string;
   lineItems: InvoiceLineItemInput[];
 }
 
@@ -37,6 +38,8 @@ type TxnRow = {
   company_id: string;
   company_name: unknown;
   company_address: unknown;
+  company_code_postal: unknown;
+  company_ville: unknown;
   siret: unknown;
   directeur: unknown;
   vat_number: unknown;
@@ -67,7 +70,8 @@ function pickAnchorTxn(rows: TxnRow[]): TxnRow {
 export async function generateInvoice(
   input: GenerateInvoiceInput
 ): Promise<GenerateInvoiceResult> {
-  const { customerName, customerAddress, customerVat, lineItems: lineItemsInput } = input;
+  const { customerName, customerAddress, customerVat, customerSiret, lineItems: lineItemsInput } =
+    input;
 
   const transactionIds = [
     ...new Set(
@@ -80,7 +84,8 @@ export async function generateInvoice(
 
   const txnRows = await sql`
     SELECT t.id, t.bank_account_id, t.transaction_date, t.amount, t.description, t.type,
-      ba.company_id, c.name AS company_name, c.address AS company_address, c.siret, c.directeur,
+      ba.company_id, c.name AS company_name, c.address AS company_address,
+      c.code_postal AS company_code_postal, c.ville AS company_ville, c.siret, c.directeur,
       c.vat_number, c.vat_rate, c.vat_rates, c.invoice_prefix, c.invoice_next_number, c.currency, c.country_code,
       c.invoice_template_id, c.website AS company_website
     FROM transactions t
@@ -233,13 +238,14 @@ export async function generateInvoice(
       UPDATE customers SET
         address = COALESCE(${customerAddress ?? null}, address),
         vat_number = COALESCE(${customerVat ?? null}, vat_number),
+        siret = COALESCE(${customerSiret ?? null}, siret),
         updated_at = NOW()
       WHERE id = ${customerId}::uuid
     `;
   } else {
     const insertCustomerRows = await sql`
-      INSERT INTO customers (company_id, name, address, vat_number)
-      VALUES (${companyId}::uuid, ${customerName.trim()}, ${customerAddress ?? null}, ${customerVat ?? null})
+      INSERT INTO customers (company_id, name, address, vat_number, siret)
+      VALUES (${companyId}::uuid, ${customerName.trim()}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null})
       RETURNING id
     `;
     const insertedCustomer = Array.isArray(insertCustomerRows) ? insertCustomerRows[0] : insertCustomerRows;
@@ -270,6 +276,8 @@ export async function generateInvoice(
       company: {
         name: txn.company_name,
         address: txn.company_address,
+        code_postal: txn.company_code_postal,
+        ville: txn.company_ville,
         siret: txn.siret,
         directeur: txn.directeur,
         vat_number: txn.vat_number,
@@ -280,6 +288,7 @@ export async function generateInvoice(
         name: customerName,
         address: customerAddress ?? "",
         vat: customerVat ?? "",
+        siret: customerSiret ?? "",
       },
       invoice: {
         number: invoiceNumber,
@@ -308,13 +317,13 @@ export async function generateInvoice(
       insertRows = await sql`
         INSERT INTO invoices (
           company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-          customer_name, customer_address, customer_vat, line_items,
+          customer_name, customer_address, customer_vat, customer_siret, line_items,
           subtotal, tax_amount, total, currency, status
         )
         VALUES (
           ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
           ${issueDate}::date, ${dueDateStr}::date,
-          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
+          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
           ${JSON.stringify(lineItems)}::jsonb,
           ${subtotal}, ${taxAmount},
           ${total}, ${currency}, 'issued'

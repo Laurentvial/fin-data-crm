@@ -31,6 +31,7 @@ const SAMPLE_DATA = {
   customer: {
     name: "Client Exemple",
     address: "45 avenue des Champs\n75008 Paris",
+    siret: "12345678901234",
     vat: "",
   },
   invoice: {

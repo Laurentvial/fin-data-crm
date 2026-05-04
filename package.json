@@ -29,7 +29,8 @@
     "migrate:043": "node scripts/run-migration-043.js",
     "migrate:044": "node scripts/run-migration-044.js",
     "migrate:045": "node scripts/run-migration-045.js",
-    "migrate:046": "node scripts/run-migration-046.js"
+    "migrate:046": "node scripts/run-migration-046.js",
+    "migrate:047": "node scripts/run-migration-047.js"
   },
   "dependencies": {
     "@glideapps/glide-data-grid": "^6.0.3",

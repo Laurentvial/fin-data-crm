@@ -72,6 +72,8 @@ export interface Customer {
   name: string;
   address?: string | null;
   vat_number?: string | null;
+  /** Client SIRET (optionnel) */
+  siret?: string | null;
   created_at: string;
 }
 
@@ -85,6 +87,7 @@ export interface Invoice {
   customer_name: string;
   customer_address?: string | null;
   customer_vat?: string | null;
+  customer_siret?: string | null;
   line_items: InvoiceLineItem[];
   subtotal: number;
   tax_amount: number;

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { CreateManualInvoiceModal } from "@/components/CreateManualInvoiceModal";
+import { EditInvoiceModal } from "@/components/EditInvoiceModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
 import {
@@ -97,7 +98,7 @@ export default function SocieteDetailPage() {
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [latestInvoices, setLatestInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
-  const [regeneratingInvoiceId, setRegeneratingInvoiceId] = useState<string | null>(null);
+  const [invoiceToEdit, setInvoiceToEdit] = useState<Invoice | null>(null);
   const [invoiceInfoMessage, setInvoiceInfoMessage] = useState<string | null>(null);
 
   const [newEmail, setNewEmail] = useState("");
@@ -429,29 +430,6 @@ export default function SocieteDetailPage() {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setSavingTemplate(false);
-    }
-  };
-
-  const handleRegenerateInvoice = async (invoiceId: string) => {
-    if (regeneratingInvoiceId) return;
-    setRegeneratingInvoiceId(invoiceId);
-    setInvoiceInfoMessage(null);
-    setError(null);
-    try {
-      const res = await fetch(`/api/invoices/${invoiceId}/regenerate`, {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = typeof data?.error === "string" ? data.error : "Échec de la régénération";
-        throw new Error(msg);
-      }
-      setInvoiceInfoMessage("Facture régénérée avec le template actuel.");
-      await fetchData();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur inconnue");
-    } finally {
-      setRegeneratingInvoiceId(null);
     }
   };
 
@@ -1532,12 +1510,13 @@ export default function SocieteDetailPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              void handleRegenerateInvoice(inv.id);
+                              setError(null);
+                              setInvoiceInfoMessage(null);
+                              setInvoiceToEdit(inv);
                             }}
-                            disabled={!!regeneratingInvoiceId}
-                            className="text-[var(--primary)] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                            className="text-[var(--primary)] hover:underline"
                           >
-                            {regeneratingInvoiceId === inv.id ? "Régénération…" : "Régénérer"}
+                            Régénérer
                           </button>
                         </td>
                       </tr>
@@ -1613,6 +1592,18 @@ export default function SocieteDetailPage() {
           companyName={company.name}
           onClose={() => setInvoiceModalOpen(false)}
           onSuccess={() => {
+            void fetchData();
+          }}
+        />
+      )}
+      {invoiceToEdit && company?.id && (
+        <EditInvoiceModal
+          invoiceId={invoiceToEdit.id}
+          companyId={company.id}
+          companyName={company.name}
+          onClose={() => setInvoiceToEdit(null)}
+          onSuccess={() => {
+            setInvoiceInfoMessage("Facture mise à jour et régénérée.");
             void fetchData();
           }}
         />

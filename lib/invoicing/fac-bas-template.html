@@ -47,28 +47,31 @@
       letter-spacing: 2px;
       white-space: nowrap;
     }
-    /* En-tête : logo + société */
+    /* En-tête : société + logo */
     .top-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 24px;
       margin-bottom: 18px;
       padding-bottom: 12px;
       border-bottom: 0.5px solid #666;
     }
+    .company-main-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .company-info {
+      flex: 1;
+    }
     .logo-wrap {
       flex-shrink: 0;
-      order: 2;
     }
     .logo-wrap img {
-      max-height: 48px;
-      max-width: 120px;
+      max-height: 86px;
+      max-width: 220px;
       object-fit: contain;
     }
     .company-block {
-      flex: 1;
-      order: 1;
+      width: 100%;
     }
     .company-block .name {
       font-size: 18px;
@@ -218,25 +221,6 @@
       font-size: 10px;
       letter-spacing: 0.5px;
     }
-    /* Pied de page : Facture + numéro */
-    .invoice-footer {
-      margin-top: 24px;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 2px;
-      font-size: 9px;
-      color: #64748b;
-    }
-    .invoice-footer .facture-label {
-      font-weight: 600;
-      color: #1a1a1a;
-    }
-    .invoice-footer .invoice-num {
-      font-size: 14px;
-      font-weight: 700;
-      color: #1a1a1a;
-    }
     {{#if countryRules.requiredMentions}}
     .footer-mentions {
       margin-top: 24px;
@@ -259,19 +243,26 @@
       <span class="vertical-text">Facture {{invoice.number}}</span>
     </div>
 
-    <!-- Société à gauche, logo à droite -->
+    <!-- Société + logo -->
     <div class="top-header">
       <div class="company-block">
         <div class="name">{{company.name}}</div>
-      {{#if company.address}}<p>{{company.address}}</p>{{/if}}
-      {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
-      {{#if company.vat_number}}<p>TVA : {{company.vat_number}}</p>{{/if}}
+      <div class="company-main-row">
+        <div class="company-info">
+          {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+          {{#if company.code_postal}}<p>{{company.code_postal}}{{#if company.ville}} {{company.ville}}{{/if}}</p>{{/if}}
+          {{#if company.ville}}{{#unless company.code_postal}}<p>{{company.ville}}</p>{{/unless}}{{/if}}
+          {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
+          {{#if company.vat_number}}<p>TVA : {{company.vat_number}}</p>{{/if}}
+          {{#if company.website}}<p><a href="{{company.website}}">{{company.website}}</a></p>{{/if}}
+        </div>
+        {{#if company.logo_url}}
+        <div class="logo-wrap">
+          <img src="{{company.logo_url}}" alt="{{company.name}}" />
+        </div>
+        {{/if}}
       </div>
-      {{#if company.logo_url}}
-      <div class="logo-wrap">
-        <img src="{{company.logo_url}}" alt="{{company.name}}" />
       </div>
-      {{/if}}
     </div>
 
     <!-- Facturé à + Date -->
@@ -281,6 +272,9 @@
         <div class="client-name">{{customer.name}}</div>
         {{#if customer.address}}
         <div class="client-address">{{customer.address}}</div>
+        {{/if}}
+        {{#if customer.siret}}
+        <div class="client-siret">SIRET : {{customer.siret}}</div>
         {{/if}}
       </div>
       <div class="date-block">
@@ -339,12 +333,6 @@
       </div>
     </div>
     {{/if}}
-
-    <!-- Pied : Facture + numéro -->
-    <div class="invoice-footer">
-      <span class="facture-label">Facture</span>
-      <span class="invoice-num">{{invoice.number}}</span>
-    </div>
 
     {{#if countryRules.requiredMentions}}
     <div class="footer-mentions">

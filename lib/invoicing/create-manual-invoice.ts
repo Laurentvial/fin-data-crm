@@ -19,6 +19,7 @@ export interface CreateManualInvoiceInput {
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
+  customerSiret?: string;
   issueDate: string; // YYYY-MM-DD
   /** Optional due date (YYYY-MM-DD). */
   dueDate?: string;
@@ -35,6 +36,8 @@ type CompanyRow = {
   id: string;
   name: unknown;
   address: unknown;
+  code_postal: unknown;
+  ville: unknown;
   siret: unknown;
   directeur: unknown;
   website: unknown;
@@ -78,6 +81,7 @@ export async function createManualInvoice(
     customerName,
     customerAddress,
     customerVat,
+    customerSiret,
     issueDate,
     dueDate,
     lineItems: lineItemsInput,
@@ -90,7 +94,7 @@ export async function createManualInvoice(
 
   const companyRows = await sql`
     SELECT
-      id, name, address, siret, directeur, website,
+      id, name, address, code_postal, ville, siret, directeur, website,
       country_code, vat_number, vat_rate, vat_rates,
       invoice_prefix, invoice_next_number, currency, invoice_template_id
     FROM companies
@@ -206,13 +210,14 @@ export async function createManualInvoice(
       UPDATE customers SET
         address = COALESCE(${customerAddress ?? null}, address),
         vat_number = COALESCE(${customerVat ?? null}, vat_number),
+        siret = COALESCE(${customerSiret ?? null}, siret),
         updated_at = NOW()
       WHERE id = ${customerId}::uuid
     `;
   } else {
     const insertCustomerRows = await sql`
-      INSERT INTO customers (company_id, name, address, vat_number)
-      VALUES (${companyId}::uuid, ${customerName.trim()}, ${customerAddress ?? null}, ${customerVat ?? null})
+      INSERT INTO customers (company_id, name, address, vat_number, siret)
+      VALUES (${companyId}::uuid, ${customerName.trim()}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null})
       RETURNING id
     `;
     const insertedCustomer = Array.isArray(insertCustomerRows) ? insertCustomerRows[0] : insertCustomerRows;
@@ -241,6 +246,8 @@ export async function createManualInvoice(
       company: {
         name: company.name,
         address: company.address,
+        code_postal: company.code_postal,
+        ville: company.ville,
         siret: company.siret,
         directeur: company.directeur,
         vat_number: company.vat_number,
@@ -251,6 +258,7 @@ export async function createManualInvoice(
         name: customerName,
         address: customerAddress ?? "",
         vat: customerVat ?? "",
+        siret: customerSiret ?? "",
       },
       invoice: {
         number: invoiceNumber,
@@ -279,13 +287,13 @@ export async function createManualInvoice(
       insertRows = await sql`
         INSERT INTO invoices (
           company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-          customer_name, customer_address, customer_vat, line_items,
+          customer_name, customer_address, customer_vat, customer_siret, line_items,
           subtotal, tax_amount, total, currency, status
         )
         VALUES (
           ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
           ${issueDate}::date, ${dueDateSql}::date,
-          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null},
+          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
           ${JSON.stringify(lineItems)}::jsonb,
           ${subtotal}, ${taxAmount},
           ${total}, ${currency}, 'issued'

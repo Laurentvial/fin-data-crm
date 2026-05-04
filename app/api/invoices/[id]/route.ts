@@ -26,7 +26,7 @@ export async function GET(
     const rows = await sql`
       SELECT
         i.id, i.company_id, i.transaction_id, i.invoice_number, i.issue_date, i.due_date,
-        i.customer_name, i.customer_address, i.customer_vat, i.line_items,
+        i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
         i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
         i.created_at, i.updated_at,
         c.name AS company_name
@@ -51,6 +51,7 @@ export async function GET(
       customer_name: row.customer_name,
       customer_address: row.customer_address,
       customer_vat: row.customer_vat,
+      customer_siret: row.customer_siret ?? null,
       line_items: row.line_items,
       subtotal: Number(row.subtotal),
       tax_amount: Number(row.tax_amount),

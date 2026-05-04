@@ -5,7 +5,7 @@ import { getCountryRules } from "./country-rules";
 import { htmlToPdfBuffer } from "./html-to-pdf";
 import { renderHandlebarsTemplate } from "./render-template";
 import { uploadPdfToCloudinary } from "./cloudinary";
-import type { InvoiceLineItem } from "@/lib/types";
+import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -18,6 +18,16 @@ interface RegenerateInvoiceResult {
   pdfUrl: string;
 }
 
+interface RegenerateInvoiceInput {
+  customerName?: string;
+  customerAddress?: string;
+  customerVat?: string;
+  customerSiret?: string;
+  issueDate?: string;
+  dueDate?: string;
+  lineItems?: InvoiceLineItemInput[];
+}
+
 type InvoiceRow = {
   id: string;
   company_id: string;
@@ -28,6 +38,7 @@ type InvoiceRow = {
   customer_name: unknown;
   customer_address: unknown;
   customer_vat: unknown;
+  customer_siret: unknown;
   line_items: unknown;
   subtotal: unknown;
   tax_amount: unknown;
@@ -39,6 +50,8 @@ type CompanyRow = {
   id: string;
   name: unknown;
   address: unknown;
+  code_postal: unknown;
+  ville: unknown;
   siret: unknown;
   directeur: unknown;
   website: unknown;
@@ -78,11 +91,48 @@ function normalizeLineItems(raw: unknown): InvoiceLineItem[] {
     .filter((li): li is InvoiceLineItem => li !== null);
 }
 
-export async function regenerateInvoice(invoiceId: string): Promise<RegenerateInvoiceResult> {
+function computeLineItems(
+  lineItemsInput: InvoiceLineItemInput[],
+  defaultVatRatePct: number
+): InvoiceLineItem[] {
+  return lineItemsInput.map((li) => {
+    const vatRatePct =
+      li.vat_rate != null && !Number.isNaN(li.vat_rate) ? li.vat_rate : defaultVatRatePct;
+    const vatRate = vatRatePct / 100;
+    const amount = Math.round(li.quantity * li.unit_price_ttc * 100) / 100;
+    const unitPriceHt =
+      vatRate >= 0 ? amount / (1 + vatRate) / li.quantity : amount / li.quantity;
+    return {
+      description: li.description,
+      quantity: li.quantity,
+      unit_price: Math.round(unitPriceHt * 100) / 100,
+      vat_rate: vatRatePct,
+      amount,
+    };
+  });
+}
+
+function computeTotals(lineItems: InvoiceLineItem[]): { subtotal: number; taxAmount: number; total: number } {
+  const total = Math.round(lineItems.reduce((s, li) => s + li.amount, 0) * 100) / 100;
+  const subtotal =
+    Math.round(
+      lineItems.reduce((s, li) => {
+        const rate = li.vat_rate / 100;
+        return s + li.amount / (1 + rate);
+      }, 0) * 100
+    ) / 100;
+  const taxAmount = Math.round((total - subtotal) * 100) / 100;
+  return { subtotal, taxAmount, total };
+}
+
+export async function regenerateInvoice(
+  invoiceId: string,
+  input: RegenerateInvoiceInput = {}
+): Promise<RegenerateInvoiceResult> {
   const invoiceRows = await sql`
     SELECT
       id, company_id, transaction_id, invoice_number, issue_date, due_date,
-      customer_name, customer_address, customer_vat, line_items,
+      customer_name, customer_address, customer_vat, customer_siret, line_items,
       subtotal, tax_amount, total, currency
     FROM invoices
     WHERE id = ${invoiceId}::uuid
@@ -95,7 +145,7 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
 
   const companyRows = await sql`
     SELECT
-      id, name, address, siret, directeur, website,
+      id, name, address, code_postal, ville, siret, directeur, website,
       country_code, vat_number, vat_rate, vat_rates, invoice_template_id
     FROM companies
     WHERE id = ${invoice.company_id}::uuid
@@ -117,10 +167,24 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
     typeof invoice.invoice_number === "string" && invoice.invoice_number
       ? invoice.invoice_number
       : "";
-  const issueDate = toDateStr(invoice.issue_date);
-  const dueDate = toDateStr(invoice.due_date);
+
+  const issueDate = input.issueDate?.trim() || toDateStr(invoice.issue_date);
+  const dueDate =
+    input.dueDate === undefined ? toDateStr(invoice.due_date) : input.dueDate.trim() || "";
   if (!invoiceNumber || !issueDate) {
     throw new Error("Facture invalide: numéro ou date manquants");
+  }
+  if (new Date(`${issueDate}T00:00:00Z`).toString() === "Invalid Date") {
+    throw new Error("Date d'émission invalide");
+  }
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    throw new Error("Date d'échéance invalide");
+  }
+  if (
+    dueDate &&
+    new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()
+  ) {
+    throw new Error("La date d'échéance doit être postérieure ou égale à la date d'émission");
   }
 
   const vatRatesArr = company.vat_rates as number[] | null | undefined;
@@ -128,12 +192,61 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
     Array.isArray(vatRatesArr) && vatRatesArr.length > 0
       ? vatRatesArr[0]
       : Number(company.vat_rate ?? 20);
-  const allLinesZeroVat = lineItems.length > 0 && lineItems.every((li) => li.vat_rate === 0);
-  const invoiceVatRate = allLinesZeroVat ? 0 : defaultVatRatePct;
 
-  const subtotal = Number(invoice.subtotal);
-  const taxAmount = Number(invoice.tax_amount);
-  const total = Number(invoice.total);
+  const customerName =
+    input.customerName?.trim() ||
+    (typeof invoice.customer_name === "string" ? invoice.customer_name.trim() : "");
+  if (!customerName) {
+    throw new Error("Nom du client requis");
+  }
+  const customerAddress =
+    input.customerAddress !== undefined
+      ? input.customerAddress.trim()
+      : typeof invoice.customer_address === "string"
+        ? invoice.customer_address
+        : "";
+  const customerVat =
+    input.customerVat !== undefined
+      ? input.customerVat.trim()
+      : typeof invoice.customer_vat === "string"
+        ? invoice.customer_vat
+        : "";
+  const customerSiret =
+    input.customerSiret !== undefined
+      ? input.customerSiret.trim()
+      : typeof invoice.customer_siret === "string"
+        ? invoice.customer_siret
+        : "";
+
+  const editedLineItemsInput = Array.isArray(input.lineItems)
+    ? input.lineItems
+        .filter((li) => li && typeof li.description === "string")
+        .map((li) => ({
+          description: li.description.trim(),
+          quantity: Number(li.quantity),
+          unit_price_ttc: Number(li.unit_price_ttc),
+          vat_rate: li.vat_rate != null ? Number(li.vat_rate) : undefined,
+        }))
+        .filter(
+          (li) =>
+            li.description &&
+            li.quantity > 0 &&
+            li.unit_price_ttc > 0 &&
+            !Number.isNaN(li.unit_price_ttc)
+        )
+    : null;
+
+  const lineItemsToUse =
+    editedLineItemsInput != null
+      ? computeLineItems(editedLineItemsInput, defaultVatRatePct)
+      : lineItems;
+  if (lineItemsToUse.length === 0) {
+    throw new Error("Impossible de régénérer: lignes de facture invalides");
+  }
+
+  const allLinesZeroVat = lineItemsToUse.length > 0 && lineItemsToUse.every((li) => li.vat_rate === 0);
+  const invoiceVatRate = allLinesZeroVat ? 0 : defaultVatRatePct;
+  const { subtotal, taxAmount, total } = computeTotals(lineItemsToUse);
 
   const invoiceTemplateId = company.invoice_template_id as string | null | undefined;
   const templateRows = invoiceTemplateId
@@ -195,6 +308,8 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
     company: {
       name: company.name,
       address: company.address,
+      code_postal: company.code_postal,
+      ville: company.ville,
       siret: company.siret,
       directeur: company.directeur,
       vat_number: company.vat_number,
@@ -202,9 +317,10 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
       logo_url: logoUrl,
     },
     customer: {
-      name: typeof invoice.customer_name === "string" ? invoice.customer_name : "",
-      address: typeof invoice.customer_address === "string" ? invoice.customer_address : "",
-      vat: typeof invoice.customer_vat === "string" ? invoice.customer_vat : "",
+      name: customerName,
+      address: customerAddress,
+      vat: customerVat,
+      siret: customerSiret,
     },
     invoice: {
       number: invoiceNumber,
@@ -217,7 +333,7 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
       vatRate: invoiceVatRate,
       isEur: currency === "EUR",
     },
-    lineItems,
+    lineItems: lineItemsToUse,
     payment,
     countryRules: {
       requiredMentions: countryRules.requiredMentions,
@@ -231,7 +347,19 @@ export async function regenerateInvoice(invoiceId: string): Promise<RegenerateIn
 
   await sql`
     UPDATE invoices
-    SET pdf_url = ${pdfUrl}, updated_at = NOW()
+    SET
+      issue_date = ${issueDate}::date,
+      due_date = ${dueDate || null}::date,
+      customer_name = ${customerName},
+      customer_address = ${customerAddress || null},
+      customer_vat = ${customerVat || null},
+      customer_siret = ${customerSiret || null},
+      line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
+      subtotal = ${subtotal},
+      tax_amount = ${taxAmount},
+      total = ${total},
+      pdf_url = ${pdfUrl},
+      updated_at = NOW()
     WHERE id = ${invoice.id}::uuid
   `;
 

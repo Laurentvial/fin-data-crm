@@ -35,6 +35,16 @@ function createEmptyRow(defaultVatRate: number): LineItemRow {
   };
 }
 
+function buildInvoiceNumberPreview(invoicePrefix?: string, invoiceNextNumber?: number): string {
+  const prefix = typeof invoicePrefix === "string" && invoicePrefix.trim() ? invoicePrefix : "FAC-";
+  const nextSeq =
+    typeof invoiceNextNumber === "number" && Number.isFinite(invoiceNextNumber) && invoiceNextNumber >= 1
+      ? invoiceNextNumber + 1
+      : 1;
+  const year = new Date().getFullYear();
+  return `${prefix}${year}-${String(nextSeq).padStart(4, "0")}`;
+}
+
 export function CreateManualInvoiceModal({
   companyId,
   companyName,
@@ -55,12 +65,16 @@ export function CreateManualInvoiceModal({
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerVat, setCustomerVat] = useState("");
+  const [customerSiret, setCustomerSiret] = useState("");
 
   const today = useRef(new Date());
   const [issueDate, setIssueDate] = useState<string>(() => toDateStr(today.current));
   const [dueDate, setDueDate] = useState<string>("");
 
   const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
+  const [invoiceNumberPreview, setInvoiceNumberPreview] = useState<string>(
+    buildInvoiceNumberPreview()
+  );
   const [horsTaxes, setHorsTaxes] = useState(false);
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
@@ -90,6 +104,14 @@ export function CreateManualInvoiceModal({
             : company?.vat_rate != null
               ? [company.vat_rate]
               : [20];
+        const nextNumberRaw = company?.invoice_next_number;
+        const nextNumber =
+          typeof nextNumberRaw === "number"
+            ? nextNumberRaw
+            : typeof nextNumberRaw === "string"
+              ? parseInt(nextNumberRaw, 10)
+              : undefined;
+        setInvoiceNumberPreview(buildInvoiceNumberPreview(company?.invoice_prefix, nextNumber));
         setCompanyVatRates(rates);
         setLineItems((prev) =>
           prev.map((row) =>
@@ -153,6 +175,7 @@ export function CreateManualInvoiceModal({
     setCustomerName(c.name);
     setCustomerAddress(c.address ?? "");
     setCustomerVat(c.vat_number ?? "");
+    setCustomerSiret(c.siret ?? "");
     setShowCustomerList(false);
     nameInputRef.current?.focus();
   }, []);
@@ -249,6 +272,7 @@ export function CreateManualInvoiceModal({
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
+          customer_siret: customerSiret.trim() || undefined,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : {}),
           line_items: payloadItems,
@@ -281,6 +305,11 @@ export function CreateManualInvoiceModal({
           </p>
           <p className="mt-1 text-[var(--muted-foreground)]">
             Total lignes : <span className="font-medium text-[var(--foreground)]">{formatCurrency(totalRounded)} €</span>
+          </p>
+          <p className="mt-1 text-[var(--muted-foreground)]">
+            Aperçu n° facture :{" "}
+            <span className="font-medium text-[var(--foreground)]">{invoiceNumberPreview}</span>
+            <span className="ml-1 text-xs">(indicatif)</span>
           </p>
         </div>
 
@@ -368,9 +397,9 @@ export function CreateManualInvoiceModal({
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
                         >
                           <span className="font-medium">{c.name}</span>
-                          {(c.address || c.vat_number) && (
+                          {(c.address || c.siret || c.vat_number) && (
                             <span className="ml-2 text-[var(--muted-foreground)]">
-                              — {[c.address, c.vat_number].filter(Boolean).join(" • ")}
+                              — {[c.address, c.siret, c.vat_number].filter(Boolean).join(" • ")}
                             </span>
                           )}
                         </button>
@@ -399,6 +428,16 @@ export function CreateManualInvoiceModal({
               value={customerVat}
               onChange={(e) => setCustomerVat(e.target.value)}
               placeholder="TVA intracommunautaire"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">SIRET client</label>
+            <input
+              type="text"
+              value={customerSiret}
+              onChange={(e) => setCustomerSiret(e.target.value)}
+              placeholder="SIRET (optionnel)"
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>

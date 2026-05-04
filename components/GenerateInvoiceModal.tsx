@@ -42,6 +42,7 @@ export function GenerateInvoiceModal({
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerVat, setCustomerVat] = useState("");
+  const [customerSiret, setCustomerSiret] = useState("");
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [
     createEmptyRow(20),
   ]);
@@ -106,6 +107,7 @@ export function GenerateInvoiceModal({
     setCustomerName(c.name);
     setCustomerAddress(c.address ?? "");
     setCustomerVat(c.vat_number ?? "");
+    setCustomerSiret(c.siret ?? "");
     setShowCustomerList(false);
     nameInputRef.current?.focus();
   }, []);
@@ -219,6 +221,7 @@ export function GenerateInvoiceModal({
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
+          customer_siret: customerSiret.trim() || undefined,
           line_items: payloadItems,
         }),
       });
@@ -339,9 +342,9 @@ export function GenerateInvoiceModal({
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
                         >
                           <span className="font-medium">{c.name}</span>
-                          {(c.address || c.vat_number) && (
+                          {(c.address || c.siret || c.vat_number) && (
                             <span className="ml-2 text-[var(--muted-foreground)]">
-                              — {[c.address, c.vat_number].filter(Boolean).join(" • ")}
+                              — {[c.address, c.siret, c.vat_number].filter(Boolean).join(" • ")}
                             </span>
                           )}
                         </button>
@@ -373,6 +376,18 @@ export function GenerateInvoiceModal({
               value={customerVat}
               onChange={(e) => setCustomerVat(e.target.value)}
               placeholder="TVA intracommunautaire"
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+              SIRET client
+            </label>
+            <input
+              type="text"
+              value={customerSiret}
+              onChange={(e) => setCustomerSiret(e.target.value)}
+              placeholder="SIRET (optionnel)"
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
             />
           </div>

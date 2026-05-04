@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { regenerateInvoice } from "@/lib/invoicing/regenerate-invoice";
+import type { InvoiceLineItemInput } from "@/lib/types";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -14,7 +15,7 @@ async function requireAuth() {
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authError = await requireAuth();
@@ -22,7 +23,55 @@ export async function POST(
 
   try {
     const { id } = await params;
-    const result = await regenerateInvoice(id);
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const hasCustomerAddressField = Object.prototype.hasOwnProperty.call(body, "customer_address");
+    const hasCustomerVatField = Object.prototype.hasOwnProperty.call(body, "customer_vat");
+    const hasCustomerSiretField = Object.prototype.hasOwnProperty.call(body, "customer_siret");
+    const hasDueDateField = Object.prototype.hasOwnProperty.call(body, "due_date");
+    const customerName =
+      typeof body.customer_name === "string" ? body.customer_name.trim() || undefined : undefined;
+    const customerAddress = hasCustomerAddressField
+      ? typeof body.customer_address === "string"
+        ? body.customer_address.trim()
+        : body.customer_address === null
+          ? ""
+          : undefined
+      : undefined;
+    const customerVat = hasCustomerVatField
+      ? typeof body.customer_vat === "string"
+        ? body.customer_vat.trim()
+        : body.customer_vat === null
+          ? ""
+          : undefined
+      : undefined;
+    const customerSiret = hasCustomerSiretField
+      ? typeof body.customer_siret === "string"
+        ? body.customer_siret.trim()
+        : body.customer_siret === null
+          ? ""
+          : undefined
+      : undefined;
+    const issueDate =
+      typeof body.issue_date === "string" ? body.issue_date.trim() || undefined : undefined;
+    const dueDate = hasDueDateField
+      ? typeof body.due_date === "string"
+        ? body.due_date.trim()
+        : body.due_date === null
+          ? ""
+          : undefined
+      : undefined;
+    const lineItems =
+      Array.isArray(body.line_items) ? (body.line_items as InvoiceLineItemInput[]) : undefined;
+
+    const result = await regenerateInvoice(id, {
+      customerName,
+      customerAddress,
+      customerVat,
+      customerSiret,
+      issueDate,
+      dueDate,
+      lineItems,
+    });
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
