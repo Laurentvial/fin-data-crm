@@ -253,6 +253,10 @@ export function EditInvoiceModal({
       setError("La date d'émission est requise");
       return;
     }
+    if (!invoiceNumber.trim()) {
+      setError("Le numéro de facture est requis");
+      return;
+    }
     if (
       dueDate.trim() &&
       new Date(`${dueDate}T00:00:00Z`).getTime() < new Date(`${issueDate}T00:00:00Z`).getTime()
@@ -273,6 +277,7 @@ export function EditInvoiceModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          invoice_number: invoiceNumber.trim(),
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
@@ -322,6 +327,19 @@ export function EditInvoiceModal({
           <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                Numéro de facture *
+              </label>
+              <input
+                type="text"
+                value={invoiceNumber}
+                onChange={(e) => setInvoiceNumber(e.target.value)}
+                placeholder="Numéro de facture"
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Date d’émission *</label>

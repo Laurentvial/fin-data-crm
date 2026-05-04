@@ -66,6 +66,7 @@ export function CreateManualInvoiceModal({
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerVat, setCustomerVat] = useState("");
   const [customerSiret, setCustomerSiret] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
 
   const today = useRef(new Date());
   const [issueDate, setIssueDate] = useState<string>(() => toDateStr(today.current));
@@ -269,6 +270,7 @@ export function CreateManualInvoiceModal({
         body: JSON.stringify({
           company_id: companyId,
           bank_account_id: bankAccountId,
+          invoice_number: invoiceNumber.trim() || undefined,
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
@@ -314,6 +316,19 @@ export function CreateManualInvoiceModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+              Numéro de facture (optionnel)
+            </label>
+            <input
+              type="text"
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+              placeholder={`${invoiceNumberPreview} (auto si vide)`}
+              className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Date d’émission *</label>

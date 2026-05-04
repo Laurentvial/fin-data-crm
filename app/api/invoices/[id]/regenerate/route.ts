@@ -27,6 +27,7 @@ export async function POST(
     const hasCustomerAddressField = Object.prototype.hasOwnProperty.call(body, "customer_address");
     const hasCustomerVatField = Object.prototype.hasOwnProperty.call(body, "customer_vat");
     const hasCustomerSiretField = Object.prototype.hasOwnProperty.call(body, "customer_siret");
+    const hasInvoiceNumberField = Object.prototype.hasOwnProperty.call(body, "invoice_number");
     const hasDueDateField = Object.prototype.hasOwnProperty.call(body, "due_date");
     const customerName =
       typeof body.customer_name === "string" ? body.customer_name.trim() || undefined : undefined;
@@ -53,6 +54,11 @@ export async function POST(
       : undefined;
     const issueDate =
       typeof body.issue_date === "string" ? body.issue_date.trim() || undefined : undefined;
+    const invoiceNumber = hasInvoiceNumberField
+      ? typeof body.invoice_number === "string"
+        ? body.invoice_number.trim() || undefined
+        : undefined
+      : undefined;
     const dueDate = hasDueDateField
       ? typeof body.due_date === "string"
         ? body.due_date.trim()
@@ -68,6 +74,7 @@ export async function POST(
       customerAddress,
       customerVat,
       customerSiret,
+      invoiceNumber,
       issueDate,
       dueDate,
       lineItems,
@@ -87,6 +94,9 @@ export async function POST(
         { error: "Erreur lors de l'upload du PDF. Vérifiez la configuration Cloudinary." },
         { status: 500 }
       );
+    }
+    if (message.includes("Ce numéro de facture existe déjà")) {
+      return NextResponse.json({ error: message }, { status: 409 });
     }
     return NextResponse.json(
       { error: message || "Échec de la régénération de la facture" },

@@ -64,6 +64,10 @@ export async function POST(request: NextRequest) {
       typeof (body as { customer_siret?: unknown })?.customer_siret === "string"
         ? (body as { customer_siret: string }).customer_siret.trim() || undefined
         : undefined;
+    const invoiceNumber =
+      typeof (body as { invoice_number?: unknown })?.invoice_number === "string"
+        ? (body as { invoice_number: string }).invoice_number.trim() || undefined
+        : undefined;
     const issueDate =
       typeof (body as { issue_date?: unknown })?.issue_date === "string"
         ? (body as { issue_date: string }).issue_date.trim()
@@ -164,6 +168,7 @@ export async function POST(request: NextRequest) {
       ? await createManualInvoice({
           companyId: companyId as string,
           bankAccountId,
+          invoiceNumber,
           customerName,
           customerAddress,
           customerVat,
@@ -189,6 +194,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 503 });
     }
     if (msg.includes("Impossible d'allouer un numéro de facture unique")) {
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
+    if (msg.includes("Ce numéro de facture existe déjà")) {
       return NextResponse.json({ error: msg }, { status: 409 });
     }
     if (msg.includes("Société introuvable")) {

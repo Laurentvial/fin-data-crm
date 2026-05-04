@@ -16,6 +16,8 @@ export interface CreateManualInvoiceInput {
   companyId: string;
   /** Optional bank account used for payment (IBAN/BIC) display in PDF. */
   bankAccountId?: string;
+  /** Optional custom invoice number. */
+  invoiceNumber?: string;
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
@@ -78,6 +80,7 @@ export async function createManualInvoice(
   const {
     companyId,
     bankAccountId,
+    invoiceNumber: invoiceNumberInput,
     customerName,
     customerAddress,
     customerVat,
@@ -132,6 +135,8 @@ export async function createManualInvoice(
 
   const invoicePrefix = (company.invoice_prefix as string) ?? "FAC-";
   const year = new Date().getFullYear();
+  const customInvoiceNumber =
+    typeof invoiceNumberInput === "string" ? invoiceNumberInput.trim() || null : null;
 
   const invoiceTemplateId = company.invoice_template_id as string | null | undefined;
   const templateRows = invoiceTemplateId
@@ -228,19 +233,23 @@ export async function createManualInvoice(
   let invoiceId = "";
   let pdfBytes: Buffer | null = null;
 
-  const maxAttempts = 12;
+  const maxAttempts = customInvoiceNumber ? 1 : 12;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const nextNumRows = await sql`
-      UPDATE companies
-      SET invoice_next_number = COALESCE(invoice_next_number, 1) + 1,
-          updated_at = NOW()
-      WHERE id = ${companyId}::uuid
-      RETURNING invoice_next_number
-    `;
-    const nextNum = (Array.isArray(nextNumRows) ? nextNumRows[0] : nextNumRows)
-      ?.invoice_next_number as number;
-    const seq = nextNum ?? 1;
-    invoiceNumber = `${invoicePrefix}${year}-${String(seq).padStart(4, "0")}`;
+    if (customInvoiceNumber) {
+      invoiceNumber = customInvoiceNumber;
+    } else {
+      const nextNumRows = await sql`
+        UPDATE companies
+        SET invoice_next_number = COALESCE(invoice_next_number, 1) + 1,
+            updated_at = NOW()
+        WHERE id = ${companyId}::uuid
+        RETURNING invoice_next_number
+      `;
+      const nextNum = (Array.isArray(nextNumRows) ? nextNumRows[0] : nextNumRows)
+        ?.invoice_next_number as number;
+      const seq = nextNum ?? 1;
+      invoiceNumber = `${invoicePrefix}${year}-${String(seq).padStart(4, "0")}`;
+    }
 
     const templateData = {
       company: {
@@ -328,6 +337,9 @@ export async function createManualInvoice(
         (pg.constraint === "invoices_invoice_number_key" ||
           msg.includes("invoices_invoice_number_key") ||
           msg.includes("invoice_number"));
+      if (isInvoiceNumberDup && customInvoiceNumber) {
+        throw new Error("Ce numéro de facture existe déjà");
+      }
       if (isInvoiceNumberDup && attempt < maxAttempts) {
         continue;
       }

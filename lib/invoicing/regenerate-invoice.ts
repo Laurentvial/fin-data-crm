@@ -19,6 +19,7 @@ interface RegenerateInvoiceResult {
 }
 
 interface RegenerateInvoiceInput {
+  invoiceNumber?: string;
   customerName?: string;
   customerAddress?: string;
   customerVat?: string;
@@ -163,16 +164,33 @@ export async function regenerateInvoice(
 
   const currency = typeof invoice.currency === "string" && invoice.currency ? invoice.currency : "EUR";
   const countryCode = typeof company.country_code === "string" && company.country_code ? company.country_code : "FR";
-  const invoiceNumber =
+  const currentInvoiceNumber =
     typeof invoice.invoice_number === "string" && invoice.invoice_number
       ? invoice.invoice_number
       : "";
+  const invoiceNumber =
+    input.invoiceNumber !== undefined
+      ? input.invoiceNumber.trim()
+      : currentInvoiceNumber;
 
   const issueDate = input.issueDate?.trim() || toDateStr(invoice.issue_date);
   const dueDate =
     input.dueDate === undefined ? toDateStr(invoice.due_date) : input.dueDate.trim() || "";
   if (!invoiceNumber || !issueDate) {
     throw new Error("Facture invalide: numéro ou date manquants");
+  }
+  if (invoiceNumber !== currentInvoiceNumber) {
+    const dupRows = await sql`
+      SELECT id
+      FROM invoices
+      WHERE invoice_number = ${invoiceNumber}
+        AND id <> ${invoice.id}::uuid
+      LIMIT 1
+    `;
+    const dup = Array.isArray(dupRows) ? dupRows[0] : dupRows;
+    if (dup?.id) {
+      throw new Error("Ce numéro de facture existe déjà");
+    }
   }
   if (new Date(`${issueDate}T00:00:00Z`).toString() === "Invalid Date") {
     throw new Error("Date d'émission invalide");
@@ -350,6 +368,7 @@ export async function regenerateInvoice(
     SET
       issue_date = ${issueDate}::date,
       due_date = ${dueDate || null}::date,
+      invoice_number = ${invoiceNumber},
       customer_name = ${customerName},
       customer_address = ${customerAddress || null},
       customer_vat = ${customerVat || null},
