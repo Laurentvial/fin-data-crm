@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DEBIT_STATUS_VALUES, debitStatusLabel, type DebitTransactionStatus } from "@/lib/debit-status";
+import { CREDIT_STATUS_VALUES, creditStatusLabel, type CreditTransactionStatus } from "@/lib/credit-status";
 import { modalBackdropClose, suppressNextModalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { BankAccount, Transaction, TransactionType } from "@/lib/types";
 
@@ -30,6 +31,7 @@ export function AddTransactionModal({
   const [type, setType] = useState<TransactionType>("DEBIT");
   const [description, setDescription] = useState("");
   const [debitStatus, setDebitStatus] = useState<"" | DebitTransactionStatus>("");
+  const [creditStatus, setCreditStatus] = useState<"" | CreditTransactionStatus>("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -61,6 +63,7 @@ export function AddTransactionModal({
           type,
           description: description.trim(),
           ...(type === "DEBIT" && debitStatus ? { debit_status: debitStatus } : {}),
+          ...(type === "CREDIT" && creditStatus ? { credit_status: creditStatus } : {}),
         }),
       });
       const data = await res.json();
@@ -157,6 +160,7 @@ export function AddTransactionModal({
                 const next = e.target.value as TransactionType;
                 setType(next);
                 if (next === "CREDIT") setDebitStatus("");
+                if (next !== "CREDIT") setCreditStatus("");
               }}
               onBlur={() => suppressNextModalBackdropClose()}
               className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
@@ -185,6 +189,31 @@ export function AddTransactionModal({
                 {DEBIT_STATUS_VALUES.map((k) => (
                   <option key={k} value={k}>
                     {debitStatusLabel(k)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {type === "CREDIT" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                État crédit
+              </label>
+              <select
+                value={creditStatus}
+                onChange={(e) => {
+                  suppressNextModalBackdropClose();
+                  setCreditStatus(
+                    e.target.value === "" ? "" : (e.target.value as CreditTransactionStatus)
+                  );
+                }}
+                onBlur={() => suppressNextModalBackdropClose()}
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+              >
+                <option value="">—</option>
+                {CREDIT_STATUS_VALUES.map((k) => (
+                  <option key={k} value={k}>
+                    {creditStatusLabel(k)}
                   </option>
                 ))}
               </select>

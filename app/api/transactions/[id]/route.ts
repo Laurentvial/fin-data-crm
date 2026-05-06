@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
+import { isCreditTransactionStatus } from "@/lib/credit-status";
 import type { TransactionType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -160,6 +161,22 @@ export async function PATCH(
         return NextResponse.json({ error: "debit_status invalide" }, { status: 400 });
       }
     }
+    if (body.credit_status !== undefined) {
+      const v = body.credit_status;
+      if (v === null || v === "") {
+        updates.credit_status = null;
+      } else if (typeof v === "string") {
+        if (!isCreditTransactionStatus(v)) {
+          return NextResponse.json(
+            { error: "credit_status invalide (paye ou vide)" },
+            { status: 400 }
+          );
+        }
+        updates.credit_status = v;
+      } else {
+        return NextResponse.json({ error: "credit_status invalide" }, { status: 400 });
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -204,9 +221,22 @@ export async function PATCH(
         { status: 400 }
       );
     }
+    if (
+      updates.credit_status !== undefined &&
+      updates.credit_status !== null &&
+      effectiveType !== "CREDIT"
+    ) {
+      return NextResponse.json(
+        { error: "Le statut crédit ne s'applique qu'aux crédits" },
+        { status: 400 }
+      );
+    }
 
     if (updates.type === "CREDIT") {
       updates.debit_status = null;
+    }
+    if (updates.type === "DEBIT" || updates.type === "INTERNAL_CREDIT") {
+      updates.credit_status = null;
     }
 
     const setClauses: string[] = [];
@@ -239,6 +269,10 @@ export async function PATCH(
     if (updates.debit_status !== undefined) {
       setClauses.push(`debit_status = $${idx++}`);
       values.push(updates.debit_status);
+    }
+    if (updates.credit_status !== undefined) {
+      setClauses.push(`credit_status = $${idx++}`);
+      values.push(updates.credit_status);
     }
     if (clearInternalPair) {
       setClauses.push("internal_transfer_debit_id = NULL");
@@ -293,6 +327,7 @@ export async function PATCH(
           t.created_at,
           t.processed_by_user_id,
           t.debit_status,
+          t.credit_status,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
           t.client_account_type_id,

@@ -1,4 +1,5 @@
 import type { DebitTransactionStatus } from "./debit-status";
+import type { CreditTransactionStatus } from "./credit-status";
 
 export type TransactionType = "DEBIT" | "CREDIT" | "INTERNAL_CREDIT";
 
@@ -262,6 +263,8 @@ export interface Transaction {
   account_status_emoji?: string | null;
   /** Réservé aux débits : OK, à vérifier, annulée/bloquée ; null ou absent pour crédits / vide. */
   debit_status?: DebitTransactionStatus | null;
+  /** Réservé aux crédits : Payé ; null ou absent pour débits / vide. */
+  credit_status?: CreditTransactionStatus | null;
   /** Ligne débit miroir (autre compte), uniquement si type = INTERNAL_CREDIT. */
   internal_transfer_debit_id?: string | null;
 }
@@ -274,6 +277,7 @@ export interface TransactionUpdateBody {
   fournisseur_id?: string | null;
   client_account_type_id?: string | null;
   debit_status?: DebitTransactionStatus | null;
+  credit_status?: CreditTransactionStatus | null;
 }
 
 export interface CompanyEmail {

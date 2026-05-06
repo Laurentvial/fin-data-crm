@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
+import { isCreditTransactionStatus } from "@/lib/credit-status";
 import type { TransactionType } from "@/lib/types";
 
 export const maxDuration = 120;
@@ -37,6 +38,7 @@ interface CommitItem {
   description?: unknown;
   type?: unknown;
   debit_status?: unknown;
+  credit_status?: unknown;
   import?: unknown;
 }
 
@@ -63,9 +65,8 @@ export async function POST(request: NextRequest) {
       description: string;
       type: TransactionType;
       debitStatus: string | null;
+      creditStatus: string | null;
     }[] = [];
-
-    const dedupKeys = new Set<string>();
 
     for (const raw of itemsRaw as CommitItem[]) {
       if (!raw || typeof raw !== "object") continue;
@@ -102,6 +103,21 @@ export async function POST(request: NextRequest) {
         debitStatus = rawDebitStatus;
       }
 
+      let creditStatus: string | null = null;
+      const rawCreditStatus = raw.credit_status;
+      if (rawCreditStatus !== undefined && rawCreditStatus !== null && rawCreditStatus !== "") {
+        if (typeof rawCreditStatus !== "string" || !isCreditTransactionStatus(rawCreditStatus)) {
+          return NextResponse.json(
+            { error: "credit_status invalide (paye ou vide)" },
+            { status: 400 }
+          );
+        }
+        if (type !== "CREDIT") {
+          return NextResponse.json({ error: "credit_status réservé aux crédits" }, { status: 400 });
+        }
+        creditStatus = rawCreditStatus;
+      }
+
       const rounded = Math.round(n * 100) / 100;
 
       toInsert.push({
@@ -110,6 +126,7 @@ export async function POST(request: NextRequest) {
         description,
         type,
         debitStatus,
+        creditStatus,
       });
     }
 
@@ -132,7 +149,7 @@ export async function POST(request: NextRequest) {
         sql`
           INSERT INTO transactions (
             bank_account_id, transaction_date, amount, description, type,
-            processed_by_user_id, debit_status, extracted_data_json
+            processed_by_user_id, debit_status, credit_status, extracted_data_json
           )
           VALUES (
             ${bank_account_id.trim()}::uuid,
@@ -142,6 +159,7 @@ export async function POST(request: NextRequest) {
             ${row.type}::transactiontype,
             ${processedByUserId},
             ${row.debitStatus},
+            ${row.creditStatus},
             ${JSON.stringify(extractedMeta)}::jsonb
           )
           RETURNING id

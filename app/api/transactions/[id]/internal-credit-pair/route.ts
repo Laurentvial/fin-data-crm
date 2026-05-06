@@ -73,6 +73,11 @@ export async function POST(
         debitId,
         fournisseurUuid,
       ]);
+      await sql`
+        UPDATE transactions
+        SET credit_status = NULL
+        WHERE id = ${creditId}::uuid
+      `;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const mapped = mapPairError(msg);
@@ -97,6 +102,7 @@ export async function POST(
         t.created_at,
         t.processed_by_user_id,
         t.debit_status,
+        t.credit_status,
         t.fournisseur_id,
         fn.name AS fournisseur_name,
         t.client_account_type_id,

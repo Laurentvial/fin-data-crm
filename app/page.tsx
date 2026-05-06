@@ -12,6 +12,7 @@ import { SheetToolbar } from "@/components/layout/SheetToolbar";
 import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummaryPanel";
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
 import { debitStatusLabel } from "@/lib/debit-status";
+import { creditStatusLabel } from "@/lib/credit-status";
 import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
 import {
   groupedInvoiceDisabledReason,
@@ -170,8 +171,11 @@ function HomeContent() {
           break;
         }
         case "debit_status": {
-          const key = (t: Transaction) =>
-            t.type === "DEBIT" ? (t.debit_status ?? "") : "\uFFFF";
+          const key = (t: Transaction) => {
+            if (t.type === "DEBIT") return `0:${t.debit_status ?? ""}`;
+            if (t.type === "CREDIT") return `1:${t.credit_status ?? ""}`;
+            return "2:\uFFFF";
+          };
           cmp = key(a).localeCompare(key(b), "fr");
           break;
         }
@@ -469,6 +473,8 @@ function HomeContent() {
         body.client_account_type_id = value === "" || value == null ? null : value;
       if (field === "debit_status")
         body.debit_status = value === "" || value == null ? null : value;
+      if (field === "credit_status")
+        body.credit_status = value === "" || value == null ? null : value;
       setSaveStatus("saving");
       setSaveMessage("");
       try {
@@ -662,7 +668,11 @@ function HomeContent() {
       const signed = t.type === "DEBIT" ? -num : num;
       const statusDisplay = [t.account_status_emoji, t.account_status_name].filter(Boolean).join(" ").trim();
       const etat =
-        t.type === "DEBIT" ? debitStatusLabel(t.debit_status ?? null) || "—" : "";
+        t.type === "DEBIT"
+          ? debitStatusLabel(t.debit_status ?? null) || "—"
+          : t.type === "CREDIT"
+            ? creditStatusLabel(t.credit_status ?? null) || "—"
+            : "";
       return [
         t.id,
         t.transaction_date,

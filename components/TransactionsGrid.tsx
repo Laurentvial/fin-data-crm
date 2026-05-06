@@ -37,6 +37,12 @@ import {
   debitStatusPillStyle,
   type DebitTransactionStatus,
 } from "@/lib/debit-status";
+import {
+  CREDIT_STATUS_VALUES,
+  creditStatusLabel,
+  creditStatusPillStyle,
+  type CreditTransactionStatus,
+} from "@/lib/credit-status";
 import { isCreditLikeType, transactionTypeLabel } from "@/lib/transaction-type";
 
 const LIGHT_THEME: Partial<Theme> = {
@@ -695,6 +701,105 @@ function createDebitStatusRenderer(): CustomRenderer<CustomCell<DebitStatusCellD
   } as CustomRenderer<CustomCell<DebitStatusCellData>>;
 }
 
+interface CreditStatusCellData {
+  type: "credit_status";
+  value: "" | CreditTransactionStatus;
+  editable: boolean;
+}
+
+function createCreditStatusRenderer(): CustomRenderer<CustomCell<CreditStatusCellData>> {
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<CreditStatusCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<CreditStatusCellData>).data?.type === "credit_status",
+    draw: (args: DrawArgs<CustomCell<CreditStatusCellData>>, cell) => {
+      const v = cell.data.value;
+      if (!v) {
+        const { ctx, rect, theme } = args;
+        ctx.save();
+        ctx.fillStyle = theme.textMedium ?? theme.textLight ?? "#94a3b8";
+        ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+        ctx.textBaseline = "middle";
+        ctx.fillText("—", rect.x + 8, rect.y + rect.height / 2);
+        ctx.restore();
+        return;
+      }
+      const pill = creditStatusPillStyle(v);
+      if (!pill) {
+        drawTextCell(args as Parameters<typeof drawTextCell>[0], "");
+        return;
+      }
+      const { ctx, rect, theme } = args;
+      ctx.save();
+      const padX = 8;
+      const h = Math.min(26, Math.max(20, rect.height - 10));
+      const y = rect.y + (rect.height - h) / 2;
+      ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+      const w = ctx.measureText(pill.label).width + padX * 2;
+      const x = rect.x + 4;
+      const r = Math.min(6, h / 2);
+      roundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle = pill.bg;
+      ctx.fill();
+      ctx.fillStyle = pill.fg;
+      ctx.textBaseline = "middle";
+      ctx.fillText(pill.label, x + padX, y + h / 2);
+      ctx.restore();
+    },
+    provideEditor: () => (p) => {
+      const theme = p.theme;
+      const current = p.value.data.value === "" ? "" : p.value.data.value;
+      const inputStyle: React.CSSProperties = {
+        height: 36,
+        paddingTop: 6,
+        paddingBottom: 6,
+        paddingLeft: 8,
+        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+        borderRadius: 6,
+        fontSize: 14,
+        fontFamily: "inherit",
+        backgroundColor: theme.bgCell ?? "#fff",
+        color: theme.textDark ?? "#171717",
+        width: "100%",
+        minWidth: 140,
+        maxWidth: 280,
+      };
+      return (
+        <select
+          autoFocus
+          value={current}
+          style={inputStyle}
+          className="focus:outline-none focus:border-[var(--muted)]"
+          onChange={(e) => {
+            const v = e.target.value;
+            const nextVal: "" | CreditTransactionStatus =
+              v === "" ? "" : (v as CreditTransactionStatus);
+            const next = {
+              ...p.value,
+              data: { type: "credit_status" as const, value: nextVal, editable: true as const },
+            } satisfies CustomCell<CreditStatusCellData>;
+            p.onChange(next);
+            p.onFinishedEditing(next);
+          }}
+        >
+          <option value="">—</option>
+          {CREDIT_STATUS_VALUES.map((k) => (
+            <option key={k} value={k}>
+              {creditStatusLabel(k)}
+            </option>
+          ))}
+        </select>
+      );
+    },
+    getAccessibilityString: (cell: CustomCell<CreditStatusCellData>) => {
+      const v = cell.data.value;
+      if (!v) return "Aucun statut";
+      return creditStatusLabel(v);
+    },
+  } as CustomRenderer<CustomCell<CreditStatusCellData>>;
+}
+
 interface TransactionTypeCellData {
   type: "txn_type";
   value: TransactionType;
@@ -958,6 +1063,7 @@ export function TransactionsGrid({
     [settingsClients, onQuickCreateSettingsClient]
   );
   const debitStatusRenderer = useMemo(() => createDebitStatusRenderer(), []);
+  const creditStatusRenderer = useMemo(() => createCreditStatusRenderer(), []);
   const transactionTypeRenderer = useMemo(
     () => createTransactionTypeRenderer(onBeginInternalCreditPair),
     [onBeginInternalCreditPair]
@@ -1112,8 +1218,7 @@ export function TransactionsGrid({
     onDelete,
     columnFiltersEnabled,
     filterValues,
-    sortState?.column,
-    sortState?.direction,
+    sortState,
     resolvedTheme.accentColor,
     resolvedTheme.accentLight,
     resolvedTheme.bgCell,
@@ -1236,7 +1341,7 @@ export function TransactionsGrid({
         };
       }
       if (field === "debit_status") {
-        if (txn.type !== "DEBIT") {
+        if (txn.type === "INTERNAL_CREDIT") {
           return {
             kind: GridCellKind.Text,
             data: "",
@@ -1245,13 +1350,27 @@ export function TransactionsGrid({
             readonly: true,
           };
         }
-        const st = txn.debit_status;
+        if (txn.type === "DEBIT") {
+          const st = txn.debit_status;
+          const value =
+            st && (DEBIT_STATUS_VALUES as readonly string[]).includes(st) ? st : "";
+          return {
+            kind: GridCellKind.Custom,
+            data: { type: "debit_status", value: value as "" | DebitTransactionStatus, editable: true },
+            copyData: debitStatusLabel(st ?? null),
+            allowOverlay: true,
+            /** Glide « second-click » : sans override, l’overlay liste ne s’ouvre pas au double-clic fiable. */
+            activationBehaviorOverride: "single-click",
+            cursor: "pointer",
+          };
+        }
+        const st = txn.credit_status;
         const value =
-          st && (DEBIT_STATUS_VALUES as readonly string[]).includes(st) ? st : "";
+          st && (CREDIT_STATUS_VALUES as readonly string[]).includes(st) ? st : "";
         return {
           kind: GridCellKind.Custom,
-          data: { type: "debit_status", value: value as "" | DebitTransactionStatus, editable: true },
-          copyData: debitStatusLabel(st ?? null),
+          data: { type: "credit_status", value: value as "" | CreditTransactionStatus, editable: true },
+          copyData: creditStatusLabel(st ?? null),
           allowOverlay: true,
           /** Glide « second-click » : sans override, l’overlay liste ne s’ouvre pas au double-clic fiable. */
           activationBehaviorOverride: "single-click",
@@ -1404,15 +1523,24 @@ export function TransactionsGrid({
       }
 
       if (field === "debit_status") {
-        if (txn.type !== "DEBIT") return;
+        if (txn.type === "INTERNAL_CREDIT") return;
         let v: unknown;
         if (newValue.kind === GridCellKind.Custom) {
-          const d = (newValue as CustomCell<DebitStatusCellData>).data;
-          if (d?.type === "debit_status") v = d.value === "" ? null : d.value;
+          const d = (newValue as CustomCell<DebitStatusCellData | CreditStatusCellData>).data;
+          if (txn.type === "DEBIT" && d?.type === "debit_status") {
+            v = d.value === "" ? null : d.value;
+          }
+          if (txn.type === "CREDIT" && d?.type === "credit_status") {
+            v = d.value === "" ? null : d.value;
+          }
         }
         if (v === undefined) return;
         try {
-          await onCellValueChanged(txn.id, "debit_status", v);
+          await onCellValueChanged(
+            txn.id,
+            txn.type === "DEBIT" ? "debit_status" : "credit_status",
+            v
+          );
         } catch {
           // Page handles error display
         }
@@ -1781,6 +1909,7 @@ export function TransactionsGrid({
                   fournisseurRenderer,
                   settingsClientRenderer,
                   debitStatusRenderer,
+                  creditStatusRenderer,
                   transactionTypeRenderer,
                   invoiceLinkRenderer,
                   deleteActionRenderer,
