@@ -388,6 +388,8 @@ function FournisseurSelectEditor({
 }) {
   const { value, onChange, onFinishedEditing, theme: gridTheme } = cellProps;
   const currentId = value.data.id ?? "";
+  const selectedName = currentId ? fournisseurs.find((f) => f.id === currentId)?.name ?? "" : "";
+  const selectedPill = selectedName ? namedLabelPillStyle(selectedName, "fournisseur") : null;
   const [busy, setBusy] = useState(false);
   const inputStyle: React.CSSProperties = {
     height: 36,
@@ -405,48 +407,73 @@ function FournisseurSelectEditor({
     maxWidth: 360,
   };
   return (
-    <select
-      autoFocus
-      disabled={busy}
-      value={currentId}
-      style={inputStyle}
-      className="focus:outline-none focus:border-[var(--muted)]"
-      onChange={async (e) => {
-        const v = e.target.value;
-        if (v === CREATE_FOURNISSEUR_SENTINEL) {
-          if (!onQuickCreate || busy) return;
-          setBusy(true);
-          try {
-            const created = await onQuickCreate();
-            if (created) {
-              const next = {
-                ...value,
-                data: { type: "fournisseur" as const, id: created.id },
-              };
-              onChange(next);
-              onFinishedEditing(next);
+    <div className="relative">
+      <select
+        autoFocus
+        disabled={busy}
+        value={currentId}
+        style={{
+          ...inputStyle,
+          color: selectedPill ? "transparent" : inputStyle.color,
+        }}
+        className="focus:outline-none focus:border-[var(--muted)]"
+        onChange={async (e) => {
+          const v = e.target.value;
+          if (v === CREATE_FOURNISSEUR_SENTINEL) {
+            if (!onQuickCreate || busy) return;
+            setBusy(true);
+            try {
+              const created = await onQuickCreate();
+              if (created) {
+                const next = {
+                  ...value,
+                  data: { type: "fournisseur" as const, id: created.id },
+                };
+                onChange(next);
+                onFinishedEditing(next);
+              }
+            } finally {
+              setBusy(false);
             }
-          } finally {
-            setBusy(false);
+            return;
           }
-          return;
-        }
-        const nextId = v === "" ? null : v;
-        const next = { ...value, data: { type: "fournisseur" as const, id: nextId } };
-        onChange(next);
-        onFinishedEditing(next);
-      }}
-    >
-      <option value="">—</option>
-      {fournisseurs.map((f) => (
-        <option key={f.id} value={f.id}>
-          {f.name}
-        </option>
-      ))}
-      {onQuickCreate ? (
-        <option value={CREATE_FOURNISSEUR_SENTINEL}>+ Nouveau fournisseur…</option>
+          const nextId = v === "" ? null : v;
+          const next = { ...value, data: { type: "fournisseur" as const, id: nextId } };
+          onChange(next);
+          onFinishedEditing(next);
+        }}
+      >
+        <option value="">—</option>
+        {fournisseurs.map((f) => {
+          const pill = namedLabelPillStyle(f.name, "fournisseur");
+          return (
+            <option
+              key={f.id}
+              value={f.id}
+              style={{
+                backgroundColor: pill.bg,
+                color: pill.fg,
+              }}
+            >
+              {f.name}
+            </option>
+          );
+        })}
+        {onQuickCreate ? (
+          <option value={CREATE_FOURNISSEUR_SENTINEL}>+ Nouveau fournisseur…</option>
+        ) : null}
+      </select>
+      {selectedName ? (
+        <div className="pointer-events-none absolute inset-y-0 left-2 flex items-center">
+          <span
+            className="inline-flex max-w-[calc(100%-20px)] items-center truncate rounded-md px-2 py-0.5 text-xs font-medium"
+            style={{ backgroundColor: selectedPill!.bg, color: selectedPill!.fg }}
+          >
+            {selectedName}
+          </span>
+        </div>
       ) : null}
-    </select>
+    </div>
   );
 }
 
@@ -504,6 +531,11 @@ function SettingsClientSelectEditor({
 }) {
   const { value, onChange, onFinishedEditing, theme: gridTheme } = cellProps;
   const currentOverride = value.data.overrideId ?? "";
+  const selectedName =
+    currentOverride === ""
+      ? ""
+      : (sortedClients.find((c) => c.id === currentOverride)?.name ?? value.data.displayName ?? "");
+  const selectedPill = selectedName ? namedLabelPillStyle(selectedName, "client") : null;
   const [busy, setBusy] = useState(false);
   const inputStyle: React.CSSProperties = {
     height: 36,
@@ -521,63 +553,88 @@ function SettingsClientSelectEditor({
     maxWidth: 360,
   };
   return (
-    <select
-      autoFocus
-      disabled={busy}
-      value={currentOverride}
-      style={inputStyle}
-      className="focus:outline-none focus:border-[var(--muted)]"
-      onChange={async (e) => {
-        const v = e.target.value;
-        if (v === CREATE_CLIENT_SENTINEL) {
-          if (!onQuickCreate || busy) return;
-          setBusy(true);
-          try {
-            const created = await onQuickCreate();
-            if (created) {
-              const next = {
-                ...value,
-                data: {
-                  type: "settings_client" as const,
-                  overrideId: created.id,
-                  displayName: created.name,
-                  defaultDisplayName: value.data.defaultDisplayName,
-                },
-              };
-              onChange(next);
-              onFinishedEditing(next);
+    <div className="relative">
+      <select
+        autoFocus
+        disabled={busy}
+        value={currentOverride}
+        style={{
+          ...inputStyle,
+          color: selectedPill ? "transparent" : inputStyle.color,
+        }}
+        className="focus:outline-none focus:border-[var(--muted)]"
+        onChange={async (e) => {
+          const v = e.target.value;
+          if (v === CREATE_CLIENT_SENTINEL) {
+            if (!onQuickCreate || busy) return;
+            setBusy(true);
+            try {
+              const created = await onQuickCreate();
+              if (created) {
+                const next = {
+                  ...value,
+                  data: {
+                    type: "settings_client" as const,
+                    overrideId: created.id,
+                    displayName: created.name,
+                    defaultDisplayName: value.data.defaultDisplayName,
+                  },
+                };
+                onChange(next);
+                onFinishedEditing(next);
+              }
+            } finally {
+              setBusy(false);
             }
-          } finally {
-            setBusy(false);
+            return;
           }
-          return;
-        }
-        const nextId = v === "" ? null : v;
-        const label =
-          nextId === null
-            ? (value.data.defaultDisplayName ?? "")
-            : (sortedClients.find((c) => c.id === nextId)?.name ?? value.data.displayName);
-        const next = {
-          ...value,
-          data: {
-            type: "settings_client" as const,
-            overrideId: nextId,
-            displayName: label,
-            defaultDisplayName: value.data.defaultDisplayName,
-          },
-        };
-        onChange(next);
-        onFinishedEditing(next);
-      }}
-    >
-      <option value="">Compte (défaut)</option>
-      {sortedClients.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
-      {onQuickCreate ? <option value={CREATE_CLIENT_SENTINEL}>+ Nouveau client…</option> : null}
-    </select>
+          const nextId = v === "" ? null : v;
+          const label =
+            nextId === null
+              ? (value.data.defaultDisplayName ?? "")
+              : (sortedClients.find((c) => c.id === nextId)?.name ?? value.data.displayName);
+          const next = {
+            ...value,
+            data: {
+              type: "settings_client" as const,
+              overrideId: nextId,
+              displayName: label,
+              defaultDisplayName: value.data.defaultDisplayName,
+            },
+          };
+          onChange(next);
+          onFinishedEditing(next);
+        }}
+      >
+        <option value="">Compte (défaut)</option>
+        {sortedClients.map((c) => {
+          const pill = namedLabelPillStyle(c.name, "client");
+          return (
+            <option
+              key={c.id}
+              value={c.id}
+              style={{
+                backgroundColor: pill.bg,
+                color: pill.fg,
+              }}
+            >
+              {c.name}
+            </option>
+          );
+        })}
+        {onQuickCreate ? <option value={CREATE_CLIENT_SENTINEL}>+ Nouveau client…</option> : null}
+      </select>
+      {selectedName ? (
+        <div className="pointer-events-none absolute inset-y-0 left-2 flex items-center">
+          <span
+            className="inline-flex max-w-[calc(100%-20px)] items-center truncate rounded-md px-2 py-0.5 text-xs font-medium"
+            style={{ backgroundColor: selectedPill!.bg, color: selectedPill!.fg }}
+          >
+            {selectedName}
+          </span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
