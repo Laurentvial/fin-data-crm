@@ -6,6 +6,7 @@ import { renderHandlebarsTemplate } from "./render-template";
 import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -257,6 +258,7 @@ export async function generateInvoice(
   let invoiceNumber = "";
   let invoiceId = "";
   let pdfBytes: Buffer | null = null;
+  const canPersistInvoiceBankAccount = await hasInvoiceBankAccountColumn();
 
   const maxAttempts = 12;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -314,22 +316,41 @@ export async function generateInvoice(
 
     let insertRows: unknown;
     try {
-      insertRows = await sql`
-        INSERT INTO invoices (
-          company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-          customer_name, customer_address, customer_vat, customer_siret, line_items,
-          subtotal, tax_amount, total, currency, status
-        )
-        VALUES (
-          ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
-          ${issueDate}::date, ${dueDateStr}::date,
-          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
-          ${JSON.stringify(lineItems)}::jsonb,
-          ${subtotal}, ${taxAmount},
-          ${total}, ${currency}, 'issued'
-        )
-        RETURNING id
-      `;
+      insertRows = canPersistInvoiceBankAccount
+        ? await sql`
+            INSERT INTO invoices (
+              company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+              bank_account_id,
+              customer_name, customer_address, customer_vat, customer_siret, line_items,
+              subtotal, tax_amount, total, currency, status
+            )
+            VALUES (
+              ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
+              ${issueDate}::date, ${dueDateStr}::date,
+              ${bankAccountId}::uuid,
+              ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+              ${JSON.stringify(lineItems)}::jsonb,
+              ${subtotal}, ${taxAmount},
+              ${total}, ${currency}, 'issued'
+            )
+            RETURNING id
+          `
+        : await sql`
+            INSERT INTO invoices (
+              company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+              customer_name, customer_address, customer_vat, customer_siret, line_items,
+              subtotal, tax_amount, total, currency, status
+            )
+            VALUES (
+              ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
+              ${issueDate}::date, ${dueDateStr}::date,
+              ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+              ${JSON.stringify(lineItems)}::jsonb,
+              ${subtotal}, ${taxAmount},
+              ${total}, ${currency}, 'issued'
+            )
+            RETURNING id
+          `;
     } catch (err) {
       const pg = err as { code?: string; message?: string; constraint?: string };
       const msg = String(pg?.message ?? err);

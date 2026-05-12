@@ -23,6 +23,7 @@ interface EditInvoiceModalProps {
 
 interface InvoiceDetailsResponse {
   id: string;
+  bank_account_id?: string | null;
   invoice_number: string;
   issue_date: string;
   due_date?: string | null;
@@ -61,6 +62,18 @@ export function EditInvoiceModal({
   onClose,
   onSuccess,
 }: EditInvoiceModalProps) {
+  const [bankAccounts, setBankAccounts] = useState<
+    Array<{
+      id: string;
+      company_id: string;
+      name: string;
+      bank_name?: string | null;
+      ibans?: Array<{ iban: string; bic?: string | null }> | null;
+    }>
+  >([]);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("");
+  const [invoiceBankAccountId, setInvoiceBankAccountId] = useState<string>("");
+
   const [invoiceNumber, setInvoiceNumber] = useState<string>("");
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -116,6 +129,9 @@ export function EditInvoiceModal({
         setCustomerSiret(invoice.customer_siret ?? "");
         setIssueDate((invoice.issue_date ?? "").slice(0, 10));
         setDueDate((invoice.due_date ?? "").slice(0, 10));
+        setInvoiceBankAccountId(
+          typeof invoice.bank_account_id === "string" ? invoice.bank_account_id : ""
+        );
 
         const mappedRows =
           Array.isArray(invoice.line_items) && invoice.line_items.length > 0
@@ -153,6 +169,31 @@ export function EditInvoiceModal({
       mounted = false;
     };
   }, [invoiceId, companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetch("/api/bank-accounts")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const filtered = list.filter((ba) => ba?.company_id === companyId);
+        setBankAccounts(filtered);
+        setSelectedBankAccountId((prev) => {
+          if (prev && filtered.some((ba) => String(ba?.id ?? "") === prev)) return prev;
+          if (
+            invoiceBankAccountId &&
+            filtered.some((ba) => String(ba?.id ?? "") === invoiceBankAccountId)
+          ) {
+            return invoiceBankAccountId;
+          }
+          if (filtered.length === 1) return String(filtered[0]?.id ?? "");
+          return "";
+        });
+      })
+      .catch(() => {
+        setBankAccounts([]);
+      });
+  }, [companyId, invoiceBankAccountId]);
 
   const fetchCustomers = useCallback(
     async (search?: string) => {
@@ -273,10 +314,13 @@ export function EditInvoiceModal({
     setError(null);
     setSaving(true);
     try {
+      const bankAccountId =
+        selectedBankAccountId.trim() ? selectedBankAccountId.trim() : undefined;
       const res = await fetch(`/api/invoices/${invoiceId}/regenerate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          bank_account_id: bankAccountId,
           invoice_number: invoiceNumber.trim(),
           customer_name: customerName.trim(),
           customer_address: customerAddress.trim() || undefined,
@@ -360,6 +404,34 @@ export function EditInvoiceModal({
                 />
               </div>
             </div>
+
+            {bankAccounts.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                  Compte bancaire (pour le RIB/IBAN/BIC sur la facture)
+                </label>
+                <Select
+                  value={selectedBankAccountId}
+                  onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                  className="w-full py-2 text-sm"
+                >
+                  <option value="">Automatique (premier IBAN de la société)</option>
+                  {bankAccounts.map((ba) => {
+                    const ibans = Array.isArray(ba.ibans) ? ba.ibans : [];
+                    const firstIban = typeof ibans[0]?.iban === "string" ? ibans[0]!.iban : "";
+                    const ibanLabel = firstIban ? ` — ${firstIban.slice(0, 6)}…${firstIban.slice(-4)}` : "";
+                    const bankLabel = ba.bank_name ? `${ba.bank_name} · ` : "";
+                    return (
+                      <option key={ba.id} value={ba.id}>
+                        {bankLabel}
+                        {ba.name}
+                        {ibanLabel}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </div>
+            )}
 
             <div ref={customerListRef} className="relative">
               <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom du client *</label>

@@ -29,6 +29,7 @@ export async function POST(
     const hasCustomerSiretField = Object.prototype.hasOwnProperty.call(body, "customer_siret");
     const hasInvoiceNumberField = Object.prototype.hasOwnProperty.call(body, "invoice_number");
     const hasDueDateField = Object.prototype.hasOwnProperty.call(body, "due_date");
+    const hasBankAccountIdField = Object.prototype.hasOwnProperty.call(body, "bank_account_id");
     const customerName =
       typeof body.customer_name === "string" ? body.customer_name.trim() || undefined : undefined;
     const customerAddress = hasCustomerAddressField
@@ -66,6 +67,13 @@ export async function POST(
           ? ""
           : undefined
       : undefined;
+    const bankAccountId = hasBankAccountIdField
+      ? typeof body.bank_account_id === "string"
+        ? body.bank_account_id.trim() || undefined
+        : body.bank_account_id === null
+          ? ""
+          : undefined
+      : undefined;
     const lineItems =
       Array.isArray(body.line_items) ? (body.line_items as InvoiceLineItemInput[]) : undefined;
 
@@ -77,6 +85,7 @@ export async function POST(
       invoiceNumber,
       issueDate,
       dueDate,
+      bankAccountId,
       lineItems,
     });
     return NextResponse.json(result);
@@ -97,6 +106,9 @@ export async function POST(
     }
     if (message.includes("Ce numéro de facture existe déjà")) {
       return NextResponse.json({ error: message }, { status: 409 });
+    }
+    if (message.includes("bank_account_id invalide")) {
+      return NextResponse.json({ error: message }, { status: 400 });
     }
     return NextResponse.json(
       { error: message || "Échec de la régénération de la facture" },

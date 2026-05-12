@@ -4,6 +4,7 @@ import { getCountryRules } from "./country-rules";
 import { htmlToPdfBuffer } from "./html-to-pdf";
 import { uploadPdfToCloudinary } from "./cloudinary";
 import { renderHandlebarsTemplate } from "./render-template";
+import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -177,6 +178,24 @@ export async function createManualInvoice(
     typeof bankAccountId === "string" && bankAccountId.trim()
       ? bankAccountId.trim()
       : null;
+  if (bankAccountIdNorm) {
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRe.test(bankAccountIdNorm)) {
+      throw new Error("bank_account_id invalide (ne correspond pas à cette société)");
+    }
+    const bankAccountRows = await sql`
+      SELECT 1
+      FROM bank_accounts
+      WHERE id = ${bankAccountIdNorm}::uuid
+        AND company_id = ${companyId}::uuid
+      LIMIT 1
+    `;
+    const bankAccount = Array.isArray(bankAccountRows) ? bankAccountRows[0] : bankAccountRows;
+    if (!bankAccount) {
+      throw new Error("bank_account_id invalide (ne correspond pas à cette société)");
+    }
+  }
   const ibanRows = bankAccountIdNorm
     ? await sql`
         SELECT i.iban, i.bic
@@ -232,6 +251,7 @@ export async function createManualInvoice(
   let invoiceNumber = "";
   let invoiceId = "";
   let pdfBytes: Buffer | null = null;
+  const canPersistInvoiceBankAccount = await hasInvoiceBankAccountColumn();
 
   const maxAttempts = customInvoiceNumber ? 1 : 12;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -293,22 +313,41 @@ export async function createManualInvoice(
 
     let insertRows: unknown;
     try {
-      insertRows = await sql`
-        INSERT INTO invoices (
-          company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-          customer_name, customer_address, customer_vat, customer_siret, line_items,
-          subtotal, tax_amount, total, currency, status
-        )
-        VALUES (
-          ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
-          ${issueDate}::date, ${dueDateSql}::date,
-          ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
-          ${JSON.stringify(lineItems)}::jsonb,
-          ${subtotal}, ${taxAmount},
-          ${total}, ${currency}, 'issued'
-        )
-        RETURNING id
-      `;
+      insertRows = canPersistInvoiceBankAccount
+        ? await sql`
+            INSERT INTO invoices (
+              company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+              bank_account_id,
+              customer_name, customer_address, customer_vat, customer_siret, line_items,
+              subtotal, tax_amount, total, currency, status
+            )
+            VALUES (
+              ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
+              ${issueDate}::date, ${dueDateSql}::date,
+              ${bankAccountIdNorm}::uuid,
+              ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+              ${JSON.stringify(lineItems)}::jsonb,
+              ${subtotal}, ${taxAmount},
+              ${total}, ${currency}, 'issued'
+            )
+            RETURNING id
+          `
+        : await sql`
+            INSERT INTO invoices (
+              company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+              customer_name, customer_address, customer_vat, customer_siret, line_items,
+              subtotal, tax_amount, total, currency, status
+            )
+            VALUES (
+              ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
+              ${issueDate}::date, ${dueDateSql}::date,
+              ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+              ${JSON.stringify(lineItems)}::jsonb,
+              ${subtotal}, ${taxAmount},
+              ${total}, ${currency}, 'issued'
+            )
+            RETURNING id
+          `;
     } catch (err) {
       const pg = err as { code?: string; message?: string; constraint?: string };
       const msg = String(pg?.message ?? err);

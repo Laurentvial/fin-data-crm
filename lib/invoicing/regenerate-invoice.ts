@@ -6,6 +6,7 @@ import { htmlToPdfBuffer } from "./html-to-pdf";
 import { renderHandlebarsTemplate } from "./render-template";
 import { uploadPdfToCloudinary } from "./cloudinary";
 import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
+import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -26,6 +27,7 @@ interface RegenerateInvoiceInput {
   customerSiret?: string;
   issueDate?: string;
   dueDate?: string;
+  bankAccountId?: string;
   lineItems?: InvoiceLineItemInput[];
 }
 
@@ -33,6 +35,7 @@ type InvoiceRow = {
   id: string;
   company_id: string;
   transaction_id: string | null;
+  bank_account_id: string | null;
   invoice_number: unknown;
   issue_date: unknown;
   due_date: unknown;
@@ -130,16 +133,29 @@ export async function regenerateInvoice(
   invoiceId: string,
   input: RegenerateInvoiceInput = {}
 ): Promise<RegenerateInvoiceResult> {
-  const invoiceRows = await sql`
-    SELECT
-      id, company_id, transaction_id, invoice_number, issue_date, due_date,
-      customer_name, customer_address, customer_vat, customer_siret, line_items,
-      subtotal, tax_amount, total, currency
-    FROM invoices
-    WHERE id = ${invoiceId}::uuid
-    LIMIT 1
-  `;
-  const invoice = (Array.isArray(invoiceRows) ? invoiceRows[0] : invoiceRows) as InvoiceRow | undefined;
+  const canPersistInvoiceBankAccount = await hasInvoiceBankAccountColumn();
+  const invoiceRowsReal = canPersistInvoiceBankAccount
+    ? await sql`
+        SELECT
+          id, company_id, transaction_id, bank_account_id, invoice_number, issue_date, due_date,
+          customer_name, customer_address, customer_vat, customer_siret, line_items,
+          subtotal, tax_amount, total, currency
+        FROM invoices
+        WHERE id = ${invoiceId}::uuid
+        LIMIT 1
+      `
+    : await sql`
+        SELECT
+          id, company_id, transaction_id, NULL::uuid AS bank_account_id, invoice_number, issue_date, due_date,
+          customer_name, customer_address, customer_vat, customer_siret, line_items,
+          subtotal, tax_amount, total, currency
+        FROM invoices
+        WHERE id = ${invoiceId}::uuid
+        LIMIT 1
+      `;
+  const invoice = (Array.isArray(invoiceRowsReal) ? invoiceRowsReal[0] : invoiceRowsReal) as
+    | InvoiceRow
+    | undefined;
   if (!invoice?.id) {
     throw new Error("Facture introuvable");
   }
@@ -299,23 +315,55 @@ export async function regenerateInvoice(
   }
 
   let payment: { iban?: string; bic?: string } | undefined;
-  const ibanRows = invoice.transaction_id
+  const currentBankAccountId =
+    typeof invoice.bank_account_id === "string" && invoice.bank_account_id.trim()
+      ? invoice.bank_account_id.trim()
+      : null;
+  const bankAccountIdNorm =
+    typeof input.bankAccountId === "string" && input.bankAccountId.trim()
+      ? input.bankAccountId.trim()
+      : null;
+  if (bankAccountIdNorm) {
+    const bankAccountRows = await sql`
+      SELECT 1
+      FROM bank_accounts
+      WHERE id = ${bankAccountIdNorm}::uuid
+        AND company_id = ${invoice.company_id}::uuid
+      LIMIT 1
+    `;
+    const bankAccount = Array.isArray(bankAccountRows) ? bankAccountRows[0] : bankAccountRows;
+    if (!bankAccount) {
+      throw new Error("bank_account_id invalide (ne correspond pas à cette société)");
+    }
+  }
+  const bankAccountIdToUse = bankAccountIdNorm ?? currentBankAccountId;
+  const ibanRows = bankAccountIdToUse
     ? await sql`
-        SELECT i.iban, i.bic
-        FROM transactions t
-        JOIN bank_account_ibans i ON i.bank_account_id = t.bank_account_id
-        WHERE t.id = ${invoice.transaction_id}::uuid
-        ORDER BY i.created_at
-        LIMIT 1
-      `
-    : await sql`
         SELECT i.iban, i.bic
         FROM bank_accounts ba
         JOIN bank_account_ibans i ON i.bank_account_id = ba.id
         WHERE ba.company_id = ${invoice.company_id}::uuid
+          AND ba.id = ${bankAccountIdToUse}::uuid
         ORDER BY i.created_at
         LIMIT 1
-      `;
+      `
+    : invoice.transaction_id
+      ? await sql`
+          SELECT i.iban, i.bic
+          FROM transactions t
+          JOIN bank_account_ibans i ON i.bank_account_id = t.bank_account_id
+          WHERE t.id = ${invoice.transaction_id}::uuid
+          ORDER BY i.created_at
+          LIMIT 1
+        `
+      : await sql`
+          SELECT i.iban, i.bic
+          FROM bank_accounts ba
+          JOIN bank_account_ibans i ON i.bank_account_id = ba.id
+          WHERE ba.company_id = ${invoice.company_id}::uuid
+          ORDER BY i.created_at
+          LIMIT 1
+        `;
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
   if (ibanRow?.iban) {
     const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
@@ -363,24 +411,46 @@ export async function regenerateInvoice(
   const pdfBytes = await htmlToPdfBuffer(html);
   const pdfUrl = await uploadPdfToCloudinary(pdfBytes, invoice.company_id, invoice.id);
 
-  await sql`
-    UPDATE invoices
-    SET
-      issue_date = ${issueDate}::date,
-      due_date = ${dueDate || null}::date,
-      invoice_number = ${invoiceNumber},
-      customer_name = ${customerName},
-      customer_address = ${customerAddress || null},
-      customer_vat = ${customerVat || null},
-      customer_siret = ${customerSiret || null},
-      line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
-      subtotal = ${subtotal},
-      tax_amount = ${taxAmount},
-      total = ${total},
-      pdf_url = ${pdfUrl},
-      updated_at = NOW()
-    WHERE id = ${invoice.id}::uuid
-  `;
+  if (canPersistInvoiceBankAccount) {
+    await sql`
+      UPDATE invoices
+      SET
+        issue_date = ${issueDate}::date,
+        due_date = ${dueDate || null}::date,
+        invoice_number = ${invoiceNumber},
+        customer_name = ${customerName},
+        customer_address = ${customerAddress || null},
+        customer_vat = ${customerVat || null},
+        customer_siret = ${customerSiret || null},
+        bank_account_id = ${bankAccountIdToUse}::uuid,
+        line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
+        subtotal = ${subtotal},
+        tax_amount = ${taxAmount},
+        total = ${total},
+        pdf_url = ${pdfUrl},
+        updated_at = NOW()
+      WHERE id = ${invoice.id}::uuid
+    `;
+  } else {
+    await sql`
+      UPDATE invoices
+      SET
+        issue_date = ${issueDate}::date,
+        due_date = ${dueDate || null}::date,
+        invoice_number = ${invoiceNumber},
+        customer_name = ${customerName},
+        customer_address = ${customerAddress || null},
+        customer_vat = ${customerVat || null},
+        customer_siret = ${customerSiret || null},
+        line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
+        subtotal = ${subtotal},
+        tax_amount = ${taxAmount},
+        total = ${total},
+        pdf_url = ${pdfUrl},
+        updated_at = NOW()
+      WHERE id = ${invoice.id}::uuid
+    `;
+  }
 
   return {
     id: invoice.id,
