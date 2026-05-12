@@ -126,6 +126,7 @@ const SORTABLE_FIELDS = new Set<string>([
 ]);
 
 const COLUMN_FILTER_IDS = new Set<string>([
+  "id",
   "transaction_date",
   "account_status_name",
   "bank_name",
@@ -134,7 +135,9 @@ const COLUMN_FILTER_IDS = new Set<string>([
   "type",
   "debit_status",
   "description",
+  "fournisseur",
   "client_name",
+  "created_at",
   "processed_by_user_name",
 ]);
 
@@ -459,7 +462,7 @@ function createFournisseurRenderer(
     draw: (args: DrawArgs<CustomCell<FournisseurCellData>>, cell) => {
       const fid = cell.data.id;
       const label = fid ? fournisseurs.find((f) => f.id === fid)?.name ?? "" : "";
-      drawTextCell(args as Parameters<typeof drawTextCell>[0], label);
+      drawColoredLabelPill(args as DrawArgs<CustomCell<{}>>, label, "fournisseur");
     },
     provideEditor: () => (p) => (
       <FournisseurSelectEditor
@@ -589,7 +592,11 @@ function createSettingsClientRenderer(
       cell.kind === GridCellKind.Custom &&
       (cell as CustomCell<SettingsClientCellData>).data?.type === "settings_client",
     draw: (args: DrawArgs<CustomCell<SettingsClientCellData>>, cell) => {
-      drawTextCell(args as Parameters<typeof drawTextCell>[0], cell.data.displayName ?? "");
+      drawColoredLabelPill(
+        args as DrawArgs<CustomCell<{}>>,
+        cell.data.displayName ?? "",
+        "client"
+      );
     },
     provideEditor: () => (p) => (
       <SettingsClientSelectEditor
@@ -911,6 +918,94 @@ function truncateTextToWidth(
   return s ? s + ellipsis : ellipsis;
 }
 
+function hashString(input: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const sat = Math.max(0, Math.min(100, s)) / 100;
+  const lig = Math.max(0, Math.min(100, l)) / 100;
+  const c = (1 - Math.abs(2 * lig - 1)) * sat;
+  const hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hp >= 0 && hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const m = lig - c / 2;
+  const toHex = (v: number) =>
+    Math.round((v + m) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function pickTextColor(bgHex: string): "#0f172a" | "#ffffff" {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(bgHex);
+  if (!m) return "#0f172a";
+  const r = parseInt(m[1], 16);
+  const g = parseInt(m[2], 16);
+  const b = parseInt(m[3], 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? "#0f172a" : "#ffffff";
+}
+
+function namedLabelPillStyle(label: string, family: "client" | "fournisseur"): {
+  bg: string;
+  fg: string;
+} {
+  const key = label.trim().toLowerCase();
+  if (!key) return { bg: "#94a3b8", fg: "#ffffff" };
+  const h = hashString(`${family}:${key}`);
+  const hue = h % 360;
+  const sat = family === "client" ? 52 + (h % 18) : 60 + (h % 14);
+  const light = family === "client" ? 44 + ((h >>> 8) % 10) : 40 + ((h >>> 8) % 9);
+  const bg = hslToHex(hue, sat, light);
+  return { bg, fg: pickTextColor(bg) };
+}
+
+function drawColoredLabelPill(
+  args: DrawArgs<CustomCell<{}>>,
+  label: string,
+  family: "client" | "fournisseur"
+): void {
+  const clean = label.trim();
+  if (!clean) {
+    drawTextCell(args as Parameters<typeof drawTextCell>[0], "");
+    return;
+  }
+  const { ctx, rect, theme } = args;
+  const pill = namedLabelPillStyle(clean, family);
+  const padX = 8;
+  const maxPillWidth = Math.max(24, rect.width - 12);
+  ctx.save();
+  ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+  const innerMax = maxPillWidth - padX * 2;
+  const shown = truncateTextToWidth(ctx, clean, innerMax);
+  const w = Math.min(ctx.measureText(shown).width + padX * 2, maxPillWidth);
+  const h = Math.min(26, Math.max(20, rect.height - 10));
+  const y = rect.y + (rect.height - h) / 2;
+  const x = rect.x + 4;
+  const r = Math.min(6, h / 2);
+  roundedRect(ctx, x, y, w, h, r);
+  ctx.fillStyle = pill.bg;
+  ctx.fill();
+  ctx.fillStyle = pill.fg;
+  ctx.textBaseline = "middle";
+  ctx.fillText(shown, x + padX, y + h / 2);
+  ctx.restore();
+}
+
 function createInvoiceLinkRenderer(): CustomRenderer<CustomCell<InvoiceLinkCellData>> {
   const okPill = debitStatusPillStyle("ok");
   return {
@@ -1143,12 +1238,12 @@ export function TransactionsGrid({
 
     const cols: GridColumn[] = [
       { title: "#", width: Math.round(62 * scale), id: "rowNum" },
-      {
+      menuCol({
         title: "ID Transaction",
         width: Math.round(124 * scale),
         id: "id",
         ...(idHeader !== undefined && { themeOverride: idHeader }),
-      },
+      }),
       menuCol({
         title: "Date",
         width: Math.round(130 * scale),
@@ -1181,22 +1276,22 @@ export function TransactionsGrid({
         grow: 1,
         id: "description",
       }),
-      {
+      menuCol({
         title: "Fournisseur",
         width: Math.round(180 * scale),
         id: "fournisseur",
-      },
+      }),
       menuCol({
         title: "Client",
         width: Math.round(200 * scale),
         id: "client_name",
       }),
-      {
+      menuCol({
         title: "Créé le",
         width: Math.round(120 * scale),
         id: "created_at",
         ...(createdAtHeader !== undefined && { themeOverride: createdAtHeader }),
-      },
+      }),
       menuCol({
         title: "Ajouté par",
         width: Math.round(140 * scale),
@@ -1795,12 +1890,32 @@ export function TransactionsGrid({
 
   const getRowThemeOverride = useCallback(
     (row: number): Partial<Theme> | undefined => {
+      const txn = transactions[row];
+      const hasEtat =
+        txn != null &&
+        ((txn.type === "DEBIT" && Boolean(txn.debit_status)) ||
+          (txn.type === "CREDIT" && Boolean(txn.credit_status)));
+
+      let bg = resolvedTheme.bgCell;
+      if (hasEtat && txn != null) {
+        const baseBg = resolvedTheme.bgCell ?? "#ffffff";
+        const etatBg =
+          txn.type === "DEBIT"
+            ? (debitStatusPillStyle(txn.debit_status ?? null)?.bg ?? "#16a34a")
+            : (creditStatusPillStyle(txn.credit_status ?? null)?.bg ?? "#0284c7");
+        bg = interpolateColors(baseBg, etatBg, 0.1);
+      }
+
       if (hoveredRow === row && resolvedTheme.bgCellMedium) {
-        return { bgCell: resolvedTheme.bgCellMedium };
+        bg = interpolateColors(bg ?? resolvedTheme.bgCellMedium, resolvedTheme.bgCellMedium, 0.55);
+      }
+
+      if (bg != null && bg !== resolvedTheme.bgCell) {
+        return { bgCell: bg };
       }
       return undefined;
     },
-    [hoveredRow, resolvedTheme.bgCellMedium]
+    [hoveredRow, resolvedTheme.bgCell, resolvedTheme.bgCellMedium, transactions]
   );
 
   const handleVisibleRegionChanged = useCallback(

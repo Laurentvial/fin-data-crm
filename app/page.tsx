@@ -27,7 +27,10 @@ import {
   getAccountStatusFilterKeys,
   getAllBankIdsForFilter,
   getBankNameFilterKeys,
+  getClientFilterKeys,
   getCompanyFilterKeys,
+  getEtatFilterKeys,
+  getFournisseurFilterKeys,
   getProcessedByFilterKeys,
   hasActiveTransactionFilters,
   normalizeTransactionFilters,
@@ -36,6 +39,7 @@ import {
 
 /** Page size for GET /api/transactions (API max 1000 per request). */
 const TRANSACTION_PAGE_SIZE = 500;
+const FILTER_OPTIONS_PAGE_SIZE = 1000;
 
 const TransactionsGrid = dynamic(
   () => import("@/components/TransactionsGrid").then((m) => ({ default: m.TransactionsGrid })),
@@ -88,6 +92,9 @@ function HomeContent() {
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [settingsClients, setSettingsClients] = useState<AccountType[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionsForFilterOptions, setTransactionsForFilterOptions] = useState<Transaction[]>(
+    []
+  );
   const [loadingBankAccounts, setLoadingBankAccounts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
@@ -288,9 +295,52 @@ function HomeContent() {
       const txns = Array.isArray(data) ? data : data.transactions ?? [];
       if (transactionsListEpochRef.current !== epoch) return;
       setTransactions(txns);
-      setHasMoreTransactions(
-        typeof data.has_more === "boolean" ? data.has_more : txns.length >= TRANSACTION_PAGE_SIZE
-      );
+      const hasMore =
+        typeof data.has_more === "boolean" ? data.has_more : txns.length >= TRANSACTION_PAGE_SIZE;
+      setHasMoreTransactions(hasMore);
+
+      // Base options from current payload, then complete with all pages if needed.
+      setTransactionsForFilterOptions(txns);
+      if (hasMore) {
+        void (async () => {
+          try {
+            const merged = [...txns];
+            const seen = new Set<string>(txns.map((t: Transaction) => t.id));
+            let offset = txns.length;
+            let keepGoing = true;
+            while (keepGoing) {
+              if (transactionsListEpochRef.current !== epoch) return;
+              const nextParams = new URLSearchParams();
+              if (api.bank_account_id) nextParams.set("bank_account_id", api.bank_account_id);
+              if (api.date_from) nextParams.set("date_from", api.date_from);
+              if (api.date_to) nextParams.set("date_to", api.date_to);
+              if (api.type) nextParams.set("type", api.type);
+              nextParams.set("limit", String(FILTER_OPTIONS_PAGE_SIZE));
+              nextParams.set("offset", String(offset));
+              const nextRes = await fetch(`/api/transactions?${nextParams.toString()}`);
+              if (!nextRes.ok) throw new Error("Failed to fetch full filter options");
+              const nextData = await nextRes.json();
+              const batch = Array.isArray(nextData) ? nextData : nextData.transactions ?? [];
+              for (const t of batch as Transaction[]) {
+                if (!t?.id || seen.has(t.id)) continue;
+                seen.add(t.id);
+                merged.push(t);
+              }
+              const nextHasMore =
+                typeof nextData.has_more === "boolean"
+                  ? nextData.has_more
+                  : batch.length >= FILTER_OPTIONS_PAGE_SIZE;
+              keepGoing = nextHasMore && batch.length > 0;
+              offset += batch.length;
+            }
+            if (transactionsListEpochRef.current === epoch) {
+              setTransactionsForFilterOptions(merged);
+            }
+          } catch (e) {
+            console.error("Failed to complete filter options from all pages:", e);
+          }
+        })();
+      }
     } finally {
       if (transactionsListEpochRef.current === epoch) {
         setLoadingTransactions(false);
@@ -386,11 +436,14 @@ function HomeContent() {
 
   const handleApplyFilters = useCallback(
     (next: TransactionFilterValues) => {
-      const allBankIds = getAllBankIdsForFilter(transactions, bankAccounts);
-      const allBankNameKeys = getBankNameFilterKeys(transactions);
-      const allAccountStatusKeys = getAccountStatusFilterKeys(transactions);
-      const allProcessedKeys = getProcessedByFilterKeys(transactions);
-      const allCompanyKeys = getCompanyFilterKeys(transactions);
+      const allBankIds = getAllBankIdsForFilter(transactionsForFilterOptions, bankAccounts);
+      const allBankNameKeys = getBankNameFilterKeys(transactionsForFilterOptions);
+      const allAccountStatusKeys = getAccountStatusFilterKeys(transactionsForFilterOptions);
+      const allProcessedKeys = getProcessedByFilterKeys(transactionsForFilterOptions);
+      const allCompanyKeys = getCompanyFilterKeys(transactionsForFilterOptions);
+      const allFournisseurKeys = getFournisseurFilterKeys(transactionsForFilterOptions);
+      const allClientKeys = getClientFilterKeys(transactionsForFilterOptions);
+      const allEtatKeys = getEtatFilterKeys(transactionsForFilterOptions);
       setFilterValues(
         normalizeTransactionFilters(next, {
           allBankIds,
@@ -398,10 +451,13 @@ function HomeContent() {
           allAccountStatusKeys,
           allProcessedKeys,
           allCompanyKeys,
+          allFournisseurKeys,
+          allClientKeys,
+          allEtatKeys,
         })
       );
     },
-    [transactions, bankAccounts]
+    [transactionsForFilterOptions, bankAccounts]
   );
 
   const handleResetFilters = useCallback(() => {
@@ -747,7 +803,7 @@ function HomeContent() {
               filterValues={filterValues}
               onApplyFilters={handleApplyFilters}
               bankAccounts={bankAccounts}
-              transactionsForFilterOptions={sortedTransactions}
+              transactionsForFilterOptions={transactionsForFilterOptions}
               fournisseurs={fournisseurs}
               settingsClients={settingsClients}
               onQuickCreateFournisseur={handleQuickCreateFournisseur}

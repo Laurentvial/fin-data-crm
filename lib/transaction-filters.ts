@@ -5,6 +5,7 @@ import { isCreditLikeType } from "@/lib/transaction-type";
 export type TransactionAmountFilterMode = "signed" | TransactionType;
 
 export interface TransactionFilterValues {
+  idContains: string;
   bankFilter: { mode: "all" } | { mode: "include"; ids: string[] };
   /** null = toutes les banques (noms d’établissement) */
   bankNameFilter: null | { mode: "include"; names: string[] };
@@ -22,9 +23,19 @@ export interface TransactionFilterValues {
   amountFilterMode: TransactionAmountFilterMode;
   /** null = tous les ajouteurs */
   processedByFilter: null | { mode: "include"; names: string[] };
+  /** null = tous les fournisseurs */
+  fournisseurFilter: null | { mode: "include"; names: string[] };
+  /** null = tous les clients */
+  clientFilter: null | { mode: "include"; names: string[] };
+  /** Filtre sur la date/heure de création (colonne "Créé le"). */
+  createdAtFrom: string;
+  createdAtTo: string;
+  /** null = tous les états (débit + crédit), y compris vide */
+  etatFilter: null | { mode: "include"; names: string[] };
 }
 
 export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
+  idContains: "",
   bankFilter: { mode: "all" },
   bankNameFilter: null,
   accountStatusFilter: null,
@@ -37,6 +48,11 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
   amountMax: "",
   amountFilterMode: "signed",
   processedByFilter: null,
+  fournisseurFilter: null,
+  clientFilter: null,
+  createdAtFrom: "",
+  createdAtTo: "",
+  etatFilter: null,
 };
 
 export function bankAccountDisplayName(ba: BankAccount): string {
@@ -71,6 +87,9 @@ export function applyClientTransactionFilters(
   f: TransactionFilterValues
 ): Transaction[] {
   return rows.filter((t) => {
+    const idQ = f.idContains.trim().toLowerCase();
+    if (idQ && !(t.id ?? "").toLowerCase().includes(idQ)) return false;
+
     if (f.bankFilter.mode === "include") {
       const ids = f.bankFilter.ids;
       if (ids.length === 0) return false;
@@ -137,6 +156,42 @@ export function applyClientTransactionFilters(
       if (!names.includes(key)) return false;
     }
 
+    if (f.fournisseurFilter !== null) {
+      const names = f.fournisseurFilter.names;
+      if (names.length === 0) return false;
+      const n = (t.fournisseur_name ?? "").trim();
+      const key = n === "" ? FOURNISSEUR_EMPTY_KEY : n;
+      if (!names.includes(key)) return false;
+    }
+
+    if (f.clientFilter !== null) {
+      const names = f.clientFilter.names;
+      if (names.length === 0) return false;
+      const n = (t.client_name ?? "").trim();
+      const key = n === "" ? CLIENT_EMPTY_KEY : n;
+      if (!names.includes(key)) return false;
+    }
+
+    if (f.createdAtFrom || f.createdAtTo) {
+      const created = t.created_at ? new Date(t.created_at).getTime() : Number.NaN;
+      if (Number.isNaN(created)) return false;
+      if (f.createdAtFrom) {
+        const fromMs = new Date(`${f.createdAtFrom}T00:00:00`).getTime();
+        if (!Number.isNaN(fromMs) && created < fromMs) return false;
+      }
+      if (f.createdAtTo) {
+        const toMs = new Date(`${f.createdAtTo}T23:59:59.999`).getTime();
+        if (!Number.isNaN(toMs) && created > toMs) return false;
+      }
+    }
+
+    if (f.etatFilter !== null) {
+      const names = f.etatFilter.names;
+      if (names.length === 0) return false;
+      const key = transactionEtatFilterKey(t);
+      if (!names.includes(key)) return false;
+    }
+
     return true;
   });
 }
@@ -147,11 +202,20 @@ export const PROCESSED_BY_EMPTY_KEY = "\u2060empty\u2060";
 /** Valeur sentinelle pour société vide dans les filtres multi-sélection. */
 export const COMPANY_EMPTY_KEY = "\u2060company\u2060";
 
+/** Valeur sentinelle pour fournisseur vide. */
+export const FOURNISSEUR_EMPTY_KEY = "\u2060fournisseur\u2060";
+
+/** Valeur sentinelle pour client vide. */
+export const CLIENT_EMPTY_KEY = "\u2060client\u2060";
+
 /** Valeur sentinelle pour banque (nom) vide. */
 export const BANK_EMPTY_KEY = "\u2060bank\u2060";
 
 /** Valeur sentinelle pour statut de compte vide. */
 export const ACCOUNT_STATUS_EMPTY_KEY = "\u2060acctst\u2060";
+
+/** Valeur sentinelle pour état (débit/crédit) vide. */
+export const ETAT_EMPTY_KEY = "\u2060etat\u2060";
 
 export function transactionBankNameFilterKey(t: Transaction): string {
   const n = (t.bank_name ?? "").trim();
@@ -225,6 +289,55 @@ export function getCompanyFilterKeys(rows: Transaction[]): string[] {
   return list;
 }
 
+export function transactionEtatFilterKey(t: Transaction): string {
+  if (t.type === "DEBIT") {
+    return t.debit_status?.trim() ? `debit:${t.debit_status}` : ETAT_EMPTY_KEY;
+  }
+  if (isCreditLikeType(t.type)) {
+    return t.credit_status?.trim() ? `credit:${t.credit_status}` : ETAT_EMPTY_KEY;
+  }
+  return ETAT_EMPTY_KEY;
+}
+
+export function getEtatFilterKeys(rows: Transaction[]): string[] {
+  const names = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const key = transactionEtatFilterKey(t);
+    if (key === ETAT_EMPTY_KEY) hasEmpty = true;
+    else names.add(key);
+  }
+  const list = [...names].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(ETAT_EMPTY_KEY);
+  return list;
+}
+
+export function getFournisseurFilterKeys(rows: Transaction[]): string[] {
+  const names = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const n = (t.fournisseur_name ?? "").trim();
+    if (n === "") hasEmpty = true;
+    else names.add(n);
+  }
+  const list = [...names].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(FOURNISSEUR_EMPTY_KEY);
+  return list;
+}
+
+export function getClientFilterKeys(rows: Transaction[]): string[] {
+  const names = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const n = (t.client_name ?? "").trim();
+    if (n === "") hasEmpty = true;
+    else names.add(n);
+  }
+  const list = [...names].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(CLIENT_EMPTY_KEY);
+  return list;
+}
+
 export function normalizeTransactionFilters(
   f: TransactionFilterValues,
   ctx: {
@@ -233,6 +346,9 @@ export function normalizeTransactionFilters(
     allAccountStatusKeys: string[];
     allProcessedKeys: string[];
     allCompanyKeys: string[];
+    allFournisseurKeys: string[];
+    allClientKeys: string[];
+    allEtatKeys: string[];
   }
 ): TransactionFilterValues {
   const out: TransactionFilterValues = { ...f };
@@ -284,11 +400,36 @@ export function normalizeTransactionFilters(
     }
   }
 
+  if (f.fournisseurFilter !== null && ctx.allFournisseurKeys.length > 0) {
+    const n = new Set(f.fournisseurFilter.names);
+    if (
+      ctx.allFournisseurKeys.every((k) => n.has(k)) &&
+      n.size === ctx.allFournisseurKeys.length
+    ) {
+      out.fournisseurFilter = null;
+    }
+  }
+
+  if (f.clientFilter !== null && ctx.allClientKeys.length > 0) {
+    const n = new Set(f.clientFilter.names);
+    if (ctx.allClientKeys.every((k) => n.has(k)) && n.size === ctx.allClientKeys.length) {
+      out.clientFilter = null;
+    }
+  }
+
+  if (f.etatFilter !== null && ctx.allEtatKeys.length > 0) {
+    const n = new Set(f.etatFilter.names);
+    if (ctx.allEtatKeys.every((k) => n.has(k)) && n.size === ctx.allEtatKeys.length) {
+      out.etatFilter = null;
+    }
+  }
+
   return out;
 }
 
 /** Indique si au moins un filtre du tableau restreint les lignes affichées (hors tri). */
 export function hasActiveTransactionFilters(f: TransactionFilterValues): boolean {
+  if (Boolean(f.idContains.trim())) return true;
   if (f.bankFilter.mode === "include") return true;
   if (f.bankNameFilter !== null) return true;
   if (f.accountStatusFilter !== null) return true;
@@ -298,6 +439,10 @@ export function hasActiveTransactionFilters(f: TransactionFilterValues): boolean
   if (Boolean(f.descriptionContains.trim())) return true;
   if (Boolean(f.amountMin.trim() || f.amountMax.trim())) return true;
   if (f.processedByFilter !== null) return true;
+  if (f.fournisseurFilter !== null) return true;
+  if (f.clientFilter !== null) return true;
+  if (Boolean(f.createdAtFrom.trim() || f.createdAtTo.trim())) return true;
+  if (f.etatFilter !== null) return true;
   return false;
 }
 
@@ -306,6 +451,8 @@ export function columnHasActiveFilter(
   f: TransactionFilterValues
 ): boolean {
   switch (columnId) {
+    case "id":
+      return Boolean(f.idContains.trim());
     case "bank_name":
       return f.bankNameFilter !== null;
     case "account_status_name":
@@ -322,6 +469,14 @@ export function columnHasActiveFilter(
       return Boolean(f.amountMin.trim() || f.amountMax.trim());
     case "processed_by_user_name":
       return f.processedByFilter !== null;
+    case "fournisseur":
+      return f.fournisseurFilter !== null;
+    case "client_name":
+      return f.clientFilter !== null;
+    case "created_at":
+      return Boolean(f.createdAtFrom || f.createdAtTo);
+    case "debit_status":
+      return f.etatFilter !== null;
     default:
       return false;
   }

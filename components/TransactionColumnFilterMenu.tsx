@@ -10,14 +10,22 @@ import {
 import {
   ACCOUNT_STATUS_EMPTY_KEY,
   BANK_EMPTY_KEY,
+  CLIENT_EMPTY_KEY,
   COMPANY_EMPTY_KEY,
+  ETAT_EMPTY_KEY,
+  FOURNISSEUR_EMPTY_KEY,
+  getClientFilterKeys,
   getAccountStatusFilterKeys,
   getBankNameFilterKeys,
+  getEtatFilterKeys,
+  getFournisseurFilterKeys,
   type TransactionAmountFilterMode,
   type TransactionFilterValues,
   PROCESSED_BY_EMPTY_KEY,
 } from "@/lib/transaction-filters";
 import { transactionTypeLabel } from "@/lib/transaction-type";
+import { CREDIT_STATUS_VALUES, creditStatusLabel } from "@/lib/credit-status";
+import { DEBIT_STATUS_VALUES, debitStatusLabel } from "@/lib/debit-status";
 
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT", "INTERNAL_CREDIT"];
 
@@ -124,6 +132,21 @@ export function TransactionColumnFilterMenu({
     return list;
   }, [transactionsForOptions]);
 
+  const fournisseurOptions = useMemo(
+    () => getFournisseurFilterKeys(transactionsForOptions),
+    [transactionsForOptions]
+  );
+
+  const clientOptions = useMemo(
+    () => getClientFilterKeys(transactionsForOptions),
+    [transactionsForOptions]
+  );
+
+  const etatOptions = useMemo(
+    () => getEtatFilterKeys(transactionsForOptions),
+    [transactionsForOptions]
+  );
+
   const filteredBankNameOptions = useMemo(() => {
     const q = valueSearch.trim().toLowerCase();
     if (!q) return bankNameOptions;
@@ -160,6 +183,41 @@ export function TransactionColumnFilterMenu({
     });
   }, [companyOptions, valueSearch]);
 
+  const filteredFournisseurOptions = useMemo(() => {
+    const q = valueSearch.trim().toLowerCase();
+    if (!q) return fournisseurOptions;
+    return fournisseurOptions.filter((n) => {
+      if (n === FOURNISSEUR_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      return n.toLowerCase().includes(q);
+    });
+  }, [fournisseurOptions, valueSearch]);
+
+  const filteredClientOptions = useMemo(() => {
+    const q = valueSearch.trim().toLowerCase();
+    if (!q) return clientOptions;
+    return clientOptions.filter((n) => {
+      if (n === CLIENT_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      return n.toLowerCase().includes(q);
+    });
+  }, [clientOptions, valueSearch]);
+
+  const filteredEtatOptions = useMemo(() => {
+    const q = valueSearch.trim().toLowerCase();
+    if (!q) return etatOptions;
+    return etatOptions.filter((k) => {
+      if (k === ETAT_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      if (k.startsWith("debit:")) {
+        const v = k.slice("debit:".length);
+        return debitStatusLabel(v as (typeof DEBIT_STATUS_VALUES)[number]).toLowerCase().includes(q);
+      }
+      if (k.startsWith("credit:")) {
+        const v = k.slice("credit:".length);
+        return creditStatusLabel(v as (typeof CREDIT_STATUS_VALUES)[number]).toLowerCase().includes(q);
+      }
+      return k.toLowerCase().includes(q);
+    });
+  }, [etatOptions, valueSearch]);
+
   const applyDraft = useCallback(() => {
     onApply(draft);
     onClose();
@@ -181,11 +239,15 @@ export function TransactionColumnFilterMenu({
 
   /** Colonnes avec liste de valeurs : le panneau prend la hauteur dispo, seule la liste défile. */
   const valueListColumn =
+    columnId === "id" ||
     columnId === "bank_name" ||
     columnId === "account_status_name" ||
     columnId === "company_name" ||
     columnId === "type" ||
-    columnId === "processed_by_user_name";
+    columnId === "processed_by_user_name" ||
+    columnId === "fournisseur" ||
+    columnId === "client_name" ||
+    columnId === "debit_status";
 
   const valueListUlClass =
     "min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 [scrollbar-gutter:stable]";
@@ -674,17 +736,244 @@ export function TransactionColumnFilterMenu({
         </ul>
       </>
     );
-  } else if (columnId === "debit_status") {
+  } else if (columnId === "id") {
     body = (
-      <p className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
-        Pas de filtre sur l&apos;état. Les libellés s&apos;appliquent aux débits uniquement (tri A→Z ci-dessus).
-      </p>
+      <>
+        {sectionTitle("Filtrer par condition")}
+        <div className="px-3 pb-2">
+          <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+            L&apos;ID contient
+            <input
+              type="search"
+              value={draft.idContains}
+              onChange={(e) => setDraft({ ...draft, idContains: e.target.value })}
+              placeholder="Rechercher dans l&apos;ID…"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+      </>
+    );
+  } else if (columnId === "fournisseur") {
+    const allNames = fournisseurOptions;
+    const selected =
+      draft.fournisseurFilter === null ? new Set(allNames) : new Set(draft.fournisseurFilter.names);
+    const toggle = (name: string) => {
+      const next = new Set(selected);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setDraft({
+        ...draft,
+        fournisseurFilter: { mode: "include", names: [...next] },
+      });
+    };
+    const selectAll = () =>
+      setDraft({ ...draft, fournisseurFilter: { mode: "include", names: [...allNames] } });
+    const clearAll = () => setDraft({ ...draft, fournisseurFilter: { mode: "include", names: [] } });
+    const displayName = (n: string) => (n === FOURNISSEUR_EMPTY_KEY ? "(Vide)" : n);
+    body = (
+      <>
+        <div className="shrink-0">
+          {sectionTitle("Filtrer par valeurs")}
+          <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
+              Tout sélectionner ({allNames.length})
+            </button>
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
+              Effacer
+            </button>
+          </div>
+          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">Affichage de {filteredFournisseurOptions.length}</p>
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <input
+                type="search"
+                value={valueSearch}
+                onChange={(e) => setValueSearch(e.target.value)}
+                placeholder="Rechercher…"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2 pl-3 pr-9 text-sm"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                ⌕
+              </span>
+            </div>
+          </div>
+        </div>
+        <ul className={valueListUlClass}>
+          {filteredFournisseurOptions.map((n) => (
+            <li key={n}>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={selected.has(n)}
+                  onChange={() => toggle(n)}
+                  className="rounded border-[var(--border)]"
+                />
+                <span className="truncate">{displayName(n)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </>
     );
   } else if (columnId === "client_name") {
+    const allNames = clientOptions;
+    const selected = draft.clientFilter === null ? new Set(allNames) : new Set(draft.clientFilter.names);
+    const toggle = (name: string) => {
+      const next = new Set(selected);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setDraft({
+        ...draft,
+        clientFilter: { mode: "include", names: [...next] },
+      });
+    };
+    const selectAll = () =>
+      setDraft({ ...draft, clientFilter: { mode: "include", names: [...allNames] } });
+    const clearAll = () => setDraft({ ...draft, clientFilter: { mode: "include", names: [] } });
+    const displayName = (n: string) => (n === CLIENT_EMPTY_KEY ? "(Vide)" : n);
     body = (
-      <p className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
-        Pas de filtre sur cette colonne. Le client vient des Paramètres › Clients (tri A→Z ci-dessus).
-      </p>
+      <>
+        <div className="shrink-0">
+          {sectionTitle("Filtrer par valeurs")}
+          <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
+              Tout sélectionner ({allNames.length})
+            </button>
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
+              Effacer
+            </button>
+          </div>
+          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">Affichage de {filteredClientOptions.length}</p>
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <input
+                type="search"
+                value={valueSearch}
+                onChange={(e) => setValueSearch(e.target.value)}
+                placeholder="Rechercher…"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2 pl-3 pr-9 text-sm"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                ⌕
+              </span>
+            </div>
+          </div>
+        </div>
+        <ul className={valueListUlClass}>
+          {filteredClientOptions.map((n) => (
+            <li key={n}>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={selected.has(n)}
+                  onChange={() => toggle(n)}
+                  className="rounded border-[var(--border)]"
+                />
+                <span className="truncate">{displayName(n)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  } else if (columnId === "created_at") {
+    body = (
+      <>
+        {sectionTitle("Période de création")}
+        <div className="space-y-2 px-3 pb-2">
+          <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+            Du
+            <input
+              type="date"
+              value={draft.createdAtFrom}
+              onChange={(e) => setDraft({ ...draft, createdAtFrom: e.target.value })}
+              className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+            Au
+            <input
+              type="date"
+              value={draft.createdAtTo}
+              onChange={(e) => setDraft({ ...draft, createdAtTo: e.target.value })}
+              className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
+            />
+          </label>
+        </div>
+      </>
+    );
+  } else if (columnId === "debit_status") {
+    const allNames = etatOptions;
+    const selected = draft.etatFilter === null ? new Set(allNames) : new Set(draft.etatFilter.names);
+    const toggle = (name: string) => {
+      const next = new Set(selected);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setDraft({
+        ...draft,
+        etatFilter: { mode: "include", names: [...next] },
+      });
+    };
+    const selectAll = () =>
+      setDraft({ ...draft, etatFilter: { mode: "include", names: [...allNames] } });
+    const clearAll = () => setDraft({ ...draft, etatFilter: { mode: "include", names: [] } });
+    const displayEtat = (k: string) => {
+      if (k === ETAT_EMPTY_KEY) return "(Vide)";
+      if (k.startsWith("debit:")) {
+        const v = k.slice("debit:".length) as (typeof DEBIT_STATUS_VALUES)[number];
+        return debitStatusLabel(v);
+      }
+      if (k.startsWith("credit:")) {
+        const v = k.slice("credit:".length) as (typeof CREDIT_STATUS_VALUES)[number];
+        return creditStatusLabel(v);
+      }
+      return k;
+    };
+    body = (
+      <>
+        <div className="shrink-0">
+          {sectionTitle("Filtrer par état")}
+          <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
+              Tout sélectionner ({allNames.length})
+            </button>
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
+              Effacer
+            </button>
+          </div>
+          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">Affichage de {filteredEtatOptions.length}</p>
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <input
+                type="search"
+                value={valueSearch}
+                onChange={(e) => setValueSearch(e.target.value)}
+                placeholder="Rechercher…"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2 pl-3 pr-9 text-sm"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                ⌕
+              </span>
+            </div>
+          </div>
+        </div>
+        <ul className={valueListUlClass}>
+          {filteredEtatOptions.map((n) => (
+            <li key={n}>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={selected.has(n)}
+                  onChange={() => toggle(n)}
+                  className="rounded border-[var(--border)]"
+                />
+                <span className="truncate">{displayEtat(n)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </>
     );
   }
 
