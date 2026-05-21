@@ -28,9 +28,15 @@ L'application utilise un système d'authentification fermé :
    (alias accepté : `PAPPERS_TOKEN`.) Les appels utilisent `GET https://api.pappers.fr/v2/entreprise` (consommation de crédits selon [la grille Pappers](https://www.pappers.fr/api)).  
    Sans cette variable, le bouton « Remplir (Pappers) » sur **Sociétés** renvoie une erreur de configuration.
 
-6. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+6. **Sauvegarde DB automatique (cron, optionnel)** :
+   - Ajouter `CRON_SECRET=<secret long et aléatoire>` dans les variables d’environnement du déploiement.
+   - Le dépôt inclut `vercel.json` avec une planification horaire (`0 * * * *`) sur `/api/cron/database-backup`.
+   - L’endpoint cron vérifie `Authorization: Bearer <CRON_SECRET>` avant de lancer la sauvegarde.
+   - Sur Vercel, quand `CRON_SECRET` est défini, ce header est ajouté automatiquement aux appels cron.
 
-7. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
+7. **Premier administrateur** : aller sur `/auth/setup` pour créer le premier compte. Après création, assigner le rôle admin dans la Neon Console (Auth → Users → Make admin).
+
+8. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
 
 ## Getting Started
 

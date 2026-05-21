@@ -279,13 +279,14 @@ async function uploadRawBuffer(
   publicId: string,
   buffer: Buffer,
   extraTags: string[] = [],
+  folderOverride?: string,
 ): Promise<{ public_id: string; secure_url?: string }> {
   configureCloudinary();
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         resource_type: "raw",
-        folder: config.folder,
+        folder: folderOverride ?? config.folder,
         public_id: publicId,
         type: "upload",
         unique_filename: false,
@@ -314,7 +315,7 @@ async function uploadRawBuffer(
 async function uploadGzippedLinesChunk(
   lines: string[],
   config: CloudinaryBackupConfig,
-  basePublicId: string,
+  runFolder: string,
   maxBytes: number,
   partCounter: { n: number },
 ): Promise<void> {
@@ -327,9 +328,10 @@ async function uploadGzippedLinesChunk(
     partCounter.n += 1;
     await uploadRawBuffer(
       config,
-      `${basePublicId}/part-${String(idx).padStart(3, "0")}`,
+      `part-${String(idx).padStart(3, "0")}`,
       buf,
       ["bigboss-ndjson-multipart"],
+      runFolder,
     );
     return;
   }
@@ -339,8 +341,8 @@ async function uploadGzippedLinesChunk(
     );
   }
   const mid = Math.floor(lines.length / 2);
-  await uploadGzippedLinesChunk(lines.slice(0, mid), config, basePublicId, maxBytes, partCounter);
-  await uploadGzippedLinesChunk(lines.slice(mid), config, basePublicId, maxBytes, partCounter);
+  await uploadGzippedLinesChunk(lines.slice(0, mid), config, runFolder, maxBytes, partCounter);
+  await uploadGzippedLinesChunk(lines.slice(mid), config, runFolder, maxBytes, partCounter);
 }
 
 export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConfig): Promise<{
@@ -354,6 +356,7 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
   // Ensure each run gets a dedicated Cloudinary subfolder even if backups start very close together.
   const runId = randomUUID().slice(0, 8);
   const basePublicId = `snapshot-${stamp}-${runId}`;
+  const runFolder = `${config.folder}/${basePublicId}`;
   const maxPart = maxCloudinaryPartBytes();
   const partCounter = { n: 0 };
 
@@ -368,7 +371,7 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
         batchUnc + lineB > BACKUP_MULTIPART_BATCH_UNCOMPRESSED &&
         batch.length > 0
       ) {
-        await uploadGzippedLinesChunk(batch, config, basePublicId, maxPart, partCounter);
+        await uploadGzippedLinesChunk(batch, config, runFolder, maxPart, partCounter);
         batch = [];
         batchUnc = 0;
       }
@@ -376,7 +379,7 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
       batchUnc += lineB;
     }
     if (batch.length > 0) {
-      await uploadGzippedLinesChunk(batch, config, basePublicId, maxPart, partCounter);
+      await uploadGzippedLinesChunk(batch, config, runFolder, maxPart, partCounter);
     }
   } finally {
     await lineIterator.return();
@@ -397,10 +400,10 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
       "Télécharger tous les segments part-000 … dans l’ordre ; concaténer les sorties de gunzip -c (chaque fichier est un gzip autonome) pour obtenir le NDJSON complet.",
   };
   const manifestBody = Buffer.from(`${JSON.stringify(manifest, null, 0)}\n`, "utf8");
-  const manifestRes = await uploadRawBuffer(config, `${basePublicId}/manifest`, manifestBody, [
+  const manifestRes = await uploadRawBuffer(config, "manifest", manifestBody, [
     "bigboss-ndjson-multipart",
     "bigboss-backup-manifest",
-  ]);
+  ], runFolder);
 
   return {
     key: fullBaseId,
