@@ -226,6 +226,11 @@
       <div class="company-block">
         <div class="name">{{company.name}}</div>
         {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+        {{#if company.code_postal}}
+        <p>{{company.code_postal}}{{#if company.ville}} {{company.ville}}{{/if}}</p>
+        {{else}}
+        {{#if company.ville}}<p>{{company.ville}}</p>{{/if}}
+        {{/if}}
         {{#if company.siret}}<p>Siret: {{company.siret}}</p>{{/if}}
         {{#if company.vat_number}}<p>TVA intracom: {{company.vat_number}}</p>{{/if}}
         {{#if company.website}}<p><a href="{{company.website}}">{{company.website}}</a></p>{{/if}}

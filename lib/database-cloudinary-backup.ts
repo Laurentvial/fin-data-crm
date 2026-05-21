@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
@@ -350,7 +351,9 @@ export async function runDatabaseBackupToCloudinary(config: CloudinaryBackupConf
   part_count: number;
 }> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const basePublicId = `snapshot-${stamp}`;
+  // Ensure each run gets a dedicated Cloudinary subfolder even if backups start very close together.
+  const runId = randomUUID().slice(0, 8);
+  const basePublicId = `snapshot-${stamp}-${runId}`;
   const maxPart = maxCloudinaryPartBytes();
   const partCounter = { n: 0 };
 
