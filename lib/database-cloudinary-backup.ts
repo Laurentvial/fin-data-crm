@@ -204,6 +204,8 @@ export type BackupListItem = {
   parts?: number;
 };
 
+const CLOUDINARY_DELETE_CHUNK_SIZE = 100;
+
 function groupKeyFromBackupPublicId(publicId: string): {
   groupKey: string;
   isDataPart: boolean;
@@ -225,14 +227,29 @@ function maxIsoDate(a: string | null, b: string | null): string | null {
 export async function listRecentDatabaseBackups(config: CloudinaryBackupConfig): Promise<BackupListItem[]> {
   configureCloudinary();
   const prefix = `${config.folder}/`;
-  const out = await cloudinary.api.resources({
-    resource_type: "raw",
-    type: "upload",
-    prefix,
-    max_results: 500,
-  });
   type RawResource = { public_id?: string; bytes?: number; created_at?: string };
-  const resources = (Array.isArray(out.resources) ? out.resources : []) as RawResource[];
+  type CloudinaryResourcesPage = { resources?: RawResource[]; next_cursor?: string };
+  const resources: RawResource[] = [];
+  let nextCursor: string | undefined;
+  let pageCount = 0;
+  const MAX_PAGES = 50;
+
+  do {
+    const out = (await cloudinary.api.resources({
+      resource_type: "raw",
+      type: "upload",
+      prefix,
+      max_results: 500,
+      ...(nextCursor ? { next_cursor: nextCursor } : {}),
+    })) as CloudinaryResourcesPage;
+
+    if (Array.isArray(out.resources) && out.resources.length > 0) {
+      resources.push(...out.resources);
+    }
+    nextCursor = typeof out.next_cursor === "string" && out.next_cursor.trim() ? out.next_cursor : undefined;
+    pageCount += 1;
+  } while (nextCursor && pageCount < MAX_PAGES);
+
   const rows = resources.filter(
     (r): r is RawResource & { public_id: string } => typeof r.public_id === "string"
   );
@@ -272,6 +289,90 @@ export async function listRecentDatabaseBackups(config: CloudinaryBackupConfig):
   }
 
   return list.sort((a, b) => (b.last_modified ?? "").localeCompare(a.last_modified ?? ""));
+}
+
+function assertBackupKeyInFolder(config: CloudinaryBackupConfig, key: string): string {
+  const normalized = String(key ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (!normalized) {
+    throw new Error("Identifiant de sauvegarde manquant.");
+  }
+  const folderPrefix = `${config.folder}/`;
+  if (!normalized.startsWith(folderPrefix)) {
+    throw new Error("Identifiant de sauvegarde invalide pour ce dossier Cloudinary.");
+  }
+  return normalized;
+}
+
+async function listCloudinaryRawResourceIdsByPrefix(prefix: string): Promise<string[]> {
+  type RawResource = { public_id?: string };
+  type CloudinaryResourcesPage = { resources?: RawResource[]; next_cursor?: string };
+  const ids: string[] = [];
+  let nextCursor: string | undefined;
+  let pageCount = 0;
+  const MAX_PAGES = 50;
+
+  do {
+    const out = (await cloudinary.api.resources({
+      resource_type: "raw",
+      type: "upload",
+      prefix,
+      max_results: 500,
+      ...(nextCursor ? { next_cursor: nextCursor } : {}),
+    })) as CloudinaryResourcesPage;
+    if (Array.isArray(out.resources)) {
+      for (const r of out.resources) {
+        if (typeof r.public_id === "string" && r.public_id.trim()) {
+          ids.push(r.public_id);
+        }
+      }
+    }
+    nextCursor = typeof out.next_cursor === "string" && out.next_cursor.trim() ? out.next_cursor : undefined;
+    pageCount += 1;
+  } while (nextCursor && pageCount < MAX_PAGES);
+
+  return ids;
+}
+
+export async function deleteDatabaseBackupFromCloudinary(
+  config: CloudinaryBackupConfig,
+  key: string
+): Promise<{ deleted_count: number; requested_count: number; folder_deleted: boolean }> {
+  configureCloudinary();
+  const safeKey = assertBackupKeyInFolder(config, key);
+  const allMatchingPrefix = await listCloudinaryRawResourceIdsByPrefix(safeKey);
+  const ids = allMatchingPrefix.filter((id) => id === safeKey || id.startsWith(`${safeKey}/`));
+  if (ids.length === 0) {
+    return { deleted_count: 0, requested_count: 0, folder_deleted: false };
+  }
+  const hasNestedFolderResources = ids.some((id) => id.startsWith(`${safeKey}/`));
+  let deletedCount = 0;
+  for (let i = 0; i < ids.length; i += CLOUDINARY_DELETE_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CLOUDINARY_DELETE_CHUNK_SIZE);
+    const out = (await cloudinary.api.delete_resources(chunk, {
+      resource_type: "raw",
+      type: "upload",
+    })) as { deleted?: Record<string, string> };
+    if (out && out.deleted && typeof out.deleted === "object") {
+      for (const v of Object.values(out.deleted)) {
+        if (v === "deleted") deletedCount += 1;
+      }
+    }
+  }
+  let folderDeleted = false;
+  if (hasNestedFolderResources) {
+    try {
+      await cloudinary.api.delete_folder(safeKey);
+      folderDeleted = true;
+    } catch (e) {
+      // "Can't find folder" can happen if the folder was already removed manually.
+      const msg = e instanceof Error ? e.message : String(e ?? "");
+      const low = msg.toLowerCase();
+      if (!low.includes("can't find folder") && !low.includes("not found")) {
+        throw e;
+      }
+    }
+  }
+  return { deleted_count: deletedCount, requested_count: ids.length, folder_deleted: folderDeleted };
 }
 
 async function uploadRawBuffer(

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import {
+  deleteDatabaseBackupFromCloudinary,
   getCloudinaryBackupConfig,
   isNeonSqlResponseTooLargeError,
   listRecentDatabaseBackups,
@@ -84,6 +85,72 @@ export async function POST() {
       );
     }
     const message = e instanceof Error ? e.message : "Échec de la sauvegarde.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const { data: session } = await auth.getSession();
+  const err = await requireAdmin(session?.user as { id: string; role?: string } | undefined);
+  if (err) return err;
+
+  const config = getCloudinaryBackupConfig();
+  if (!config) {
+    return NextResponse.json(
+      { error: "Sauvegarde Cloudinary non configurée." },
+      { status: 503 }
+    );
+  }
+
+  let keys: string[];
+  try {
+    const body = (await req.json()) as { key?: unknown; keys?: unknown };
+    if (Array.isArray(body?.keys)) {
+      const cleaned = body.keys
+        .filter((k): k is string => typeof k === "string")
+        .map((k) => k.trim())
+        .filter(Boolean);
+      if (cleaned.length === 0) {
+        return NextResponse.json({ error: "Paramètre keys invalide." }, { status: 400 });
+      }
+      keys = cleaned;
+    } else if (typeof body?.key === "string" && body.key.trim()) {
+      keys = [body.key.trim()];
+    } else {
+      return NextResponse.json({ error: "Paramètre key(s) manquant." }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Body JSON invalide." }, { status: 400 });
+  }
+
+  try {
+    const details: Array<{
+      key: string;
+      deleted_count: number;
+      requested_count: number;
+      folder_deleted: boolean;
+    }> = [];
+    let deletedCount = 0;
+    let requestedCount = 0;
+    let folderDeletedCount = 0;
+    for (const key of keys) {
+      const result = await deleteDatabaseBackupFromCloudinary(config, key);
+      deletedCount += result.deleted_count;
+      requestedCount += result.requested_count;
+      if (result.folder_deleted) folderDeletedCount += 1;
+      details.push({ key, ...result });
+    }
+    return NextResponse.json({
+      ok: true,
+      keys,
+      deleted_count: deletedCount,
+      requested_count: requestedCount,
+      folder_deleted_count: folderDeletedCount,
+      details,
+    });
+  } catch (e) {
+    console.error("DELETE /api/admin/database-backup:", e);
+    const message = e instanceof Error ? e.message : "Échec de la suppression.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

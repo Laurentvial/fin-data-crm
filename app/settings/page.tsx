@@ -1214,8 +1214,11 @@ function DatabaseBackupSection() {
   const [cloudName, setCloudName] = useState<string | null>(null);
   const [backupFolder, setBackupFolder] = useState<string | null>(null);
   const [recent, setRecent] = useState<BackupListItem[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [backupPending, setBackupPending] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [lastMessage, setLastMessage] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -1230,11 +1233,17 @@ function DatabaseBackupSection() {
       setConfigured(!!data.configured);
       setCloudName(typeof data.cloud_name === "string" ? data.cloud_name : null);
       setBackupFolder(typeof data.folder === "string" ? data.folder : null);
-      setRecent(Array.isArray(data.recent) ? data.recent : []);
+      const nextRecent = Array.isArray(data.recent) ? data.recent : [];
+      setRecent(nextRecent);
+      setSelectedKeys((prev) => {
+        const visible = new Set(nextRecent.map((r) => r.key));
+        return prev.filter((k) => visible.has(k));
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
       setConfigured(false);
       setRecent([]);
+      setSelectedKeys([]);
     } finally {
       setLoading(false);
     }
@@ -1267,6 +1276,95 @@ function DatabaseBackupSection() {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setBackupPending(false);
+    }
+  };
+
+  const handleDeleteSnapshot = async (key: string) => {
+    if (!confirm(`Supprimer cet instantané Cloudinary ?\n\n${key}\n\nCette action est irréversible.`)) return;
+    setDeletingKey(key);
+    setError(null);
+    setLastMessage(null);
+    try {
+      const res = await fetch("/api/admin/database-backup", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(databaseBackupResponseError(data, "Échec de la suppression", res.status));
+      }
+      const deletedCount =
+        typeof data.deleted_count === "number" && data.deleted_count >= 0 ? data.deleted_count : null;
+      const folderDeletedCount =
+        typeof data.folder_deleted_count === "number" && data.folder_deleted_count >= 0
+          ? data.folder_deleted_count
+          : null;
+      setLastMessage(
+        deletedCount != null && folderDeletedCount != null
+          ? `Instantané supprimé : ${key} (${deletedCount} fichier(s) + ${folderDeletedCount} dossier(s) supprimé(s))`
+          : deletedCount != null
+          ? `Instantané supprimé : ${key} (${deletedCount} fichier(s) supprimé(s))`
+          : `Instantané supprimé : ${key}`,
+      );
+      await fetchStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  const toggleSelectSnapshot = (key: string) => {
+    setSelectedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
+
+  const toggleSelectAllSnapshots = () => {
+    setSelectedKeys((prev) => (prev.length === recent.length ? [] : recent.map((r) => r.key)));
+  };
+
+  const handleDeleteSelectedSnapshots = async () => {
+    if (selectedKeys.length === 0) return;
+    if (
+      !confirm(
+        `Supprimer ${selectedKeys.length} instantané(s) Cloudinary ?\n\nCette action est irréversible.`
+      )
+    ) {
+      return;
+    }
+    setBulkDeleting(true);
+    setError(null);
+    setLastMessage(null);
+    try {
+      const keys = [...selectedKeys];
+      const res = await fetch("/api/admin/database-backup", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keys }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(databaseBackupResponseError(data, "Échec de la suppression en lot", res.status));
+      }
+      const deletedCount =
+        typeof data.deleted_count === "number" && data.deleted_count >= 0 ? data.deleted_count : null;
+      const folderDeletedCount =
+        typeof data.folder_deleted_count === "number" && data.folder_deleted_count >= 0
+          ? data.folder_deleted_count
+          : null;
+      setLastMessage(
+        deletedCount != null && folderDeletedCount != null
+          ? `Suppression terminée : ${keys.length} instantané(s), ${deletedCount} fichier(s) et ${folderDeletedCount} dossier(s) supprimé(s)`
+          : deletedCount != null
+          ? `Suppression terminée : ${keys.length} instantané(s), ${deletedCount} fichier(s) supprimé(s)`
+          : `Suppression terminée : ${keys.length} instantané(s)`,
+      );
+      setSelectedKeys([]);
+      await fetchStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -1338,6 +1436,16 @@ function DatabaseBackupSection() {
         >
           Actualiser la liste
         </button>
+        <button
+          type="button"
+          onClick={handleDeleteSelectedSnapshots}
+          disabled={!configured || selectedKeys.length === 0 || backupPending || bulkDeleting || deletingKey !== null}
+          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950"
+        >
+          {bulkDeleting
+            ? "Suppression sélection…"
+            : `Supprimer la sélection (${selectedKeys.length.toLocaleString("fr-FR")})`}
+        </button>
         {configured && cloudName ? (
           <span className="text-xs text-[var(--muted-foreground)]">
             Cloud : <span className="font-mono">{cloudName}</span>
@@ -1356,15 +1464,34 @@ function DatabaseBackupSection() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-[var(--primary-muted)]">
               <tr>
+                <th className="table-header px-4 py-2 text-center font-medium">
+                  <input
+                    type="checkbox"
+                    checked={recent.length > 0 && selectedKeys.length === recent.length}
+                    onChange={toggleSelectAllSnapshots}
+                    aria-label="Sélectionner tous les instantanés"
+                    disabled={backupPending || bulkDeleting || deletingKey !== null}
+                  />
+                </th>
                 <th className="table-header px-4 py-2 text-left font-medium">Identifiant (public_id)</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Fichiers sur Cloudinary</th>
                 <th className="table-header px-4 py-2 text-right font-medium">Taille</th>
                 <th className="table-header px-4 py-2 text-left font-medium">Date</th>
+                <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {recent.map((r) => (
                 <tr key={r.key} className="border-t border-[var(--border)]">
+                  <td className="px-4 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.includes(r.key)}
+                      onChange={() => toggleSelectSnapshot(r.key)}
+                      aria-label={`Sélectionner ${r.key}`}
+                      disabled={backupPending || bulkDeleting || deletingKey === r.key}
+                    />
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs break-all text-[var(--foreground)]">{r.key}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-[var(--muted-foreground)]">
                     {(typeof r.parts === "number" && r.parts > 0 ? r.parts : 1).toLocaleString("fr-FR")}
@@ -1379,6 +1506,16 @@ function DatabaseBackupSection() {
                           timeStyle: "short",
                         })
                       : "—"}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSnapshot(r.key)}
+                      disabled={backupPending || bulkDeleting || deletingKey === r.key}
+                      className="rounded-lg border border-red-300 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950"
+                    >
+                      {deletingKey === r.key ? "Suppression…" : "Supprimer"}
+                    </button>
                   </td>
                 </tr>
               ))}
