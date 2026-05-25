@@ -1197,6 +1197,17 @@ function BanksSection() {
 
 type BackupListItem = { key: string; size: number; last_modified: string | null; parts?: number };
 
+function isBackupListItem(value: unknown): value is BackupListItem {
+  if (!value || typeof value !== "object") return false;
+  const v = value as { key?: unknown; size?: unknown; last_modified?: unknown; parts?: unknown };
+  return (
+    typeof v.key === "string" &&
+    typeof v.size === "number" &&
+    (typeof v.last_modified === "string" || v.last_modified === null) &&
+    (v.parts === undefined || typeof v.parts === "number")
+  );
+}
+
 function databaseBackupResponseError(data: unknown, fallback: string, status: number): string {
   if (!data || typeof data !== "object") return status >= 400 ? `Erreur ${status}` : fallback;
   const e = (data as { error?: unknown }).error;
@@ -1233,7 +1244,9 @@ function DatabaseBackupSection() {
       setConfigured(!!data.configured);
       setCloudName(typeof data.cloud_name === "string" ? data.cloud_name : null);
       setBackupFolder(typeof data.folder === "string" ? data.folder : null);
-      const nextRecent = Array.isArray(data.recent) ? data.recent : [];
+      const nextRecent: BackupListItem[] = Array.isArray(data.recent)
+        ? data.recent.filter(isBackupListItem)
+        : [];
       setRecent(nextRecent);
       setSelectedKeys((prev) => {
         const visible = new Set(nextRecent.map((r) => r.key));
