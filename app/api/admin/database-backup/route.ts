@@ -123,34 +123,84 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "Body JSON invalide." }, { status: 400 });
   }
 
-  try {
-    const details: Array<{
-      key: string;
-      deleted_count: number;
-      requested_count: number;
-      folder_deleted: boolean;
-    }> = [];
-    let deletedCount = 0;
-    let requestedCount = 0;
-    let folderDeletedCount = 0;
-    for (const key of keys) {
+  const details: Array<{
+    key: string;
+    ok: boolean;
+    deleted_count: number;
+    requested_count: number;
+    error?: string;
+  }> = [];
+  let deletedCount = 0;
+  let requestedCount = 0;
+  const succeededKeys: string[] = [];
+  const failedKeys: string[] = [];
+
+  for (const key of keys) {
+    try {
       const result = await deleteDatabaseBackupFromCloudinary(config, key);
       deletedCount += result.deleted_count;
       requestedCount += result.requested_count;
-      if (result.folder_deleted) folderDeletedCount += 1;
-      details.push({ key, ...result });
+      succeededKeys.push(key);
+      details.push({ key, ok: true, ...result });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Échec de la suppression.";
+      failedKeys.push(key);
+      details.push({
+        key,
+        ok: false,
+        deleted_count: 0,
+        requested_count: 0,
+        error: message,
+      });
+      console.error(`DELETE /api/admin/database-backup (key=${key}):`, e);
     }
+  }
+
+  if (failedKeys.length === 0) {
     return NextResponse.json({
       ok: true,
+      partial: false,
       keys,
+      succeeded_keys: succeededKeys,
+      failed_keys: failedKeys,
       deleted_count: deletedCount,
       requested_count: requestedCount,
-      folder_deleted_count: folderDeletedCount,
       details,
     });
-  } catch (e) {
-    console.error("DELETE /api/admin/database-backup:", e);
-    const message = e instanceof Error ? e.message : "Échec de la suppression.";
-    return NextResponse.json({ error: message }, { status: 500 });
   }
+
+  if (succeededKeys.length === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        partial: false,
+        error:
+          failedKeys.length === 1
+            ? `Échec de la suppression de ${failedKeys[0]}.`
+            : `Échec de la suppression de ${failedKeys.length} sauvegarde(s).`,
+        keys,
+        succeeded_keys: succeededKeys,
+        failed_keys: failedKeys,
+        deleted_count: deletedCount,
+        requested_count: requestedCount,
+        details,
+      },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      partial: true,
+      error: `Suppression partielle: ${failedKeys.length} sauvegarde(s) en échec.`,
+      keys,
+      succeeded_keys: succeededKeys,
+      failed_keys: failedKeys,
+      deleted_count: deletedCount,
+      requested_count: requestedCount,
+      details,
+    },
+    { status: 207 }
+  );
 }

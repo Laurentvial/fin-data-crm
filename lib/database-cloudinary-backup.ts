@@ -300,6 +300,12 @@ function assertBackupKeyInFolder(config: CloudinaryBackupConfig, key: string): s
   if (!normalized.startsWith(folderPrefix)) {
     throw new Error("Identifiant de sauvegarde invalide pour ce dossier Cloudinary.");
   }
+  const tail = normalized.slice(folderPrefix.length);
+  // Safety rail: only allow deleting one snapshot key directly under backup folder.
+  // This prevents accidental parent-folder deletions.
+  if (!tail || tail.includes("/")) {
+    throw new Error("Identifiant de sauvegarde invalide (niveau de dossier refusé).");
+  }
   return normalized;
 }
 
@@ -336,15 +342,14 @@ async function listCloudinaryRawResourceIdsByPrefix(prefix: string): Promise<str
 export async function deleteDatabaseBackupFromCloudinary(
   config: CloudinaryBackupConfig,
   key: string
-): Promise<{ deleted_count: number; requested_count: number; folder_deleted: boolean }> {
+): Promise<{ deleted_count: number; requested_count: number }> {
   configureCloudinary();
   const safeKey = assertBackupKeyInFolder(config, key);
   const allMatchingPrefix = await listCloudinaryRawResourceIdsByPrefix(safeKey);
   const ids = allMatchingPrefix.filter((id) => id === safeKey || id.startsWith(`${safeKey}/`));
   if (ids.length === 0) {
-    return { deleted_count: 0, requested_count: 0, folder_deleted: false };
+    return { deleted_count: 0, requested_count: 0 };
   }
-  const hasNestedFolderResources = ids.some((id) => id.startsWith(`${safeKey}/`));
   let deletedCount = 0;
   for (let i = 0; i < ids.length; i += CLOUDINARY_DELETE_CHUNK_SIZE) {
     const chunk = ids.slice(i, i + CLOUDINARY_DELETE_CHUNK_SIZE);
@@ -358,21 +363,7 @@ export async function deleteDatabaseBackupFromCloudinary(
       }
     }
   }
-  let folderDeleted = false;
-  if (hasNestedFolderResources) {
-    try {
-      await cloudinary.api.delete_folder(safeKey);
-      folderDeleted = true;
-    } catch (e) {
-      // "Can't find folder" can happen if the folder was already removed manually.
-      const msg = e instanceof Error ? e.message : String(e ?? "");
-      const low = msg.toLowerCase();
-      if (!low.includes("can't find folder") && !low.includes("not found")) {
-        throw e;
-      }
-    }
-  }
-  return { deleted_count: deletedCount, requested_count: ids.length, folder_deleted: folderDeleted };
+  return { deleted_count: deletedCount, requested_count: ids.length };
 }
 
 async function uploadRawBuffer(

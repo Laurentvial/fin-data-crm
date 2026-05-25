@@ -1296,14 +1296,8 @@ function DatabaseBackupSection() {
       }
       const deletedCount =
         typeof data.deleted_count === "number" && data.deleted_count >= 0 ? data.deleted_count : null;
-      const folderDeletedCount =
-        typeof data.folder_deleted_count === "number" && data.folder_deleted_count >= 0
-          ? data.folder_deleted_count
-          : null;
       setLastMessage(
-        deletedCount != null && folderDeletedCount != null
-          ? `Instantané supprimé : ${key} (${deletedCount} fichier(s) + ${folderDeletedCount} dossier(s) supprimé(s))`
-          : deletedCount != null
+        deletedCount != null
           ? `Instantané supprimé : ${key} (${deletedCount} fichier(s) supprimé(s))`
           : `Instantané supprimé : ${key}`,
       );
@@ -1343,23 +1337,35 @@ function DatabaseBackupSection() {
         body: JSON.stringify({ keys }),
       });
       const data = await res.json();
+      const succeededKeys = Array.isArray(data?.succeeded_keys)
+        ? data.succeeded_keys.filter((k: unknown): k is string => typeof k === "string")
+        : [];
+      const failedKeys = Array.isArray(data?.failed_keys)
+        ? data.failed_keys.filter((k: unknown): k is string => typeof k === "string")
+        : [];
       if (!res.ok) {
         throw new Error(databaseBackupResponseError(data, "Échec de la suppression en lot", res.status));
       }
       const deletedCount =
         typeof data.deleted_count === "number" && data.deleted_count >= 0 ? data.deleted_count : null;
-      const folderDeletedCount =
-        typeof data.folder_deleted_count === "number" && data.folder_deleted_count >= 0
-          ? data.folder_deleted_count
-          : null;
+      const succeededCount = succeededKeys.length;
+      const failedCount = failedKeys.length;
       setLastMessage(
-        deletedCount != null && folderDeletedCount != null
-          ? `Suppression terminée : ${keys.length} instantané(s), ${deletedCount} fichier(s) et ${folderDeletedCount} dossier(s) supprimé(s)`
-          : deletedCount != null
-          ? `Suppression terminée : ${keys.length} instantané(s), ${deletedCount} fichier(s) supprimé(s)`
-          : `Suppression terminée : ${keys.length} instantané(s)`,
+        deletedCount != null
+          ? failedCount > 0
+            ? `Suppression partielle : ${succeededCount} instantané(s) supprimé(s), ${failedCount} en échec (${deletedCount} fichier(s) supprimé(s))`
+            : `Suppression terminée : ${succeededCount} instantané(s), ${deletedCount} fichier(s) supprimé(s)`
+          : failedCount > 0
+            ? `Suppression partielle : ${succeededCount} instantané(s) supprimé(s), ${failedCount} en échec`
+            : `Suppression terminée : ${succeededCount} instantané(s)`,
       );
-      setSelectedKeys([]);
+      if (failedCount > 0 && typeof data?.error === "string" && data.error.trim()) {
+        setError(data.error);
+      }
+      if (succeededCount > 0) {
+        const succeededSet = new Set(succeededKeys);
+        setSelectedKeys((prev) => prev.filter((k) => !succeededSet.has(k)));
+      }
       await fetchStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
