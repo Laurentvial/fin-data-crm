@@ -3401,7 +3401,10 @@ export default function SettingsPage() {
 
   const handleSetRole = async (userId: string, role: AppRole) => {
     setActionError(null);
-    const { error } = await authClient.admin.setRole({ userId, role });
+    const { error } = await authClient.admin.setRole({
+      userId,
+      role: role as unknown as "user" | "admin",
+    });
     if (error) {
       setActionError(error.message ?? "Échec de la modification du rôle.");
       return;

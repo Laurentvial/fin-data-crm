@@ -9,7 +9,7 @@ if (!baseUrl || !cookieSecret) {
   );
 }
 
-export const auth = createNeonAuth({
+const neonAuth = createNeonAuth({
   baseUrl,
   cookies: {
     secret: cookieSecret,
@@ -20,3 +20,18 @@ export const auth = createNeonAuth({
     sessionDataTtl: 1800, // 30 minutes (SDK default 300; was 600)
   },
 });
+
+type NeonAuth = typeof neonAuth;
+type GetSessionArgs = Parameters<NeonAuth["getSession"]>;
+type GetSessionResult = Awaited<ReturnType<NeonAuth["getSession"]>>;
+type SessionData = GetSessionResult["data"];
+type SessionDataWithRole = SessionData extends { user: infer U }
+  ? Omit<SessionData, "user"> & { user: U & { role?: string | null } }
+  : SessionData;
+type GetSessionResultWithRole = Omit<GetSessionResult, "data"> & {
+  data: SessionDataWithRole;
+};
+
+export const auth = neonAuth as Omit<NeonAuth, "getSession"> & {
+  getSession: (...args: GetSessionArgs) => Promise<GetSessionResultWithRole>;
+};
