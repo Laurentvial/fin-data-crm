@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
 function parseBackgroundColor(v: unknown): string | null {
@@ -47,8 +48,19 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   try {
     const body = await request.json();
     const name = typeof body?.name === "string" ? body.name.trim() : "";

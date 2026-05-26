@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
 import { isCreditTransactionStatus } from "@/lib/credit-status";
@@ -13,6 +14,9 @@ async function requireAuthUserId() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
     return { error: NextResponse.json({ error: "Non authentifié. Veuillez vous reconnecter." }, { status: 401 }) };
+  }
+  if (!canMutate(session.user.role)) {
+    return { error: NextResponse.json({ error: "Accès refusé: rôle lecteur en lecture seule." }, { status: 403 }) };
   }
   return { session };
 }

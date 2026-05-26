@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AccountNameField } from "@/components/AccountNameField";
 import { Select } from "@/components/Select";
 import { modalBackdropClose, suppressNextModalBackdropClose } from "@/lib/modal-backdrop-close";
@@ -20,6 +21,7 @@ const EMOJI_OPTIONS = [
 ] as const;
 import { authClient } from "@/lib/auth/client";
 import { getCachedSession } from "@/lib/auth/session-cache";
+import { canMutate, type AppRole } from "@/lib/auth/permissions";
 import type { AccountStatus, AccountType, Bank, Fournisseur, InvoiceTemplate, Source } from "@/lib/types";
 
 type User = { id: string; email: string; name: string; role?: string; telegram_id?: number; telegram_username?: string };
@@ -226,7 +228,7 @@ function UserRow({
   user: User;
   currentUserId: string | null;
   onDelete: (u: User) => void;
-  onSetRole: (userId: string, role: "user" | "admin") => void;
+  onSetRole: (userId: string, role: AppRole) => void;
   onEdit: (u: User) => void;
   isSuperAdmin: boolean;
   superAdminPending: boolean;
@@ -240,12 +242,13 @@ function UserRow({
       <td className="px-4 py-2">
         <select
           value={user.role ?? "user"}
-          onChange={(e) => onSetRole(user.id, e.target.value as "user" | "admin")}
+          onChange={(e) => onSetRole(user.id, e.target.value as AppRole)}
           disabled={isSelf}
           className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm disabled:opacity-50"
           title={isSelf ? "Vous ne pouvez pas modifier votre propre rôle" : undefined}
         >
           <option value="user">Utilisateur</option>
+          <option value="lecteur">Lecteur</option>
           <option value="admin">Administrateur</option>
         </select>
       </td>
@@ -3304,8 +3307,11 @@ function TemplatesSection() {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [superAdminIds, setSuperAdminIds] = useState<string[]>([]);
@@ -3320,48 +3326,67 @@ export default function SettingsPage() {
   const [editConfirmPassword, setEditConfirmPassword] = useState("");
   const [editSavePending, setEditSavePending] = useState(false);
 
-  const loadUsers = useCallback(async () => {
-    const session = await getCachedSession();
-    const role = session?.user?.role;
-    setIsAdmin(role === "admin");
-    setCurrentUserId(session?.user?.id ?? null);
+  const canAccessSettingsPage = canMutate(sessionRole);
 
-    if (role === "admin") {
-      const [{ data }, linksRes, superRes] = await Promise.all([
-        authClient.admin.listUsers({
-          query: { limit: 50, sortBy: "createdAt", sortDirection: "desc" },
-        }),
-        fetch("/api/admin/users/telegram-links"),
-        fetch("/api/admin/app-super-admins"),
-      ]);
-      const userList = (data?.users ?? []) as User[];
-      if (superRes.ok) {
-        const body = await superRes.json();
-        setSuperAdminIds(Array.isArray(body.user_ids) ? body.user_ids : []);
+  const loadUsers = useCallback(async () => {
+    try {
+      const session = await getCachedSession();
+      const role = session?.user?.role ?? null;
+      setSessionRole(role);
+      setIsAdmin(role === "admin");
+      setCurrentUserId(session?.user?.id ?? null);
+
+      if (role === "admin") {
+        const [{ data }, linksRes, superRes] = await Promise.all([
+          authClient.admin.listUsers({
+            query: { limit: 50, sortBy: "createdAt", sortDirection: "desc" },
+          }),
+          fetch("/api/admin/users/telegram-links"),
+          fetch("/api/admin/app-super-admins"),
+        ]);
+        const userList = (data?.users ?? []) as User[];
+        if (superRes.ok) {
+          const body = await superRes.json();
+          setSuperAdminIds(Array.isArray(body.user_ids) ? body.user_ids : []);
+        } else {
+          setSuperAdminIds([]);
+        }
+        if (linksRes.ok) {
+          const { links } = await linksRes.json();
+          const byUserId = new Map((links as { user_id: string; telegram_id: number; telegram_username?: string }[]).map((l) => [l.user_id, l]));
+          const merged = userList.map((u) => {
+            const link = byUserId.get(u.id);
+            return link ? { ...u, telegram_id: link.telegram_id, telegram_username: link.telegram_username } : u;
+          });
+          setUsers(merged);
+        } else {
+          setUsers(userList);
+        }
       } else {
+        setUsers([]);
         setSuperAdminIds([]);
       }
-      if (linksRes.ok) {
-        const { links } = await linksRes.json();
-        const byUserId = new Map((links as { user_id: string; telegram_id: number; telegram_username?: string }[]).map((l) => [l.user_id, l]));
-        const merged = userList.map((u) => {
-          const link = byUserId.get(u.id);
-          return link ? { ...u, telegram_id: link.telegram_id, telegram_username: link.telegram_username } : u;
-        });
-        setUsers(merged);
-      } else {
-        setUsers(userList);
-      }
-    } else {
+    } catch {
+      setSessionRole(null);
+      setIsAdmin(false);
+      setCurrentUserId(null);
       setUsers([]);
       setSuperAdminIds([]);
+    } finally {
+      setUsersLoading(false);
+      setSessionRoleLoading(false);
     }
-    setUsersLoading(false);
   }, []);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  useEffect(() => {
+    if (!sessionRoleLoading && !canAccessSettingsPage) {
+      router.replace("/dashboard");
+    }
+  }, [canAccessSettingsPage, router, sessionRoleLoading]);
 
   const handleDelete = async (user: User) => {
     if (!confirm(`Supprimer l'utilisateur "${user.name}" (${user.email}) ? Cette action est irréversible.`)) return;
@@ -3374,7 +3399,7 @@ export default function SettingsPage() {
     setUsers((prev) => prev.filter((u) => u.id !== user.id));
   };
 
-  const handleSetRole = async (userId: string, role: "user" | "admin") => {
+  const handleSetRole = async (userId: string, role: AppRole) => {
     setActionError(null);
     const { error } = await authClient.admin.setRole({ userId, role });
     if (error) {
@@ -3534,6 +3559,18 @@ export default function SettingsPage() {
       form.reset();
     }
   };
+
+  if (sessionRoleLoading) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <main className="flex-1 overflow-auto p-6">
+          <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (!canAccessSettingsPage) return null;
 
   return (
     <div className="flex min-h-screen flex-col">

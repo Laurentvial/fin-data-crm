@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
 import { isCreditTransactionStatus } from "@/lib/credit-status";
@@ -10,17 +11,6 @@ export const dynamic = "force-dynamic";
 /** Types modifiables via PATCH (INTERNAL_CREDIT : route dédiée `internal-credit-pair`). */
 const PATCHABLE_TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
 
-async function requireAuth() {
-  const { data: session } = await auth.getSession();
-  if (!session?.user) {
-    return NextResponse.json(
-      { error: "Non authentifié. Veuillez vous reconnecter." },
-      { status: 401 }
-    );
-  }
-  return null;
-}
-
 function isValidDate(s: string): boolean {
   const d = new Date(s);
   return !Number.isNaN(d.getTime()) && s.match(/^\d{4}-\d{2}-\d{2}$/) !== null;
@@ -30,8 +20,19 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   try {
     const { id } = await params;
     const body = await request.json();
@@ -398,8 +399,19 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   try {
     const { id } = await params;
     if (!id || typeof id !== "string") {

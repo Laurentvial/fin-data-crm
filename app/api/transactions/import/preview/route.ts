@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { extractTransactionsFromPdfBuffer } from "@/lib/bank-statement-extract";
 import { findDuplicateCandidates, type DbTxnMatchRow } from "@/lib/bank-statement-import-match";
 
 export const maxDuration = 120;
 
-async function requireAuth() {
+const MATCH_QUERY_LIMIT = 2000;
+
+export async function POST(request: NextRequest) {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
     return NextResponse.json(
@@ -14,14 +17,12 @@ async function requireAuth() {
       { status: 401 }
     );
   }
-  return null;
-}
-
-const MATCH_QUERY_LIMIT = 2000;
-
-export async function POST(request: NextRequest) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
 
   try {
     const contentType = request.headers.get("content-type") ?? "";

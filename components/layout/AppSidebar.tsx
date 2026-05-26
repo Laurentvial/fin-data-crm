@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
+import { canAccessTransactions, isReaderRole } from "@/lib/auth/permissions";
 import { getCachedSession, invalidateSessionCache } from "@/lib/auth/session-cache";
 import type { BankAccount, Company } from "@/lib/types";
 
@@ -101,12 +102,22 @@ export function AppSidebar() {
   const [quickSearchError, setQuickSearchError] = useState<string | null>(null);
   const [quickCompanies, setQuickCompanies] = useState<Company[]>([]);
   const [quickBankAccounts, setQuickBankAccounts] = useState<BankAccount[]>([]);
+  const isReader = isReaderRole(session?.user?.role);
+  const canSeeTransactions = canAccessTransactions(session?.user?.role);
 
   const navMain = useMemo(() => {
-    return navMainBase.filter(
-      (item) => !("superAdminOnly" in item) || appSuperAdmin
-    );
-  }, [appSuperAdmin]);
+    return navMainBase.filter((item) => {
+      if (item.href === "/dashboard" && isReader) return false;
+      if (item.href === "/" && !canSeeTransactions) return false;
+      if (item.href === "/accounts" && isReader) return false;
+      return !("superAdminOnly" in item) || appSuperAdmin;
+    });
+  }, [appSuperAdmin, canSeeTransactions, isReader]);
+
+  const adminNavItems = useMemo(() => {
+    if (isReader) return [];
+    return navAdmin;
+  }, [isReader]);
 
   const fetchSession = useCallback(async () => {
     try {
@@ -200,6 +211,7 @@ export function AppSidebar() {
 
     const accountHits = quickBankAccounts
       .filter((account) => {
+        if (!canSeeTransactions) return false;
         const name = (account.name ?? "").toLowerCase();
         const companyName = (account.company_name ?? "").toLowerCase();
         return name.includes(q) || companyName.includes(q);
@@ -213,7 +225,7 @@ export function AppSidebar() {
       }));
 
     return [...accountHits, ...companyHits].slice(0, 6);
-  }, [quickSearch, quickCompanies, quickBankAccounts]);
+  }, [quickSearch, quickCompanies, quickBankAccounts, canSeeTransactions]);
 
   const handleSignOut = async () => {
     invalidateSessionCache();
@@ -235,7 +247,7 @@ export function AppSidebar() {
       <nav className="flex flex-1 flex-col gap-1 p-3 pt-4">
         {navMain.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-          const Icon = item.icon as React.ComponentType<{ className?: string }>;
+          const Icon = item.icon as ComponentType<{ className?: string }>;
           return (
             <Link
               key={item.href}
@@ -251,29 +263,33 @@ export function AppSidebar() {
             </Link>
           );
         })}
-        <div className="my-2 border-t border-[var(--border)] pt-2">
-          <p className="subsection-header px-3 text-xs font-semibold uppercase tracking-wider">
-            Administration
-          </p>
-        </div>
-        {navAdmin.map((item) => {
-          const isActive = pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                isActive
-                  ? "bg-[var(--primary-muted)] text-[var(--primary)] border-l-2 border-[var(--primary)] -ml-0.5 pl-3.5"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] border-l-2 border-transparent"
-              }`}
-            >
-              <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--primary)]" : ""}`} />
-              {item.label}
-            </Link>
-          );
-        })}
+        {adminNavItems.length > 0 && (
+          <>
+            <div className="my-2 border-t border-[var(--border)] pt-2">
+              <p className="subsection-header px-3 text-xs font-semibold uppercase tracking-wider">
+                Administration
+              </p>
+            </div>
+            {adminNavItems.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                    isActive
+                      ? "bg-[var(--primary-muted)] text-[var(--primary)] border-l-2 border-[var(--primary)] -ml-0.5 pl-3.5"
+                      : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] border-l-2 border-transparent"
+                  }`}
+                >
+                  <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--primary)]" : ""}`} />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
       <div className="border-t border-[var(--sidebar-border)] p-3">
         <form onSubmit={handleQuickSearchSubmit} className="relative mb-3 px-3">
@@ -330,6 +346,8 @@ export function AppSidebar() {
                   ? "Super-administrateur"
                   : session?.user?.role === "admin"
                     ? "Administrateur"
+                    : isReaderRole(session?.user?.role)
+                      ? "Lecteur"
                     : "Utilisateur"}
             </p>
           </div>

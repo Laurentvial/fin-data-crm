@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { canAccessTransactions, canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import type { BankAccount, Transaction } from "@/lib/types";
 
 interface AccountWithTransactions extends BankAccount {
@@ -18,6 +20,10 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
+  const canEditData = canMutate(sessionRole);
+  const canViewTransactions = canAccessTransactions(sessionRole);
 
   const filteredAccounts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -48,6 +54,31 @@ export default function DashboardPage() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (mounted) setSessionRole(null);
+      } finally {
+        if (mounted) setSessionRoleLoading(false);
+      }
+    };
+    void loadSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionRoleLoading && !canEditData) {
+      router.replace("/societes");
+    }
+  }, [canEditData, router, sessionRoleLoading]);
+
   const handleDelete = useCallback(async (ba: BankAccount) => {
     setDeletingId(ba.id);
     setError(null);
@@ -67,7 +98,7 @@ export default function DashboardPage() {
     }
   }, []);
 
-  if (loading) {
+  if (loading || sessionRoleLoading) {
     return (
       <div className="flex min-h-screen flex-col">
         <main className="flex-1 overflow-auto p-6">
@@ -76,6 +107,8 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  if (!canEditData) return null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -131,8 +164,11 @@ export default function DashboardPage() {
                 key={acc.id}
                 bankAccount={acc}
                 transactions={acc.transactions ?? []}
-                onEdit={(ba) => router.push(`/accounts?edit=${encodeURIComponent(ba.id)}`)}
-                onDelete={(ba) => setBankAccountToDelete(ba)}
+                showTransactionsLink={canViewTransactions}
+                onEdit={
+                  canEditData ? (ba) => router.push(`/accounts?edit=${encodeURIComponent(ba.id)}`) : undefined
+                }
+                onDelete={canEditData ? (ba) => setBankAccountToDelete(ba) : undefined}
                 deleting={deletingId === acc.id}
               />
             ))}
@@ -140,7 +176,7 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {bankAccountToDelete && (
+      {canEditData && bankAccountToDelete && (
         <DeleteConfirmationModal
           title="Supprimer le compte bancaire"
           expectedText={`supprimer ${bankAccountToDelete.name} - ${bankAccountToDelete.company_name ?? ""}`}

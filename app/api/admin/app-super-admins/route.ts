@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { isAppSuperAdmin } from "@/lib/app-super-admin";
 
@@ -37,6 +38,12 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const { data: session } = await auth.getSession();
+  if (!canMutate(session?.user?.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   const err = await requireAdmin(session?.user as { id: string; role?: string } | undefined);
   if (err) return err;
   try {
@@ -59,6 +66,12 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const { data: session } = await auth.getSession();
+  if (!canMutate(session?.user?.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   const sessionUser = session?.user as { id: string; role?: string } | undefined;
   const err = await requireAdmin(sessionUser);
   if (err) return err;

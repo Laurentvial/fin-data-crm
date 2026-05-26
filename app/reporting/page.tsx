@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { FinancialTrendChart, type TrendPoint } from "@/components/reporting/FinancialTrendChart";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import type { BankAccount, Company } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
@@ -134,12 +136,16 @@ function formatMoneyEUR(n: number): string {
 }
 
 function ReportingContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const bankAccountIdFromUrl = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
   const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
 
   const [accessChecked, setAccessChecked] = useState(false);
   const [allowed, setAllowed] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
+  const canAccessReportingPage = canMutate(sessionRole);
 
   const [preset, setPreset] = useState<DatePresetId>("this_month");
   const [customFrom, setCustomFrom] = useState(() => {
@@ -215,6 +221,30 @@ function ReportingContent() {
   useEffect(() => {
     fetchBankAccount();
   }, [fetchBankAccount]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const session = await getCachedSession();
+        if (cancelled) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (!cancelled) setSessionRole(null);
+      } finally {
+        if (!cancelled) setSessionRoleLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionRoleLoading && !canAccessReportingPage) {
+      router.replace("/societes");
+    }
+  }, [canAccessReportingPage, router, sessionRoleLoading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,13 +357,15 @@ function ReportingContent() {
     }
   }, [allowed, accessChecked, loadSummary]);
 
-  if (!accessChecked) {
+  if (sessionRoleLoading || !accessChecked) {
     return (
       <div className="flex min-h-screen items-center justify-center text-[var(--muted-foreground)]">
         Vérification des accès…
       </div>
     );
   }
+
+  if (!canAccessReportingPage) return null;
 
   if (!allowed) {
     return (

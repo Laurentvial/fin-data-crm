@@ -12,6 +12,8 @@ import { TelegramBankAccountRattrapage } from "@/components/TelegramBankAccountR
 import { IbanCopyRows } from "@/components/IbanCopyRows";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
+import { canAccessTransactions, canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import { buildTelegramWelcomeDraft } from "@/lib/telegram-welcome-draft";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { AccountStatus, AccountType, Bank, BankAccount, CardItem, Company, CompanyEmail, CompanyPhone, IbanItem } from "@/lib/types";
@@ -245,14 +247,16 @@ function AccountCard({
   onEdit,
   onDelete,
   onCardClick,
+  canViewTransactions,
   deleting,
 }: {
   bankAccount: BankAccount;
   menuOpen: boolean;
   onMenuToggle: () => void;
-  onEdit: (ba: BankAccount) => void;
-  onDelete: (ba: BankAccount) => void;
-  onCardClick: (ba: BankAccount) => void;
+  onEdit?: (ba: BankAccount) => void;
+  onDelete?: (ba: BankAccount) => void;
+  onCardClick?: (ba: BankAccount) => void;
+  canViewTransactions: boolean;
   deleting: boolean;
 }) {
   const balance = bankAccount.balance ?? 0;
@@ -268,12 +272,13 @@ function AccountCard({
 
   return (
     <div
-      className="relative flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)]"
+      className={`relative flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--card-shadow)] transition-all hover:shadow-[var(--card-hover-shadow)] hover:border-[var(--primary-muted-border)] ${onCardClick ? "cursor-pointer" : ""}`}
       style={cardBgStyle}
-      onClick={() => onCardClick(bankAccount)}
-      role="button"
-      tabIndex={0}
+      onClick={() => onCardClick?.(bankAccount)}
+      role={onCardClick ? "button" : undefined}
+      tabIndex={onCardClick ? 0 : undefined}
       onKeyDown={(e) => {
+        if (!onCardClick) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onCardClick(bankAccount);
@@ -343,6 +348,7 @@ function AccountCard({
         <AccountCardMenu
           bankAccount={bankAccount}
           onClose={onMenuToggle}
+          canViewTransactions={canViewTransactions}
           onEdit={onEdit}
           onDelete={onDelete}
           deleting={deleting}
@@ -355,14 +361,16 @@ function AccountCard({
 function AccountCardMenu({
   bankAccount,
   onClose,
+  canViewTransactions,
   onEdit,
   onDelete,
   deleting,
 }: {
   bankAccount: BankAccount;
   onClose: () => void;
-  onEdit: (ba: BankAccount) => void;
-  onDelete: (ba: BankAccount) => void;
+  canViewTransactions: boolean;
+  onEdit?: (ba: BankAccount) => void;
+  onDelete?: (ba: BankAccount) => void;
   deleting: boolean;
 }) {
   return (
@@ -388,14 +396,16 @@ function AccountCardMenu({
           <ExternalLinkIcon className="h-4 w-4" />
           Voir les informations du compte
         </Link>
-        <Link
-          href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
-          onClick={onClose}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
-        >
-          <ListIcon className="h-4 w-4" />
-          Voir les transactions
-        </Link>
+        {canViewTransactions && (
+          <Link
+            href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
+            onClick={onClose}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+          >
+            <ListIcon className="h-4 w-4" />
+            Voir les transactions
+          </Link>
+        )}
         <Link
           href={`/reporting?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
           onClick={onClose}
@@ -404,29 +414,33 @@ function AccountCardMenu({
           <ChartIcon className="h-4 w-4" />
           Rapports
         </Link>
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            onEdit(bankAccount);
-          }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
-        >
-          <PencilIcon className="h-4 w-4" />
-          Modifier
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            onDelete(bankAccount);
-          }}
-          disabled={deleting}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-[var(--muted)] disabled:opacity-50 dark:text-red-400"
-        >
-          <TrashIcon className="h-4 w-4" />
-          {deleting ? "Suppression…" : "Supprimer"}
-        </button>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onEdit(bankAccount);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+          >
+            <PencilIcon className="h-4 w-4" />
+            Modifier
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onDelete(bankAccount);
+            }}
+            disabled={deleting}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-[var(--muted)] disabled:opacity-50 dark:text-red-400"
+          >
+            <TrashIcon className="h-4 w-4" />
+            {deleting ? "Suppression…" : "Supprimer"}
+          </button>
+        )}
       </div>
     </>
   );
@@ -1169,9 +1183,13 @@ function AccountsPageContent() {
   const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
   const [accountsSortMode, setAccountsSortMode] = useState<
     "alpha" | "balance_asc" | "balance_desc" | "status"
   >("alpha");
+  const canEditData = canMutate(sessionRole);
+  const canViewTransactions = canAccessTransactions(sessionRole);
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
   const [accountsFilterPanel, setAccountsFilterPanel] = useState<
     "hub" | "banks" | "status" | "fournisseur" | "client" | "balance"
@@ -1599,6 +1617,31 @@ function AccountsPageContent() {
   }, [fetchBankAccounts]);
 
   useEffect(() => {
+    let mounted = true;
+    const loadSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (mounted) setSessionRole(null);
+      } finally {
+        if (mounted) setSessionRoleLoading(false);
+      }
+    };
+    void loadSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionRoleLoading && !canEditData) {
+      router.replace("/dashboard");
+    }
+  }, [canEditData, router, sessionRoleLoading]);
+
+  useEffect(() => {
     if (!editCompanyId && !editingAccount) return;
     const cid = editCompanyId || editingAccount?.company_id;
     if (!cid) return;
@@ -1643,6 +1686,7 @@ function AccountsPageContent() {
   }, [editCompanyId, editingAccount?.company_id, editingAccount?.company_email_id, editingAccount?.company_phone_id]);
 
   useEffect(() => {
+    if (!canEditData) return;
     if (editIdFromUrl && bankAccounts.length > 0) {
       const account = bankAccounts.find((ba) => ba.id === editIdFromUrl);
       if (account) {
@@ -1665,7 +1709,7 @@ function AccountsPageContent() {
         setError(null);
       }
     }
-  }, [editIdFromUrl, bankAccounts]);
+  }, [canEditData, editIdFromUrl, bankAccounts]);
 
   const openEdit = (ba: BankAccount) => {
     setEditingAccount(ba);
@@ -1743,6 +1787,7 @@ function AccountsPageContent() {
 
   const createFromCompanyUrlRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!canEditData) return;
     if (!companyFromUrl) {
       createFromCompanyUrlRef.current = null;
       return;
@@ -1753,7 +1798,7 @@ function AccountsPageContent() {
     createFromCompanyUrlRef.current = companyFromUrl;
     openCreateModal(companyFromUrl);
     router.replace("/accounts", { scroll: false });
-  }, [companyFromUrl, loading, companies, openCreateModal, router]);
+  }, [canEditData, companyFromUrl, loading, companies, openCreateModal, router]);
 
   const closeCreateModal = () => {
     setCreateModalOpen(false);
@@ -2061,6 +2106,18 @@ function AccountsPageContent() {
     }
   };
 
+  if (sessionRoleLoading) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
+          <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (!canEditData) return null;
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-row">
@@ -2235,7 +2292,7 @@ function AccountsPageContent() {
             )}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
-            {companies.length > 0 && (
+            {canEditData && companies.length > 0 && (
               <button
                 type="button"
                 onClick={() => openCreateModal()}
@@ -2274,12 +2331,17 @@ function AccountsPageContent() {
                 bankAccount={ba}
                 menuOpen={menuOpenId === ba.id}
                 onMenuToggle={() => setMenuOpenId((prev) => (prev === ba.id ? null : ba.id))}
-                onEdit={openEdit}
-                onDelete={(account) => {
+                canViewTransactions={canViewTransactions}
+                onEdit={canEditData ? openEdit : undefined}
+                onDelete={canEditData ? (account) => {
                   setBankAccountToDelete(account);
                   setMenuOpenId(null);
-                }}
-                onCardClick={(account) => router.push(`/?bank_account_id=${encodeURIComponent(account.id)}`)}
+                } : undefined}
+                onCardClick={
+                  canViewTransactions
+                    ? (account) => router.push(`/?bank_account_id=${encodeURIComponent(account.id)}`)
+                    : undefined
+                }
                 deleting={deletingId === ba.id}
               />
             ))}
@@ -2610,7 +2672,7 @@ function AccountsPageContent() {
         )}
       </div>
 
-      {bankAccountToDelete && (
+      {canEditData && bankAccountToDelete && (
         <DeleteConfirmationModal
           title="Supprimer le compte bancaire"
           expectedText={`supprimer ${bankAccountToDelete.name} - ${bankAccountToDelete.company_name ?? ""}`}
@@ -2624,7 +2686,7 @@ function AccountsPageContent() {
         />
       )}
 
-      {editingAccount && (
+      {canEditData && editingAccount && (
         <EditBankAccountModal
           bankAccount={editingAccount}
           companies={companies}
@@ -2711,7 +2773,7 @@ function AccountsPageContent() {
           }}
         />
       )}
-      {createModalOpen && (
+      {canEditData && createModalOpen && (
         <CreateBankAccountModal
           companies={companies}
           banks={banks}

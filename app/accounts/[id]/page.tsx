@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import type { BankAccount } from "@/lib/types";
 
 function ChevronLeftIcon({ className }: { className?: string }) {
@@ -48,11 +50,15 @@ function ChartIcon({ className }: { className?: string }) {
 
 export default function AccountDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
+  const canEditData = canMutate(sessionRole);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -77,7 +83,32 @@ export default function AccountDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  if (loading) {
+  useEffect(() => {
+    let mounted = true;
+    const loadSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (mounted) setSessionRole(null);
+      } finally {
+        if (mounted) setSessionRoleLoading(false);
+      }
+    };
+    void loadSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionRoleLoading && !canEditData) {
+      router.replace("/dashboard");
+    }
+  }, [canEditData, router, sessionRoleLoading]);
+
+  if (loading || sessionRoleLoading) {
     return (
       <div className="flex min-h-screen flex-col">
         <main className="flex-1 overflow-auto p-6">
@@ -86,6 +117,8 @@ export default function AccountDetailPage() {
       </div>
     );
   }
+
+  if (!canEditData) return null;
 
   if (error && !bankAccount) {
     return (
@@ -121,12 +154,14 @@ export default function AccountDetailPage() {
             <ChevronLeftIcon />
             Retour aux comptes
           </Link>
-          <Link
-            href={`/accounts?edit=${id}`}
-            className="text-sm text-[var(--primary)] hover:underline"
-          >
-            Modifier les informations
-          </Link>
+          {canEditData && (
+            <Link
+              href={`/accounts?edit=${id}`}
+              className="text-sm text-[var(--primary)] hover:underline"
+            >
+              Modifier les informations
+            </Link>
+          )}
         </div>
 
         <div className="mb-6 flex items-center gap-4">

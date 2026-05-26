@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InternalCreditPairModal } from "@/components/InternalCreditPairModal";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
@@ -13,6 +13,8 @@ import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummar
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
 import { debitStatusLabel } from "@/lib/debit-status";
 import { creditStatusLabel } from "@/lib/credit-status";
+import { canAccessTransactions, canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
 import {
   groupedInvoiceDisabledReason,
@@ -84,6 +86,7 @@ function transactionCalendarDayLocal(transactionDate: string | undefined | null)
 }
 
 function HomeContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const bankAccountIdFromUrl = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
   const setupSuccess = searchParams.get("setup") === "1";
@@ -107,6 +110,8 @@ function HomeContent() {
   const [selectionStats, setSelectionStats] = useState<TransactionSelectionStats | null>(null);
   const [transactionGridSelectionResetNonce, setTransactionGridSelectionResetNonce] = useState(0);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
 
   const [filterValues, setFilterValues] = useState<TransactionFilterValues>(() => ({
     ...DEFAULT_TRANSACTION_FILTERS,
@@ -131,6 +136,9 @@ function HomeContent() {
   const handleSortDefault = useCallback(() => {
     setSortState({ ...DEFAULT_TRANSACTION_TABLE_SORT });
   }, []);
+
+  const canViewTransactions = canAccessTransactions(sessionRole);
+  const canEditData = canMutate(sessionRole);
 
   const sortedTransactions = useMemo(() => {
     const effective = sortState ?? DEFAULT_TRANSACTION_TABLE_SORT;
@@ -433,6 +441,32 @@ function HomeContent() {
   useEffect(() => {
     fetchTransactions();
   }, [fetchTransactions]);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (!mounted) return;
+        setSessionRole(null);
+      } finally {
+        if (mounted) setSessionRoleLoading(false);
+      }
+    };
+    void fetchSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionRoleLoading && !canViewTransactions) {
+      router.replace("/dashboard");
+    }
+  }, [canViewTransactions, router, sessionRoleLoading]);
 
   const handleApplyFilters = useCallback(
     (next: TransactionFilterValues) => {
@@ -755,6 +789,22 @@ function HomeContent() {
     URL.revokeObjectURL(url);
   }, [filteredTransactions]);
 
+  if (sessionRoleLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-[var(--muted-foreground)]">
+        Chargement…
+      </div>
+    );
+  }
+
+  if (!canViewTransactions) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-[var(--muted-foreground)]">
+        Redirection…
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       {setupSuccess && (
@@ -773,16 +823,18 @@ function HomeContent() {
         onResetFiltersClick={handleResetFilters}
         onExportClick={handleExport}
         onAddClick={
-          bankAccounts.length > 0 && !loadingBankAccounts ? () => setAddModalOpen(true) : undefined
+          canEditData && bankAccounts.length > 0 && !loadingBankAccounts
+            ? () => setAddModalOpen(true)
+            : undefined
         }
         onImportStatementClick={
-          bankAccounts.length > 0 && !loadingBankAccounts
+          canEditData && bankAccounts.length > 0 && !loadingBankAccounts
             ? () => setImportStatementModalOpen(true)
             : undefined
         }
-        createInvoice={createInvoiceToolbar}
-        groupedInvoice={groupedInvoiceToolbar}
-        bulkDeleteSelected={bulkDeleteToolbar}
+        createInvoice={canEditData ? createInvoiceToolbar : undefined}
+        groupedInvoice={canEditData ? groupedInvoiceToolbar : undefined}
+        bulkDeleteSelected={canEditData ? bulkDeleteToolbar : null}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="flex min-h-full flex-1 flex-col px-4 py-4">
@@ -794,9 +846,9 @@ function HomeContent() {
               hasMore={hasMoreTransactions}
               onLoadMore={loadMoreTransactions}
               zoom={zoom}
-              onCellValueChanged={handleCellValueChanged}
+              onCellValueChanged={canEditData ? handleCellValueChanged : undefined}
               onSelectionStatsChange={setSelectionStats}
-              onDelete={handleDeleteTransaction}
+              onDelete={canEditData ? handleDeleteTransaction : undefined}
               onSortDirect={handleSortDirect}
               onSortDefault={handleSortDefault}
               sortState={sortState ?? DEFAULT_TRANSACTION_TABLE_SORT}
@@ -806,15 +858,15 @@ function HomeContent() {
               transactionsForFilterOptions={transactionsForFilterOptions}
               fournisseurs={fournisseurs}
               settingsClients={settingsClients}
-              onQuickCreateFournisseur={handleQuickCreateFournisseur}
-              onQuickCreateSettingsClient={handleQuickCreateSettingsClient}
+              onQuickCreateFournisseur={canEditData ? handleQuickCreateFournisseur : undefined}
+              onQuickCreateSettingsClient={canEditData ? handleQuickCreateSettingsClient : undefined}
               selectionResetNonce={transactionGridSelectionResetNonce}
-              onBeginInternalCreditPair={handleBeginInternalCreditPair}
+              onBeginInternalCreditPair={canEditData ? handleBeginInternalCreditPair : undefined}
             />
           </div>
         </div>
       </div>
-      {addModalOpen && (
+      {canEditData && addModalOpen && (
         <AddTransactionModal
           bankAccounts={bankAccounts}
           defaultBankAccountId={
@@ -826,7 +878,7 @@ function HomeContent() {
           onSuccess={handleAddTransaction}
         />
       )}
-      {importStatementModalOpen && (
+      {canEditData && importStatementModalOpen && (
         <ImportBankStatementModal
           bankAccounts={bankAccounts}
           defaultBankAccountId={
@@ -838,7 +890,7 @@ function HomeContent() {
           onSuccess={handleImportStatementSuccess}
         />
       )}
-      {invoiceModalTransactions && invoiceModalTransactions.length > 0 && (
+      {canEditData && invoiceModalTransactions && invoiceModalTransactions.length > 0 && (
         <GenerateInvoiceModal
           key={invoiceModalTransactions.map((t) => t.id).join(",")}
           transactions={invoiceModalTransactions}
@@ -846,7 +898,7 @@ function HomeContent() {
           onSuccess={handleInvoiceSuccess}
         />
       )}
-      {internalCreditModalTxn && (
+      {canEditData && internalCreditModalTxn && (
         <InternalCreditPairModal
           credit={internalCreditModalTxn}
           fournisseurs={fournisseurs}

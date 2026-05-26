@@ -5,6 +5,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
+import { canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import type { Bank, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
@@ -172,8 +174,8 @@ function CompanyCard({
   banks: Bank[];
   menuOpen: boolean;
   onMenuToggle: () => void;
-  onEdit: (c: Company) => void;
-  onDelete: (c: Company) => void;
+  onEdit?: (c: Company) => void;
+  onDelete?: (c: Company) => void;
   onCardClick: (companyId: string) => void;
 }) {
   return (
@@ -286,8 +288,8 @@ function CompanyCardMenu({
 }: {
   company: Company;
   onClose: () => void;
-  onEdit: (c: Company) => void;
-  onDelete: (c: Company) => void;
+  onEdit?: (c: Company) => void;
+  onDelete?: (c: Company) => void;
 }) {
   return (
     <>
@@ -312,28 +314,32 @@ function CompanyCardMenu({
           <ExternalLinkIcon />
           Voir informations
         </Link>
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            onEdit(company);
-          }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
-        >
-          <PencilIcon />
-          Modifier
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            onDelete(company);
-          }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-[var(--muted)] dark:text-red-400"
-        >
-          <TrashIcon />
-          Supprimer
-        </button>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onEdit(company);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+          >
+            <PencilIcon />
+            Modifier
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onDelete(company);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-[var(--muted)] dark:text-red-400"
+          >
+            <TrashIcon />
+            Supprimer
+          </button>
+        )}
       </div>
     </>
   );
@@ -1138,6 +1144,8 @@ function SocietesPageContent() {
   const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null);
   const [createEmailRows, setCreateEmailRows] = useState<CompanyCreateEmailRow[]>([]);
   const [createPhoneRows, setCreatePhoneRows] = useState<CompanyCreatePhoneRow[]>([]);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const canEditData = canMutate(sessionRole);
 
   const activitesWithCounts = useMemo(() => {
     const meta = new Map<string, number>();
@@ -1380,6 +1388,23 @@ function SocietesPageContent() {
     fetchCompanies();
   }, [fetchCompanies]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (mounted) setSessionRole(null);
+      }
+    };
+    void loadSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const populateEditForm = useCallback((c: Company) => {
     setEditName(c.name);
     setEditAddress(c.address ?? "");
@@ -1473,6 +1498,7 @@ function SocietesPageContent() {
   }, [editCountryCode, editSiret]);
 
   useEffect(() => {
+    if (!canEditData) return;
     if (!editIdFromUrl || companies.length === 0) return;
     const company = companies.find((c) => c.id === editIdFromUrl);
     if (!company) return;
@@ -1492,7 +1518,7 @@ function SocietesPageContent() {
       })
       .catch(() => { /* keep form populated from company */ });
     return () => { cancelled = true; };
-  }, [editIdFromUrl, companies, populateEditForm]);
+  }, [canEditData, editIdFromUrl, companies, populateEditForm]);
 
   const openAdd = () => {
     setEditingCompany(null);
@@ -1878,13 +1904,15 @@ function SocietesPageContent() {
             )}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
-            <button
-              type="button"
-              onClick={openAdd}
-              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
-            >
-              + Créer une société
-            </button>
+            {canEditData && (
+              <button
+                type="button"
+                onClick={openAdd}
+                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
+              >
+                + Créer une société
+              </button>
+            )}
           </div>
         </div>
 
@@ -1946,11 +1974,11 @@ function SocietesPageContent() {
                             banks={banks}
                             menuOpen={menuOpenId === c.id}
                             onMenuToggle={() => setMenuOpenId((prev) => (prev === c.id ? null : c.id))}
-                            onEdit={openEdit}
-                            onDelete={(company) => {
+                            onEdit={canEditData ? openEdit : undefined}
+                            onDelete={canEditData ? (company) => {
                               setCompanyToDelete(company);
                               setMenuOpenId(null);
-                            }}
+                            } : undefined}
                             onCardClick={(companyId) => router.push(`/societes/${companyId}/comptes`)}
                           />
                         ))}
@@ -2154,7 +2182,7 @@ function SocietesPageContent() {
       )}
       </div>
 
-      {companyToDelete && (
+      {canEditData && companyToDelete && (
         <DeleteConfirmationModal
           title="Supprimer la société"
           expectedText={`supprimer ${companyToDelete.name}`}
@@ -2173,7 +2201,7 @@ function SocietesPageContent() {
         />
       )}
 
-      {showModal && (
+      {canEditData && showModal && (
         <CompanyModal
           title={isAddModal ? "Nouvelle société" : "Modifier la société"}
           name={editName}

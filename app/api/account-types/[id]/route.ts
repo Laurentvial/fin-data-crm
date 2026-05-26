@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
-async function requireAuth() {
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
     return NextResponse.json(
@@ -10,15 +14,12 @@ async function requireAuth() {
       { status: 401 }
     );
   }
-  return null;
-}
-
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   const { id } = await params;
   try {
     const body = await request.json();
@@ -76,8 +77,19 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   const { id } = await params;
   try {
     const rows = await sql`

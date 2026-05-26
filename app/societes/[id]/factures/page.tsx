@@ -6,6 +6,8 @@ import { useParams } from "next/navigation";
 import type { Invoice } from "@/lib/types";
 import { CreateManualInvoiceModal } from "@/components/CreateManualInvoiceModal";
 import { EditInvoiceModal } from "@/components/EditInvoiceModal";
+import { canMutate } from "@/lib/auth/permissions";
+import { getCachedSession } from "@/lib/auth/session-cache";
 
 function ChevronLeftIcon({ className }: { className?: string }) {
   return (
@@ -26,6 +28,8 @@ export default function SocieteFacturesPage() {
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const [invoiceToEdit, setInvoiceToEdit] = useState<Invoice | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const canEditData = canMutate(sessionRole);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -54,6 +58,23 @@ export default function SocieteFacturesPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (mounted) setSessionRole(null);
+      }
+    };
+    void loadSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const formatDate = (d: string) => {
     if (!d) return "—";
@@ -88,13 +109,15 @@ export default function SocieteFacturesPage() {
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div />
-          <button
-            type="button"
-            onClick={() => setCreateInvoiceOpen(true)}
-            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-          >
-            Créer une facture
-          </button>
+          {canEditData && (
+            <button
+              type="button"
+              onClick={() => setCreateInvoiceOpen(true)}
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+            >
+              Créer une facture
+            </button>
+          )}
         </div>
 
         {error && (
@@ -149,17 +172,19 @@ export default function SocieteFacturesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setError(null);
-                          setInfoMessage(null);
-                          setInvoiceToEdit(inv);
-                        }}
-                        className="text-[var(--primary)] hover:underline"
-                      >
-                        Régénérer
-                      </button>
+                      {canEditData && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError(null);
+                            setInfoMessage(null);
+                            setInvoiceToEdit(inv);
+                          }}
+                          className="text-[var(--primary)] hover:underline"
+                        >
+                          Régénérer
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -169,7 +194,7 @@ export default function SocieteFacturesPage() {
         )}
       </main>
 
-      {createInvoiceOpen && (
+      {canEditData && createInvoiceOpen && (
         <CreateManualInvoiceModal
           companyId={id}
           companyName={companyName}
@@ -179,7 +204,7 @@ export default function SocieteFacturesPage() {
           }}
         />
       )}
-      {invoiceToEdit && (
+      {canEditData && invoiceToEdit && (
         <EditInvoiceModal
           invoiceId={invoiceToEdit.id}
           companyId={id}

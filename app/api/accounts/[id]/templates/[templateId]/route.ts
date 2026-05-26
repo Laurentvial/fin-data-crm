@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
-async function requireAuth() {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; templateId: string }> }
+) {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
     return NextResponse.json(
@@ -10,15 +14,12 @@ async function requireAuth() {
       { status: 401 }
     );
   }
-  return null;
-}
-
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string; templateId: string }> }
-) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
 
   const { id, templateId } = await params;
 

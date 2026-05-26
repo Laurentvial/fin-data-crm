@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { encrypt, decrypt } from "@/lib/encryption";
 
@@ -64,8 +65,19 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; emailId: string }> }
 ) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   const { id, emailId } = await params;
   try {
     const body = await request.json();
@@ -158,8 +170,19 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string; emailId: string }> }
 ) {
-  const authError = await requireAuth();
-  if (authError) return authError;
+  const { data: session } = await auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json(
+      { error: "Non authentifié. Veuillez vous reconnecter." },
+      { status: 401 }
+    );
+  }
+  if (!canMutate(session.user.role)) {
+    return NextResponse.json(
+      { error: "Accès refusé: rôle lecteur en lecture seule." },
+      { status: 403 }
+    );
+  }
   const { id, emailId } = await params;
   try {
     const toDelete = await sql`

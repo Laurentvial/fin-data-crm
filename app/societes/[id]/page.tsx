@@ -8,12 +8,14 @@ import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
 import { CreateManualInvoiceModal } from "@/components/CreateManualInvoiceModal";
 import { EditInvoiceModal } from "@/components/EditInvoiceModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { canAccessTransactions, canMutate } from "@/lib/auth/permissions";
 import { Select } from "@/components/Select";
 import {
   FR_MOBILE_OPERATORS,
   needsLegacyOperateurOption,
   operateurToSelectValue,
 } from "@/lib/french-mobile-operators";
+import { getCachedSession } from "@/lib/auth/session-cache";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import { COUNTRY_LABELS_FR } from "@/lib/countries-fr";
 import type {
@@ -133,6 +135,9 @@ export default function SocieteDetailPage() {
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const canEditData = canMutate(sessionRole);
+  const canViewTransactions = canAccessTransactions(sessionRole);
 
   const fetchData = useCallback(async () => {
     if (!id || typeof id !== "string" || !id.trim()) return;
@@ -255,6 +260,23 @@ export default function SocieteDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSessionRole = async () => {
+      try {
+        const session = await getCachedSession();
+        if (!mounted) return;
+        setSessionRole(session?.user?.role ?? null);
+      } catch {
+        if (mounted) setSessionRole(null);
+      }
+    };
+    void loadSessionRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleAddEmail = async () => {
     const email = newEmail.trim();
@@ -884,44 +906,50 @@ export default function SocieteDetailPage() {
                       className="h-full w-full object-contain"
                     />
                   </div>
-                  <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                    <label className="cursor-pointer rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
-                      {uploadingLogo ? "Upload…" : "Remplacer"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
+                  {canEditData && (
+                    <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                      <label className="cursor-pointer rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
+                        {uploadingLogo ? "Upload…" : "Remplacer"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={uploadingLogo}
+                          onChange={handleUploadLogo}
+                        />
+                      </label>
+                      <button
+                        type="button"
                         disabled={uploadingLogo}
-                        onChange={handleUploadLogo}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      disabled={uploadingLogo}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        void handleDeleteLogo();
-                      }}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void handleDeleteLogo();
+                        }}
+                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <label className="group flex min-h-[80px] w-full cursor-pointer flex-col items-start gap-2 rounded-lg py-2">
-                  <UploadIcon className="text-[var(--muted-foreground)]" />
-                  <span className="text-sm text-[var(--muted-foreground)]">
-                    {uploadingLogo ? "Upload…" : "Choisir un fichier"}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    disabled={uploadingLogo}
-                    onChange={handleUploadLogo}
-                  />
-                </label>
+                canEditData ? (
+                  <label className="group flex min-h-[80px] w-full cursor-pointer flex-col items-start gap-2 rounded-lg py-2">
+                    <UploadIcon className="text-[var(--muted-foreground)]" />
+                    <span className="text-sm text-[var(--muted-foreground)]">
+                      {uploadingLogo ? "Upload…" : "Choisir un fichier"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploadingLogo}
+                      onChange={handleUploadLogo}
+                    />
+                  </label>
+                ) : (
+                  <p className="text-sm text-[var(--muted-foreground)]">Aucun logo.</p>
+                )
               )}
             </section>
 
@@ -944,44 +972,50 @@ export default function SocieteDetailPage() {
                           >
                             Voir
                           </a>
-                          <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
-                            {uploadingDocType === doc.file_type ? "Upload…" : "Remplacer"}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={!!uploadingDocType || !!deletingDocType}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              void handleDeleteDoc(doc.file_type);
-                            }}
-                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
-                          >
-                            {deletingDocType === doc.file_type ? "…" : "Supprimer"}
-                          </button>
+                          {canEditData && (
+                            <>
+                              <span className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)]">
+                                {uploadingDocType === doc.file_type ? "Upload…" : "Remplacer"}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={!!uploadingDocType || !!deletingDocType}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  void handleDeleteDoc(doc.file_type);
+                                }}
+                                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                              >
+                                {deletingDocType === doc.file_type ? "…" : "Supprimer"}
+                              </button>
+                            </>
+                          )}
                     </div>
                     <input
                       type="file"
                       accept="application/pdf,image/*"
                       className="hidden"
-                      disabled={!!uploadingDocType || !!deletingDocType}
+                      disabled={!canEditData || !!uploadingDocType || !!deletingDocType}
                       onChange={(e) => handleUploadDoc(e, doc.file_type)}
                     />
                   </label>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setAddDocModalOpen(true);
-                  setAddDocType("kbis");
-                  setAddDocCustomName("");
-                  setError(null);
-                }}
-                className="mt-4 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-              >
-                Ajouter un document
-              </button>
+              {canEditData && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddDocModalOpen(true);
+                    setAddDocType("kbis");
+                    setAddDocCustomName("");
+                    setError(null);
+                  }}
+                  className="mt-4 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                >
+                  Ajouter un document
+                </button>
+              )}
             </section>
             </div>
 
@@ -1144,11 +1178,14 @@ export default function SocieteDetailPage() {
                   <h2 className="section-header mb-4 text-lg font-medium">Bloc-notes</h2>
                   <textarea
                     value={company?.bloc_notes ?? ""}
+                    readOnly={!canEditData}
                     onChange={(e) => {
+                      if (!canEditData) return;
                       const v = e.target.value;
                       setCompany((prev) => (prev ? { ...prev, bloc_notes: v } : null));
                     }}
                     onBlur={async () => {
+                      if (!canEditData) return;
                       if (!company?.id) return;
                       try {
                         const res = await fetch(`/api/accounts/${company.id}`, {
@@ -1203,29 +1240,34 @@ export default function SocieteDetailPage() {
                   />
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap gap-4">
-                <Link
-                  href={`/societes?edit=${id}`}
-                  className="text-sm text-[var(--primary)] hover:underline"
-                >
-                  Modifier les informations
-                </Link>
-              </div>
+              {canEditData && (
+                <div className="mt-4 flex flex-wrap gap-4">
+                  <Link
+                    href={`/societes?edit=${id}`}
+                    className="text-sm text-[var(--primary)] hover:underline"
+                  >
+                    Modifier les informations
+                  </Link>
+                </div>
+              )}
             </section>
 
           </div>
 
+          {canEditData && (
+          <>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
               <h2 className="section-header mb-4 text-lg font-medium">Emails</h2>
-              <form
-                className="mb-4 flex flex-wrap gap-2"
-                autoComplete="off"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void handleAddEmail();
-                }}
-              >
+              {canEditData && (
+                <form
+                  className="mb-4 flex flex-wrap gap-2"
+                  autoComplete="off"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleAddEmail();
+                  }}
+                >
                 <input
                   type="email"
                   name="societe-smtp-email"
@@ -1246,14 +1288,15 @@ export default function SocieteDetailPage() {
                   autoComplete="new-password"
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                 />
-                <button
-                  type="submit"
-                  disabled={addingEmail || !newEmail.trim()}
-                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
-                >
-                  {addingEmail ? "Ajout…" : "Ajouter"}
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    disabled={addingEmail || !newEmail.trim()}
+                    className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                  >
+                    {addingEmail ? "Ajout…" : "Ajouter"}
+                  </button>
+                </form>
+              )}
               {emails.length === 0 ? (
                 <p className="text-sm text-[var(--muted-foreground)]">Aucun email enregistré.</p>
               ) : (
@@ -1273,8 +1316,12 @@ export default function SocieteDetailPage() {
                           <td className="px-4 py-2">
                             <button
                               type="button"
-                              onClick={() => handleSetDefaultEmail(em.id)}
-                              className={`rounded p-1 ${em.is_default ? "text-amber-500" : "text-[var(--muted-foreground)] hover:text-amber-500"}`}
+                              onClick={() => {
+                                if (!canEditData) return;
+                                void handleSetDefaultEmail(em.id);
+                              }}
+                              disabled={!canEditData}
+                              className={`rounded p-1 ${em.is_default ? "text-amber-500" : "text-[var(--muted-foreground)] hover:text-amber-500"} disabled:opacity-50`}
                               title={em.is_default ? "Email par défaut" : "Définir comme défaut"}
                             >
                               <StarIcon filled={!!em.is_default} />
@@ -1296,13 +1343,15 @@ export default function SocieteDetailPage() {
                             </button>
                           </td>
                           <td className="px-4 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteEmail(em.id)}
-                              className="text-red-600 hover:underline dark:text-red-400"
-                            >
-                              Supprimer
-                            </button>
+                            {canEditData && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEmail(em.id)}
+                                className="text-red-600 hover:underline dark:text-red-400"
+                              >
+                                Supprimer
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1314,7 +1363,8 @@ export default function SocieteDetailPage() {
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
               <h2 className="section-header mb-4 text-lg font-medium">Numéros de téléphone</h2>
-              <div className="mb-4 flex flex-wrap gap-2">
+              {canEditData && (
+                <div className="mb-4 flex flex-wrap gap-2">
                 <input
                   type="tel"
                   value={newPhone}
@@ -1335,15 +1385,16 @@ export default function SocieteDetailPage() {
                     </option>
                   ))}
                 </Select>
-                <button
-                  type="button"
-                  onClick={handleAddPhone}
-                  disabled={addingPhone || !newPhone.trim()}
-                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
-                >
-                  {addingPhone ? "Ajout…" : "Ajouter"}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={handleAddPhone}
+                    disabled={addingPhone || !newPhone.trim()}
+                    className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                  >
+                    {addingPhone ? "Ajout…" : "Ajouter"}
+                  </button>
+                </div>
+              )}
               {phones.length === 0 ? (
                 <p className="text-sm text-[var(--muted-foreground)]">Aucun numéro enregistré.</p>
               ) : (
@@ -1363,8 +1414,12 @@ export default function SocieteDetailPage() {
                           <td className="px-4 py-2">
                             <button
                               type="button"
-                              onClick={() => handleSetDefaultPhone(ph.id)}
-                              className={`rounded p-1 ${ph.is_default ? "text-amber-500" : "text-[var(--muted-foreground)] hover:text-amber-500"}`}
+                              onClick={() => {
+                                if (!canEditData) return;
+                                void handleSetDefaultPhone(ph.id);
+                              }}
+                              disabled={!canEditData}
+                              className={`rounded p-1 ${ph.is_default ? "text-amber-500" : "text-[var(--muted-foreground)] hover:text-amber-500"} disabled:opacity-50`}
                               title={ph.is_default ? "Numéro par défaut" : "Définir comme défaut"}
                             >
                               <StarIcon filled={!!ph.is_default} />
@@ -1375,8 +1430,10 @@ export default function SocieteDetailPage() {
                             <Select
                               value={operateurToSelectValue(ph.operateur)}
                               onChange={(e) => {
+                                if (!canEditData) return;
                                 void handlePhoneOperateurSelect(ph.id, ph.operateur, e.target.value);
                               }}
+                              disabled={!canEditData}
                               className="min-w-[200px] max-w-[280px]"
                               aria-label={`Opérateur pour ${ph.phone}`}
                             >
@@ -1398,13 +1455,15 @@ export default function SocieteDetailPage() {
                             </Select>
                           </td>
                           <td className="px-4 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePhone(ph.id)}
-                              className="text-red-600 hover:underline dark:text-red-400"
-                            >
-                              Supprimer
-                            </button>
+                            {canEditData && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePhone(ph.id)}
+                                className="text-red-600 hover:underline dark:text-red-400"
+                              >
+                                Supprimer
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1424,7 +1483,7 @@ export default function SocieteDetailPage() {
               <select
                 value={company?.invoice_template_id ?? ""}
                 onChange={(e) => handleTemplateChange(e.target.value || null)}
-                disabled={savingTemplate || templates.length === 0}
+                disabled={!canEditData || savingTemplate || templates.length === 0}
                 className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm min-w-[200px]"
               >
                 <option value="">Template par défaut</option>
@@ -1451,13 +1510,15 @@ export default function SocieteDetailPage() {
                 >
                   Voir tout
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setInvoiceModalOpen(true)}
-                  className="rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-                >
-                  Créer une facture
-                </button>
+                {canEditData && (
+                  <button
+                    type="button"
+                    onClick={() => setInvoiceModalOpen(true)}
+                    className="rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                  >
+                    Créer une facture
+                  </button>
+                )}
               </div>
             </div>
             {invoiceInfoMessage && (
@@ -1507,17 +1568,19 @@ export default function SocieteDetailPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setError(null);
-                              setInvoiceInfoMessage(null);
-                              setInvoiceToEdit(inv);
-                            }}
-                            className="text-[var(--primary)] hover:underline"
-                          >
-                            Régénérer
-                          </button>
+                          {canEditData && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setError(null);
+                                setInvoiceInfoMessage(null);
+                                setInvoiceToEdit(inv);
+                              }}
+                              className="text-[var(--primary)] hover:underline"
+                            >
+                              Régénérer
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1530,13 +1593,15 @@ export default function SocieteDetailPage() {
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
               <h2 className="section-header text-lg font-medium">Comptes bancaires</h2>
-              <button
-                type="button"
-                onClick={openCreateAccountModal}
-                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-              >
-                Ajouter un compte bancaire
-              </button>
+              {canEditData && (
+                <button
+                  type="button"
+                  onClick={openCreateAccountModal}
+                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                >
+                  Ajouter un compte bancaire
+                </button>
+              )}
             </div>
             {!createAccountModalOpen && bankAccountError && (
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
@@ -1561,18 +1626,21 @@ export default function SocieteDetailPage() {
                     bankAccount={ba}
                     transactions={transactionsByAccount[ba.id] ?? []}
                     hideCompanyName
-                    onEdit={(ba) => router.push(`/accounts?edit=${ba.id}`)}
-                    onDelete={(ba) => setBankAccountToDelete(ba)}
+                    showTransactionsLink={canViewTransactions}
+                    onEdit={canEditData ? (account) => router.push(`/accounts?edit=${account.id}`) : undefined}
+                    onDelete={canEditData ? (account) => setBankAccountToDelete(account) : undefined}
                     deleting={deletingBankAccountId === ba.id}
                   />
                 ))}
               </div>
             )}
           </section>
+        </>
+        )}
         </div>
       </main>
 
-      {bankAccountToDelete && (
+      {canEditData && bankAccountToDelete && (
         <DeleteConfirmationModal
           title="Supprimer le compte bancaire"
           expectedText={`supprimer ${bankAccountToDelete.name} - ${bankAccountToDelete.company_name ?? company?.name ?? ""}`}
@@ -1586,7 +1654,7 @@ export default function SocieteDetailPage() {
         />
       )}
 
-      {invoiceModalOpen && company?.id && (
+      {canEditData && invoiceModalOpen && company?.id && (
         <CreateManualInvoiceModal
           companyId={company.id}
           companyName={company.name}
@@ -1596,7 +1664,7 @@ export default function SocieteDetailPage() {
           }}
         />
       )}
-      {invoiceToEdit && company?.id && (
+      {canEditData && invoiceToEdit && company?.id && (
         <EditInvoiceModal
           invoiceId={invoiceToEdit.id}
           companyId={company.id}
@@ -1609,7 +1677,7 @@ export default function SocieteDetailPage() {
         />
       )}
 
-      {addDocModalOpen && (
+      {canEditData && addDocModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => {
@@ -1684,7 +1752,7 @@ export default function SocieteDetailPage() {
         </div>
       )}
 
-      {createAccountModalOpen && company && (
+      {canEditData && createAccountModalOpen && company && (
         <CreateBankAccountModal
           companies={[company]}
           banks={banks}

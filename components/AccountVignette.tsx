@@ -109,6 +109,7 @@ export function AccountVignette({
   hideCompanyName,
   onEdit,
   onDelete,
+  showTransactionsLink = true,
   deleting,
 }: {
   bankAccount: BankAccount;
@@ -116,6 +117,7 @@ export function AccountVignette({
   hideCompanyName?: boolean;
   onEdit?: (ba: BankAccount) => void;
   onDelete?: (ba: BankAccount) => void;
+  showTransactionsLink?: boolean;
   deleting?: boolean;
 }) {
   const balance = bankAccount.balance ?? 0;
@@ -171,14 +173,16 @@ export function AccountVignette({
               <ExternalLinkIcon className="h-4 w-4" />
               Voir les informations du compte
             </Link>
-            <Link
-              href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
-              onClick={() => setMenuOpen(false)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
-            >
-              <ListIcon className="h-4 w-4" />
-              Voir les transactions
-            </Link>
+            {showTransactionsLink && (
+              <Link
+                href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
+                onClick={() => setMenuOpen(false)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+              >
+                <ListIcon className="h-4 w-4" />
+                Voir les transactions
+              </Link>
+            )}
             <Link
               href={`/reporting?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
               onClick={() => setMenuOpen(false)}
@@ -306,13 +310,15 @@ export function AccountVignette({
           ))
         )}
       </div>
-      <Link
-        href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
-        className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors"
-      >
-        <ListIcon className="h-4 w-4" />
-        Voir les transactions
-      </Link>
+      {showTransactionsLink && (
+        <Link
+          href={`/?bank_account_id=${encodeURIComponent(bankAccount.id)}`}
+          className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors"
+        >
+          <ListIcon className="h-4 w-4" />
+          Voir les transactions
+        </Link>
+      )}
     </div>
   );
 }
