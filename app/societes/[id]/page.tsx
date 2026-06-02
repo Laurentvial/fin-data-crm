@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AccountVignette } from "@/components/AccountVignette";
 import { CreateBankAccountModal } from "@/components/CreateBankAccountModal";
@@ -76,6 +76,59 @@ function StarIcon({ filled, className }: { filled?: boolean; className?: string 
   );
 }
 
+function CopyIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+type CopyableInfoFieldProps = {
+  fieldKey: string;
+  label: string;
+  value: ReactNode;
+  copyValue?: string | null;
+  copied: boolean;
+  onCopy: (fieldKey: string, copyValue?: string | null) => void;
+};
+
+function CopyableInfoField({
+  fieldKey,
+  label,
+  value,
+  copyValue,
+  copied,
+  onCopy,
+}: CopyableInfoFieldProps) {
+  const textToCopy = (copyValue ?? "").trim();
+  const canCopy = textToCopy.length > 0;
+
+  return (
+    <div>
+      <dt className="mb-1 text-sm font-medium uppercase text-[var(--muted-foreground)]">{label}</dt>
+      <dd className="flex items-start justify-between gap-2 text-base">
+        <span className="min-w-0 break-words">{value}</span>
+        <button
+          type="button"
+          disabled={!canCopy}
+          onClick={() => onCopy(fieldKey, copyValue)}
+          className={`shrink-0 rounded-md border border-[var(--border)] p-1 transition-colors ${
+            copied
+              ? "bg-[var(--primary-muted)] text-[var(--primary)]"
+              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+          aria-label={copied ? `${label} copié` : `Copier ${label}`}
+          title={copied ? "Copié" : "Copier"}
+        >
+          <CopyIcon className="h-4 w-4" />
+        </button>
+      </dd>
+    </div>
+  );
+}
+
 export default function SocieteDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -136,6 +189,8 @@ export default function SocieteDetailPage() {
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [copiedFieldKey, setCopiedFieldKey] = useState<string | null>(null);
+  const copyFeedbackTimeoutRef = useRef<number | null>(null);
   const canEditData = canMutate(sessionRole);
   const canViewTransactions = canAccessTransactions(sessionRole);
 
@@ -519,6 +574,39 @@ export default function SocieteDetailPage() {
     }
   };
 
+  const handleCopyField = useCallback(
+    async (fieldKey: string, copyValue?: string | null) => {
+      const text = (copyValue ?? "").trim();
+      if (!text) return;
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else if (typeof document !== "undefined") {
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          textArea.setAttribute("readonly", "");
+          textArea.style.position = "absolute";
+          textArea.style.left = "-9999px";
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand("copy");
+          document.body.removeChild(textArea);
+        }
+        setCopiedFieldKey(fieldKey);
+        if (copyFeedbackTimeoutRef.current !== null) {
+          window.clearTimeout(copyFeedbackTimeoutRef.current);
+        }
+        copyFeedbackTimeoutRef.current = window.setTimeout(() => {
+          setCopiedFieldKey((current) => (current === fieldKey ? null : current));
+          copyFeedbackTimeoutRef.current = null;
+        }, 1400);
+      } catch {
+        setError("Impossible de copier cette valeur.");
+      }
+    },
+    []
+  );
+
   const DOC_TYPE_LABELS: Record<string, string> = {
     kbis: "Kbis",
     statut: "Statut de la société",
@@ -697,6 +785,14 @@ export default function SocieteDetailPage() {
     setCreateAccountName(autoName);
   }, [createAccountModalOpen, company, createAccountTypeId, createAccountStatusId, createAccountBankId, createAccountIbans, createAccountName, accountTypes, accountStatuses, banks]);
 
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleDeleteBankAccount = async (ba: BankAccount) => {
     setDeletingBankAccountId(ba.id);
     setError(null);
@@ -871,6 +967,26 @@ export default function SocieteDetailPage() {
     );
   }
 
+  const companyCountryLabel = company?.country_code
+    ? (COUNTRY_LABELS_FR[company.country_code] ?? company.country_code)
+    : "—";
+  const managerCountryLabel = company?.gerant_pays
+    ? (COUNTRY_LABELS_FR[company.gerant_pays] ?? company.gerant_pays)
+    : "—";
+  const managerBirthCountryLabel = company?.gerant_pays_naissance
+    ? (COUNTRY_LABELS_FR[company.gerant_pays_naissance] ?? company.gerant_pays_naissance)
+    : "—";
+  const vatRatesDisplay =
+    Array.isArray(company?.vat_rates) && company.vat_rates.length > 0
+      ? company.vat_rates.map((r) => `${r}%`).join(", ")
+      : company?.vat_rate != null
+        ? `${company.vat_rate}%`
+        : "—";
+  const nextInvoiceNumberDisplay =
+    company?.invoice_next_number != null
+      ? `${company.invoice_prefix ?? "FAC-"}${new Date().getFullYear()}-${String(company.invoice_next_number).padStart(4, "0")}`
+      : "—";
+
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 overflow-auto p-6">
@@ -1024,153 +1140,265 @@ export default function SocieteDetailPage() {
                 <div>
                   <h2 className="section-header mb-4 text-lg font-medium">Informations générales</h2>
                   <dl className="grid gap-5 sm:grid-cols-2">
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Nom</dt>
-                      <dd className="text-base">{company?.name ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">VPS</dt>
-                      <dd className="text-base">{company?.vps ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Forme juridique</dt>
-                      <dd className="text-base">{company?.forme_juridique ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Capital social</dt>
-                      <dd className="text-base">{company?.capital_social ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Adresse</dt>
-                      <dd className="text-base">{company?.address ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Code postal</dt>
-                      <dd className="text-base">{company?.code_postal ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Ville</dt>
-                      <dd className="text-base">{company?.ville ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays</dt>
-                      <dd className="text-base">{company?.country_code ? (COUNTRY_LABELS_FR[company.country_code] ?? company.country_code) : "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Siret</dt>
-                      <dd className="text-base">{company?.siret ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Activité</dt>
-                      <dd className="text-base">{company?.activite ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Date d&apos;immatriculation</dt>
-                      <dd className="text-base">{formatDateDisplay(company?.date_immatriculation)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Site web</dt>
-                      <dd className="text-base">
-                        {company?.website ? (
+                    <CopyableInfoField
+                      fieldKey="general-name"
+                      label="Nom"
+                      value={company?.name ?? "—"}
+                      copyValue={company?.name}
+                      copied={copiedFieldKey === "general-name"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-vps"
+                      label="VPS"
+                      value={company?.vps ?? "—"}
+                      copyValue={company?.vps}
+                      copied={copiedFieldKey === "general-vps"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-forme"
+                      label="Forme juridique"
+                      value={company?.forme_juridique ?? "—"}
+                      copyValue={company?.forme_juridique}
+                      copied={copiedFieldKey === "general-forme"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-capital"
+                      label="Capital social"
+                      value={company?.capital_social ?? "—"}
+                      copyValue={company?.capital_social}
+                      copied={copiedFieldKey === "general-capital"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-address"
+                      label="Adresse"
+                      value={company?.address ?? "—"}
+                      copyValue={company?.address}
+                      copied={copiedFieldKey === "general-address"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-postal"
+                      label="Code postal"
+                      value={company?.code_postal ?? "—"}
+                      copyValue={company?.code_postal}
+                      copied={copiedFieldKey === "general-postal"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-city"
+                      label="Ville"
+                      value={company?.ville ?? "—"}
+                      copyValue={company?.ville}
+                      copied={copiedFieldKey === "general-city"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-country"
+                      label="Pays"
+                      value={companyCountryLabel}
+                      copyValue={companyCountryLabel === "—" ? null : companyCountryLabel}
+                      copied={copiedFieldKey === "general-country"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-siret"
+                      label="Siret"
+                      value={company?.siret ?? "—"}
+                      copyValue={company?.siret}
+                      copied={copiedFieldKey === "general-siret"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-activity"
+                      label="Activité"
+                      value={company?.activite ?? "—"}
+                      copyValue={company?.activite}
+                      copied={copiedFieldKey === "general-activity"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-registration-date"
+                      label="Date d'immatriculation"
+                      value={formatDateDisplay(company?.date_immatriculation)}
+                      copyValue={company?.date_immatriculation}
+                      copied={copiedFieldKey === "general-registration-date"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="general-website"
+                      label="Site web"
+                      value={
+                        company?.website ? (
                           <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
                             {company.website}
                           </a>
                         ) : (
                           "—"
-                        )}
-                      </dd>
-                    </div>
+                        )
+                      }
+                      copyValue={company?.website}
+                      copied={copiedFieldKey === "general-website"}
+                      onCopy={handleCopyField}
+                    />
                   </dl>
                 </div>
                 <div>
                   <h2 className="section-header mb-4 text-lg font-medium">Gérant</h2>
                   <dl className="grid gap-5 sm:grid-cols-2">
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Nom</dt>
-                      <dd className="text-base">{company?.directeur ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Adresse personnelle</dt>
-                      <dd className="text-base">{company?.gerant_adresse ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Code postal</dt>
-                      <dd className="text-base">{company?.gerant_code_postal ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Ville</dt>
-                      <dd className="text-base">{company?.gerant_ville ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays</dt>
-                      <dd className="text-base">{company?.gerant_pays ? (COUNTRY_LABELS_FR[company.gerant_pays] ?? company.gerant_pays) : "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Date de naissance</dt>
-                      <dd className="text-base">{formatDateDisplay(company?.gerant_date_naissance)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Ville de naissance</dt>
-                      <dd className="text-base">{company?.gerant_ville_naissance ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Code postal de naissance</dt>
-                      <dd className="text-base">{company?.gerant_code_postal_naissance ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Pays de naissance</dt>
-                      <dd className="text-base">{company?.gerant_pays_naissance ? (COUNTRY_LABELS_FR[company.gerant_pays_naissance] ?? company.gerant_pays_naissance) : "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° fiscal</dt>
-                      <dd className="text-base">{company?.gerant_numero_fiscal ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° sécurité sociale</dt>
-                      <dd className="text-base">{company?.gerant_numero_secu ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° pièce d&apos;identité</dt>
-                      <dd className="text-base">{company?.gerant_numero_piece_identite ?? "—"}</dd>
-                    </div>
+                    <CopyableInfoField
+                      fieldKey="manager-name"
+                      label="Nom"
+                      value={company?.directeur ?? "—"}
+                      copyValue={company?.directeur}
+                      copied={copiedFieldKey === "manager-name"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-address"
+                      label="Adresse personnelle"
+                      value={company?.gerant_adresse ?? "—"}
+                      copyValue={company?.gerant_adresse}
+                      copied={copiedFieldKey === "manager-address"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-postal"
+                      label="Code postal"
+                      value={company?.gerant_code_postal ?? "—"}
+                      copyValue={company?.gerant_code_postal}
+                      copied={copiedFieldKey === "manager-postal"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-city"
+                      label="Ville"
+                      value={company?.gerant_ville ?? "—"}
+                      copyValue={company?.gerant_ville}
+                      copied={copiedFieldKey === "manager-city"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-country"
+                      label="Pays"
+                      value={managerCountryLabel}
+                      copyValue={managerCountryLabel === "—" ? null : managerCountryLabel}
+                      copied={copiedFieldKey === "manager-country"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-birth-date"
+                      label="Date de naissance"
+                      value={formatDateDisplay(company?.gerant_date_naissance)}
+                      copyValue={company?.gerant_date_naissance}
+                      copied={copiedFieldKey === "manager-birth-date"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-birth-city"
+                      label="Ville de naissance"
+                      value={company?.gerant_ville_naissance ?? "—"}
+                      copyValue={company?.gerant_ville_naissance}
+                      copied={copiedFieldKey === "manager-birth-city"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-birth-postal"
+                      label="Code postal de naissance"
+                      value={company?.gerant_code_postal_naissance ?? "—"}
+                      copyValue={company?.gerant_code_postal_naissance}
+                      copied={copiedFieldKey === "manager-birth-postal"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-birth-country"
+                      label="Pays de naissance"
+                      value={managerBirthCountryLabel}
+                      copyValue={managerBirthCountryLabel === "—" ? null : managerBirthCountryLabel}
+                      copied={copiedFieldKey === "manager-birth-country"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-tax-number"
+                      label="N° fiscal"
+                      value={company?.gerant_numero_fiscal ?? "—"}
+                      copyValue={company?.gerant_numero_fiscal}
+                      copied={copiedFieldKey === "manager-tax-number"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-social-security"
+                      label="N° sécurité sociale"
+                      value={company?.gerant_numero_secu ?? "—"}
+                      copyValue={company?.gerant_numero_secu}
+                      copied={copiedFieldKey === "manager-social-security"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="manager-id-card"
+                      label="N° pièce d'identité"
+                      value={company?.gerant_numero_piece_identite ?? "—"}
+                      copyValue={company?.gerant_numero_piece_identite}
+                      copied={copiedFieldKey === "manager-id-card"}
+                      onCopy={handleCopyField}
+                    />
                   </dl>
                 </div>
                 <div>
                   <h2 className="section-header mb-4 text-lg font-medium">Facturation</h2>
                   <dl className="grid gap-5 sm:grid-cols-1">
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">N° TVA</dt>
-                      <dd className="text-base">{company?.vat_number ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Taux TVA</dt>
-                      <dd className="text-base">
-                        {Array.isArray(company?.vat_rates) && company.vat_rates.length > 0
-                          ? company.vat_rates.map((r) => `${r}%`).join(", ")
-                          : company?.vat_rate != null
-                            ? `${company.vat_rate}%`
-                            : "—"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Préfixe factures</dt>
-                      <dd className="text-base">{company?.invoice_prefix ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Prochain numéro</dt>
-                      <dd className="text-base">
-                        {company?.invoice_next_number != null
-                          ? `${company.invoice_prefix ?? "FAC-"}${new Date().getFullYear()}-${String(company.invoice_next_number).padStart(4, "0")}`
-                          : "—"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Devise</dt>
-                      <dd className="text-base">{company?.currency ?? "—"}</dd>
-                    </div>
-                    <div className="mt-4 pt-4 border-t border-[var(--border)]">
-                      <dt className="text-sm font-medium uppercase text-[var(--muted-foreground)] mb-1">Source</dt>
-                      <dd className="text-base">{company?.source_name ?? "—"}</dd>
+                    <CopyableInfoField
+                      fieldKey="billing-vat-number"
+                      label="N° TVA"
+                      value={company?.vat_number ?? "—"}
+                      copyValue={company?.vat_number}
+                      copied={copiedFieldKey === "billing-vat-number"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="billing-vat-rate"
+                      label="Taux TVA"
+                      value={vatRatesDisplay}
+                      copyValue={vatRatesDisplay === "—" ? null : vatRatesDisplay}
+                      copied={copiedFieldKey === "billing-vat-rate"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="billing-invoice-prefix"
+                      label="Préfixe factures"
+                      value={company?.invoice_prefix ?? "—"}
+                      copyValue={company?.invoice_prefix}
+                      copied={copiedFieldKey === "billing-invoice-prefix"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="billing-next-number"
+                      label="Prochain numéro"
+                      value={nextInvoiceNumberDisplay}
+                      copyValue={nextInvoiceNumberDisplay === "—" ? null : nextInvoiceNumberDisplay}
+                      copied={copiedFieldKey === "billing-next-number"}
+                      onCopy={handleCopyField}
+                    />
+                    <CopyableInfoField
+                      fieldKey="billing-currency"
+                      label="Devise"
+                      value={company?.currency ?? "—"}
+                      copyValue={company?.currency}
+                      copied={copiedFieldKey === "billing-currency"}
+                      onCopy={handleCopyField}
+                    />
+                    <div className="mt-4 border-t border-[var(--border)] pt-4">
+                      <CopyableInfoField
+                        fieldKey="billing-source"
+                        label="Source"
+                        value={company?.source_name ?? "—"}
+                        copyValue={company?.source_name}
+                        copied={copiedFieldKey === "billing-source"}
+                        onCopy={handleCopyField}
+                      />
                     </div>
                   </dl>
                 </div>

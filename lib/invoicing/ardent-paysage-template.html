@@ -24,9 +24,9 @@
       margin: 0 auto;
       position: relative;
     }
-    /* Bandeau vert foncé en haut */
+    /* Bandeau neutre en haut */
     .header-bar {
-      background: #1a4d2e;
+      background: #2f2f2f;
       color: #fff;
       padding: 12px 20px;
       display: flex;
@@ -137,7 +137,7 @@
       font-size: 10px;
       color: #444;
     }
-    /* Tableau : en-tête vert foncé */
+    /* Tableau : en-tête neutre */
     table.line-items {
       width: 100%;
       border-collapse: collapse;
@@ -151,8 +151,8 @@
       font-weight: 700;
       text-transform: uppercase;
       color: #fff;
-      background: #1a4d2e;
-      border: 1px solid #1a4d2e;
+      background: #2f2f2f;
+      border: 1px solid #2f2f2f;
       text-align: left;
     }
     table.line-items thead th:first-child {
@@ -227,10 +227,10 @@
       font-size: 10px;
       letter-spacing: 0.5px;
     }
-    /* Bandeau vert en bas */
+    /* Bandeau neutre en bas */
     .footer-bar {
       height: 12px;
-      background: #1a4d2e;
+      background: #2f2f2f;
       margin-top: 24px;
     }
     {{#if countryRules.requiredMentions}}
@@ -250,7 +250,7 @@
 </head>
 <body>
   <div class="page">
-    <!-- Bandeau vert FACTURE + logo -->
+    <!-- Bandeau neutre FACTURE + logo -->
     <div class="header-bar">
       <div class="facture-label">FACTURE</div>
       <div class="brand-block">
@@ -279,6 +279,9 @@
         {{#if customer.siret}}
         <div class="client-siret">SIRET : {{customer.siret}}</div>
         {{/if}}
+        {{#if customer.vat}}
+        <div class="client-vat">TVA : {{customer.vat}}</div>
+        {{/if}}
       </div>
       <div class="meta-block">
         <div class="meta-row">
@@ -298,7 +301,7 @@
       {{#if company.address}}<p>{{company.address}}</p>{{/if}}
       {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
       {{#if company.vat_number}}<p>TVA intracom : {{company.vat_number}}</p>{{/if}}
-      {{#if company.website}}<p><a href="{{company.website}}" style="color:#2563eb;text-decoration:none;">{{company.website}}</a></p>{{/if}}
+      {{#if company.website}}<p><a href="{{company.website}}" style="color:#444;text-decoration:none;">{{company.website}}</a></p>{{/if}}
     </div>
 
     <!-- Tableau : Désignation | Prix Unit. | Qté | Taux TVA | Montant -->
@@ -364,7 +367,7 @@
       {{/if}}
     </div>
 
-    <!-- Bandeau vert en bas -->
+    <!-- Bandeau neutre en bas -->
     <div class="footer-bar"></div>
   </div>
 </body>

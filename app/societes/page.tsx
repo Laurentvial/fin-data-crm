@@ -117,6 +117,13 @@ function companyFournisseurFacetLabel(c: Company): string {
   return (c.fournisseur ?? "").trim();
 }
 
+/** Filtre société : département basé sur les 2 premiers caractères du code postal. */
+function companyDepartementFacetKey(c: Company): string {
+  const postal = (c.code_postal ?? "").trim().replace(/\s+/g, "");
+  if (postal.length < 2) return "";
+  return postal.slice(0, 2);
+}
+
 function ListIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1134,12 +1141,14 @@ function SocietesPageContent() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [societesFilterPanel, setSocietesFilterPanel] = useState<
-    "hub" | "activite" | "fournisseur" | "pays"
+    "hub" | "activite" | "fournisseur" | "departement" | "pays"
   >("hub");
   /** null = toutes ; "" = sans activité ; sinon libellé exact (trim). */
   const [selectedActiviteKey, setSelectedActiviteKey] = useState<string | null>(null);
   /** null = tous ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent */
   const [selectedFournisseurKey, setSelectedFournisseurKey] = useState<string | null>(null);
+  /** null = tous ; "" = code postal non renseigné/invalide ; sinon 2 premiers caractères du CP */
+  const [selectedDepartementKey, setSelectedDepartementKey] = useState<string | null>(null);
   /** null = tous ; "" = pays non renseigné ; sinon code ISO alpha-2 majuscules */
   const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null);
   const [createEmailRows, setCreateEmailRows] = useState<CompanyCreateEmailRow[]>([]);
@@ -1249,14 +1258,45 @@ function SocietesPageContent() {
     return rows;
   }, [companies]);
 
+  const departementsWithCounts = useMemo(() => {
+    const meta = new Map<string, number>();
+    for (const c of companies) {
+      const dep = companyDepartementFacetKey(c);
+      meta.set(dep, (meta.get(dep) ?? 0) + 1);
+    }
+    const rows: { key: string; label: string; count: number }[] = [
+      {
+        key: "__all__",
+        label: "Tous les départements",
+        count: companies.length,
+      },
+    ];
+    if (meta.has("")) {
+      rows.push({
+        key: "",
+        label: "Code postal non renseigné",
+        count: meta.get("")!,
+      });
+    }
+    const deps = [...meta.keys()]
+      .filter((k) => k !== "")
+      .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+    for (const dep of deps) {
+      rows.push({ key: dep, label: dep, count: meta.get(dep)! });
+    }
+    return rows;
+  }, [companies]);
+
   const hasActiveSocietesFilters =
     selectedActiviteKey !== null ||
     selectedFournisseurKey !== null ||
+    selectedDepartementKey !== null ||
     selectedCountryCode !== null;
 
   const resetSocietesFilters = useCallback(() => {
     setSelectedActiviteKey(null);
     setSelectedFournisseurKey(null);
+    setSelectedDepartementKey(null);
     setSelectedCountryCode(null);
     setSocietesFilterPanel("hub");
   }, []);
@@ -1297,6 +1337,15 @@ function SocietesPageContent() {
         );
       }
     }
+    if (selectedDepartementKey !== null) {
+      if (selectedDepartementKey === "") {
+        list = list.filter((c) => companyDepartementFacetKey(c) === "");
+      } else {
+        list = list.filter(
+          (c) => companyDepartementFacetKey(c) === selectedDepartementKey
+        );
+      }
+    }
     if (selectedCountryCode !== null) {
       if (selectedCountryCode === "") {
         list = list.filter((c) => !(c.country_code ?? "").trim());
@@ -1313,6 +1362,7 @@ function SocietesPageContent() {
     search,
     selectedActiviteKey,
     selectedFournisseurKey,
+    selectedDepartementKey,
     selectedCountryCode,
   ]);
 
@@ -1899,6 +1949,34 @@ function SocietesPageContent() {
                       ))}
                     </select>
                   )}
+                  {departementsWithCounts.length > 1 && (
+                    <select
+                      value={
+                        selectedDepartementKey === null
+                          ? "__all__"
+                          : selectedDepartementKey === ""
+                            ? "__empty__"
+                            : selectedDepartementKey
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__all__") setSelectedDepartementKey(null);
+                        else if (v === "__empty__") setSelectedDepartementKey("");
+                        else setSelectedDepartementKey(v);
+                      }}
+                      className="min-w-[10rem] max-w-[18rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par département"
+                    >
+                      {departementsWithCounts.map((item) => (
+                        <option
+                          key={item.key === "" ? "__empty_val__" : item.key}
+                          value={item.key === "__all__" ? "__all__" : item.key === "" ? "__empty__" : item.key}
+                        >
+                          Département · {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </>
             )}
@@ -1997,7 +2075,7 @@ function SocietesPageContent() {
           <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
             <h2 className="mb-1 text-sm font-semibold text-[var(--foreground)]">Filtres</h2>
             <p className="mb-3 text-xs text-[var(--muted-foreground)]">
-              Par activité, fournisseur (source) ou pays de la fiche société.
+              Par activité, fournisseur (source), département ou pays de la fiche société.
             </p>
             {hasActiveSocietesFilters && (
               <button
@@ -2037,6 +2115,21 @@ function SocietesPageContent() {
               >
                 <ListIcon className="h-4 w-4 shrink-0 opacity-70" />
                 <span className="min-w-0 flex-1 font-medium">Fournisseur</span>
+                <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSocietesFilterPanel((p) => (p === "departement" ? "hub" : "departement"))
+                }
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  societesFilterPanel === "departement"
+                    ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                }`}
+              >
+                <ListIcon className="h-4 w-4 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 font-medium">Département</span>
                 <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
               </button>
               <button
@@ -2159,6 +2252,45 @@ function SocietesPageContent() {
                           type="button"
                           onClick={() =>
                             setSelectedCountryCode(item.key === "__all__" ? null : item.key)
+                          }
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            isActive
+                              ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          <span className="shrink-0 text-xs tabular-nums opacity-70">
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
+              {societesFilterPanel === "departement" && (
+                <>
+                  <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                    Par département
+                  </h2>
+                  <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                    Basé sur les 2 premiers caractères du code postal de la société.
+                  </p>
+                  <nav className="space-y-1">
+                    {departementsWithCounts.map((item) => {
+                      const isActive =
+                        item.key === "__all__"
+                          ? selectedDepartementKey === null
+                          : item.key === ""
+                            ? selectedDepartementKey === ""
+                            : selectedDepartementKey === item.key;
+                      return (
+                        <button
+                          key={item.key === "" ? "__empty__" : item.key}
+                          type="button"
+                          onClick={() =>
+                            setSelectedDepartementKey(item.key === "__all__" ? null : item.key)
                           }
                           className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                             isActive
