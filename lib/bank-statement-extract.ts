@@ -9,6 +9,7 @@ import {
 import type { TransactionType } from "@/lib/types";
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
+const MAX_CSV_BYTES = 5 * 1024 * 1024;
 
 /** Relevés longs : 16k jetons de sortie coupent souvent le JSON au milieu. Les modèles récents acceptent beaucoup plus. */
 const DEFAULT_STATEMENT_MAX_OUTPUT_TOKENS = 65_536;
@@ -37,6 +38,19 @@ export interface NormalizedExtractedLine {
   amount: number;
   description: string;
   type: TransactionType;
+}
+
+export interface CsvColumnMapping {
+  date: string;
+  description?: string;
+  amount?: string;
+  debit?: string;
+  credit?: string;
+  type?: string;
+}
+
+interface CsvExtractOptions {
+  mapping?: CsvColumnMapping;
 }
 
 const LINE_ITEM_SCHEMA: ObjectSchema = {
@@ -86,6 +100,313 @@ export function assertPdfBuffer(buf: Buffer): void {
   if (!head.startsWith("%PDF")) {
     throw new Error("Le fichier ne semble pas être un PDF valide.");
   }
+}
+
+export function assertCsvBuffer(buf: Buffer): void {
+  if (buf.length === 0) {
+    throw new Error("Le fichier CSV est vide.");
+  }
+  if (buf.length > MAX_CSV_BYTES) {
+    throw new Error(`Le CSV dépasse la taille maximale (${Math.floor(MAX_CSV_BYTES / (1024 * 1024))} Mo).`);
+  }
+}
+
+function normalizeHeader(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function parseCsvRows(raw: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let i = 0;
+  let inQuotes = false;
+
+  while (i < raw.length) {
+    const ch = raw[i]!;
+    const next = raw[i + 1];
+
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"';
+        i += 2;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      i += 1;
+      continue;
+    }
+
+    if (!inQuotes && (ch === "\n" || ch === "\r")) {
+      if (ch === "\r" && next === "\n") i += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      i += 1;
+      continue;
+    }
+
+    cell += ch;
+    i += 1;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function splitCsvWithDelimiter(row: string[], delimiter: string): string[] {
+  const source = row.join("\n");
+  const out: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && ch === delimiter) {
+      out.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current);
+  return out;
+}
+
+function detectCsvDelimiter(firstLine: string): string {
+  const candidates = [";", ",", "\t"];
+  let best = ";";
+  let bestCount = -1;
+  for (const d of candidates) {
+    const count = firstLine.split(d).length - 1;
+    if (count > bestCount) {
+      best = d;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function parseAmount(raw: string): number | null {
+  const v = raw.trim();
+  if (!v) return null;
+  const negative = v.includes("(") || /^-/.test(v);
+  const cleaned = v
+    .replace(/\s/g, "")
+    .replace(/[€$£]/g, "")
+    .replace(/[()]/g, "")
+    .replace(/,/g, ".");
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  const signed = negative ? -Math.abs(n) : n;
+  return Math.round(signed * 100) / 100;
+}
+
+function parseDateToIso(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  const dateOnly = value
+    .replace("T", " ")
+    .split(" ")[0]
+    ?.trim();
+  if (!dateOnly) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return isValidISODate(dateOnly) ? dateOnly : null;
+
+  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(dateOnly);
+  if (slash) {
+    const d = Number(slash[1]);
+    const m = Number(slash[2]);
+    const y = Number(slash[3]);
+    const iso = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    return isValidISODate(iso) ? iso : null;
+  }
+
+  const dash = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(dateOnly);
+  if (dash) {
+    const d = Number(dash[1]);
+    const m = Number(dash[2]);
+    const y = Number(dash[3]);
+    const iso = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    return isValidISODate(iso) ? iso : null;
+  }
+
+  return null;
+}
+
+function parseType(raw: string): TransactionType | null {
+  const t = normalizeHeader(raw);
+  if (!t) return null;
+  if (["credit", "crediteur", "versement", "entree", "in"].includes(t)) return "CREDIT";
+  if (["debit", "debiteur", "prelevement", "sortie", "out"].includes(t)) return "DEBIT";
+  return null;
+}
+
+export async function extractTransactionsFromCsvBuffer(
+  csvBuffer: Buffer,
+  options?: CsvExtractOptions
+): Promise<NormalizedExtractedLine[]> {
+  assertCsvBuffer(csvBuffer);
+  const text = csvBuffer.toString("utf8").replace(/^\uFEFF/, "").trim();
+  if (!text) return [];
+
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
+  const baseRows = parseCsvRows(text);
+  const toRows = (delimiter: string) =>
+    baseRows
+      .map((r) => splitCsvWithDelimiter(r, delimiter))
+      .map((r) => r.map((c) => c.trim()))
+      .filter((r) => r.some((c) => c.length > 0));
+
+  const mapping = options?.mapping;
+  const requestedDateHeader = normalizeHeader(mapping?.date ?? "");
+  const delimiterCandidates = [detectCsvDelimiter(firstLine), ";", ",", "\t"].filter(
+    (v, idx, arr) => arr.indexOf(v) === idx
+  );
+
+  let rows: string[][] = [];
+  for (const candidate of delimiterCandidates) {
+    const candidateRows = toRows(candidate);
+    if (candidateRows.length === 0) continue;
+    if (!requestedDateHeader) {
+      rows = candidateRows;
+      break;
+    }
+    const candidateHeaders = candidateRows[0]!.map((h) => normalizeHeader(h));
+    if (candidateHeaders.includes(requestedDateHeader)) {
+      rows = candidateRows;
+      break;
+    }
+    if (rows.length === 0) rows = candidateRows;
+  }
+
+  rows = rows
+    .map((r) => r.map((c) => c.trim()))
+    .filter((r) => r.some((c) => c.length > 0));
+
+  if (rows.length === 0) return [];
+
+  const headers = rows[0]!.map((h) => normalizeHeader(h));
+  const findCol = (...names: string[]) => headers.findIndex((h) => names.includes(h));
+
+  const indexByMappedHeader = (value?: string): number => {
+    if (!value) return -1;
+    const normalized = normalizeHeader(value);
+    if (!normalized) return -1;
+    return headers.findIndex((h) => h === normalized);
+  };
+
+  const mappedDate = indexByMappedHeader(mapping?.date);
+  const mappedDescription = indexByMappedHeader(mapping?.description);
+  const mappedAmount = indexByMappedHeader(mapping?.amount);
+  const mappedDebit = indexByMappedHeader(mapping?.debit);
+  const mappedCredit = indexByMappedHeader(mapping?.credit);
+  const mappedType = indexByMappedHeader(mapping?.type);
+
+  const idxDate = mappedDate >= 0 ? mappedDate : findCol("date", "dateoperation", "datevaleur", "transactiondate");
+  const idxAmount = mappedAmount >= 0 ? mappedAmount : findCol("montant", "amount", "valeur");
+  const idxDebit = mappedDebit >= 0 ? mappedDebit : findCol("debit");
+  const idxCredit = mappedCredit >= 0 ? mappedCredit : findCol("credit");
+  const idxDescription =
+    mappedDescription >= 0
+      ? mappedDescription
+      : findCol("libelle", "description", "label", "memo", "details", "operation");
+  const idxType = mappedType >= 0 ? mappedType : findCol("type", "sens", "nature", "transactiontype");
+
+  if (mapping?.date && mappedDate < 0) {
+    throw new Error(`Colonne date introuvable dans le CSV: "${mapping.date}"`);
+  }
+  if (mapping?.amount && mappedAmount < 0) {
+    throw new Error(`Colonne montant introuvable dans le CSV: "${mapping.amount}"`);
+  }
+  if (mapping?.debit && mappedDebit < 0) {
+    throw new Error(`Colonne débit introuvable dans le CSV: "${mapping.debit}"`);
+  }
+  if (mapping?.credit && mappedCredit < 0) {
+    throw new Error(`Colonne crédit introuvable dans le CSV: "${mapping.credit}"`);
+  }
+  if (mapping?.description && mappedDescription < 0) {
+    throw new Error(`Colonne libellé introuvable dans le CSV: "${mapping.description}"`);
+  }
+  if (mapping?.type && mappedType < 0) {
+    throw new Error(`Colonne type introuvable dans le CSV: "${mapping.type}"`);
+  }
+  if (idxDate < 0) {
+    throw new Error("Aucune colonne date détectée. Choisissez-la manuellement.");
+  }
+  if (idxAmount < 0 && idxDebit < 0 && idxCredit < 0) {
+    throw new Error("Aucune colonne montant détectée. Choisissez montant ou débit/crédit.");
+  }
+
+  const hasHeader = mapping != null || (idxDate >= 0 && (idxAmount >= 0 || idxDebit >= 0 || idxCredit >= 0));
+  const startIndex = hasHeader ? 1 : 0;
+  const out: NormalizedExtractedLine[] = [];
+
+  for (let i = startIndex; i < rows.length; i += 1) {
+    const row = rows[i]!;
+
+    const rawDate = idxDate >= 0 ? row[idxDate] ?? "" : row[0] ?? "";
+    const transactionDate = parseDateToIso(rawDate);
+    if (!transactionDate) continue;
+
+    let signedAmount: number | null = null;
+    let type: TransactionType | null = null;
+
+    if (idxDebit >= 0 || idxCredit >= 0) {
+      const debit = idxDebit >= 0 ? parseAmount(row[idxDebit] ?? "") : null;
+      const credit = idxCredit >= 0 ? parseAmount(row[idxCredit] ?? "") : null;
+      if (credit != null && Math.abs(credit) > 0) {
+        signedAmount = Math.abs(credit);
+        type = "CREDIT";
+      } else if (debit != null && Math.abs(debit) > 0) {
+        signedAmount = -Math.abs(debit);
+        type = "DEBIT";
+      }
+    } else {
+      const rawAmount = idxAmount >= 0 ? row[idxAmount] ?? "" : row[2] ?? "";
+      signedAmount = parseAmount(rawAmount);
+    }
+
+    if (signedAmount == null || !Number.isFinite(signedAmount) || signedAmount === 0) continue;
+
+    const parsedType =
+      idxType >= 0 ? parseType(row[idxType] ?? "") : null;
+    if (parsedType) {
+      type = parsedType;
+      signedAmount = Math.abs(signedAmount) * (type === "DEBIT" ? -1 : 1);
+    } else if (!type) {
+      type = signedAmount < 0 ? "DEBIT" : "CREDIT";
+    }
+
+    const desc =
+      (idxDescription >= 0 ? row[idxDescription] : row[1])?.trim() || "";
+    out.push({
+      transaction_date: transactionDate,
+      amount: Math.round(Math.abs(signedAmount) * 100) / 100,
+      description: desc,
+      type,
+    });
+  }
+
+  return out;
 }
 
 function normalizeLines(raw: unknown[]): NormalizedExtractedLine[] {

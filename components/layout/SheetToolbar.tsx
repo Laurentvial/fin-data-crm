@@ -20,6 +20,9 @@ interface SheetToolbarProps {
   groupedInvoice?: InvoiceToolbarAction | null;
   /** À côté de « Facture groupée » : suppression des lignes cochées (colonne cases). */
   bulkDeleteSelected?: { count: number; busy: boolean; onClick: () => void } | null;
+  /** Lance une analyse des doublons potentiels basée uniquement sur le montant. */
+  onScanAmountDuplicatesClick?: () => void;
+  scanAmountDuplicatesBusy?: boolean;
 }
 
 function FilterIcon({ className }: { className?: string }) {
@@ -86,6 +89,8 @@ export function SheetToolbar({
   createInvoice,
   groupedInvoice,
   bulkDeleteSelected,
+  onScanAmountDuplicatesClick,
+  scanAmountDuplicatesBusy = false,
 }: SheetToolbarProps) {
   return (
     <div
@@ -168,6 +173,16 @@ export function SheetToolbar({
         >
           <DownloadIcon className="h-4 w-4" />
           Exporter
+        </button>
+      ) : null}
+      {onScanAmountDuplicatesClick ? (
+        <button
+          type="button"
+          onClick={onScanAmountDuplicatesClick}
+          disabled={scanAmountDuplicatesBusy}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {scanAmountDuplicatesBusy ? "Scan doublons…" : "Scanner doublons montant"}
         </button>
       ) : null}
       <div className="ml-2 h-6 w-px bg-[var(--border)]" />

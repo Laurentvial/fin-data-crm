@@ -31,6 +31,15 @@ interface ReviewRow extends PreviewRowApi {
   import: boolean;
 }
 
+interface CsvMapping {
+  date: string;
+  description: string;
+  amount: string;
+  debit: string;
+  credit: string;
+  type: string;
+}
+
 function formatEur(n: number): string {
   return new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: 2,
@@ -61,12 +70,93 @@ export function ImportBankStatementModal({
   const [error, setError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [csvColumns, setCsvColumns] = useState<string[]>([]);
+  const [csvMapping, setCsvMapping] = useState<CsvMapping>({
+    date: "",
+    description: "",
+    amount: "",
+    debit: "",
+    credit: "",
+    type: "",
+  });
+
+  const normalizeHeader = (input: string): string =>
+    input
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  const detectCsvColumns = useCallback(async (f: File): Promise<string[]> => {
+    const text = (await f.text()).replace(/^\uFEFF/, "");
+    const firstLine = text.split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (!firstLine) return [];
+    const count = (d: string) => firstLine.split(d).length - 1;
+    const delimiter = count(";") >= count(",") && count(";") >= count("\t") ? ";" : count(",") >= count("\t") ? "," : "\t";
+    let inQuotes = false;
+    let current = "";
+    const out: string[] = [];
+    for (let i = 0; i < firstLine.length; i += 1) {
+      const ch = firstLine[i]!;
+      const next = firstLine[i + 1];
+      if (ch === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+      if (!inQuotes && ch === delimiter) {
+        out.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += ch;
+    }
+    out.push(current.trim());
+    return out.filter((c) => c.length > 0);
+  }, []);
+
+  const guessMappingFromColumns = useCallback((columns: string[]): CsvMapping => {
+    const byNorm = new Map(columns.map((c) => [normalizeHeader(c), c]));
+    const pick = (...aliases: string[]): string => {
+      for (const a of aliases) {
+        const hit = byNorm.get(a);
+        if (hit) return hit;
+      }
+      return "";
+    };
+
+    return {
+      date: pick("date", "dateoperation", "datevaleur", "transactiondate"),
+      description: pick("libelle", "description", "label", "memo", "details", "operation"),
+      amount: pick("montant", "amount", "valeur"),
+      debit: pick("debit"),
+      credit: pick("credit"),
+      type: pick("type", "sens", "nature", "transactiontype"),
+    };
+  }, []);
+
+  const isCsvFile = !!file && (file.name.toLowerCase().endsWith(".csv") || file.type.toLowerCase().includes("csv"));
 
   const resetToUpload = useCallback(() => {
     setStep("upload");
     setReviewRows(null);
     setPreviewMeta(null);
     setError(null);
+    setFile(null);
+    setCsvColumns([]);
+    setCsvMapping({
+      date: "",
+      description: "",
+      amount: "",
+      debit: "",
+      credit: "",
+      type: "",
+    });
   }, []);
 
   const handleAnalyze = async () => {
@@ -76,14 +166,37 @@ export function ImportBankStatementModal({
       return;
     }
     if (!file) {
-      setError("Choisissez un fichier PDF.");
+      setError("Choisissez un fichier PDF ou CSV.");
       return;
+    }
+    if (isCsvFile) {
+      if (!csvMapping.date) {
+        setError("CSV: mappez la colonne Date.");
+        return;
+      }
+      if (!csvMapping.amount && !csvMapping.debit && !csvMapping.credit) {
+        setError("CSV: mappez Montant, ou bien Débit/Crédit.");
+        return;
+      }
     }
     setAnalyzing(true);
     try {
       const fd = new FormData();
       fd.set("bank_account_id", bankAccountId);
       fd.set("file", file);
+      if (isCsvFile) {
+        fd.set(
+          "csv_mapping",
+          JSON.stringify({
+            date: csvMapping.date || undefined,
+            description: csvMapping.description || undefined,
+            amount: csvMapping.amount || undefined,
+            debit: csvMapping.debit || undefined,
+            credit: csvMapping.credit || undefined,
+            type: csvMapping.type || undefined,
+          })
+        );
+      }
       const res = await fetch("/api/transactions/import/preview", {
         method: "POST",
         body: fd,
@@ -192,7 +305,7 @@ export function ImportBankStatementModal({
               </svg>
             </div>
             <div>
-              <h3 className="subsection-header text-lg font-medium">Importer un relevé PDF</h3>
+              <h3 className="subsection-header text-lg font-medium">Importer un relevé (PDF/CSV)</h3>
               <p className="text-sm text-[var(--muted-foreground)]">
                 Analyse par IA. Les lignes déjà présentes en base sont signalées à titre informatif ; vous
                 pouvez tout importer, y compris des doublons.
@@ -227,15 +340,89 @@ export function ImportBankStatementModal({
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
-                  Relevé (PDF) *
+                  Relevé (PDF ou CSV) *
                 </label>
                 <input
                   type="file"
-                  accept=".pdf,application/pdf"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  accept=".pdf,application/pdf,.csv,text/csv,application/csv,application/vnd.ms-excel"
+                  onChange={async (e) => {
+                    const nextFile = e.target.files?.[0] ?? null;
+                    setError(null);
+                    setFile(nextFile);
+                    setCsvColumns([]);
+                    setCsvMapping({
+                      date: "",
+                      description: "",
+                      amount: "",
+                      debit: "",
+                      credit: "",
+                      type: "",
+                    });
+                    if (!nextFile) return;
+                    const nextIsCsv =
+                      nextFile.name.toLowerCase().endsWith(".csv") ||
+                      nextFile.type.toLowerCase().includes("csv");
+                    if (!nextIsCsv) return;
+                    try {
+                      const detected = await detectCsvColumns(nextFile);
+                      setCsvColumns(detected);
+                      setCsvMapping(guessMappingFromColumns(detected));
+                    } catch {
+                      setError("Impossible de lire l'en-tête CSV. Vérifiez le fichier.");
+                    }
+                  }}
                   className="block w-full text-sm text-[var(--foreground)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--primary-muted)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--primary)]"
                 />
               </div>
+              {isCsvFile && (
+                <div className="rounded-lg border border-[var(--border)] p-3 space-y-3">
+                  <p className="text-sm font-medium text-[var(--foreground)]">Mapping colonnes CSV</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Colonnes détectées: {csvColumns.length > 0 ? csvColumns.join(" • ") : "aucune (vérifiez l'en-tête CSV)"}
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <CsvMapSelect
+                      label="Date *"
+                      value={csvMapping.date}
+                      columns={csvColumns}
+                      onChange={(v) => setCsvMapping((prev) => ({ ...prev, date: v }))}
+                    />
+                    <CsvMapSelect
+                      label="Libellé"
+                      value={csvMapping.description}
+                      columns={csvColumns}
+                      onChange={(v) => setCsvMapping((prev) => ({ ...prev, description: v }))}
+                    />
+                    <CsvMapSelect
+                      label="Montant"
+                      value={csvMapping.amount}
+                      columns={csvColumns}
+                      onChange={(v) => setCsvMapping((prev) => ({ ...prev, amount: v }))}
+                    />
+                    <CsvMapSelect
+                      label="Débit"
+                      value={csvMapping.debit}
+                      columns={csvColumns}
+                      onChange={(v) => setCsvMapping((prev) => ({ ...prev, debit: v }))}
+                    />
+                    <CsvMapSelect
+                      label="Crédit"
+                      value={csvMapping.credit}
+                      columns={csvColumns}
+                      onChange={(v) => setCsvMapping((prev) => ({ ...prev, credit: v }))}
+                    />
+                    <CsvMapSelect
+                      label="Type (DEBIT/CREDIT)"
+                      value={csvMapping.type}
+                      columns={csvColumns}
+                      onChange={(v) => setCsvMapping((prev) => ({ ...prev, type: v }))}
+                    />
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Requis: Date + (Montant ou Débit/Crédit).
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             reviewRows && (
@@ -379,5 +566,35 @@ export function ImportBankStatementModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function CsvMapSelect({
+  label,
+  value,
+  columns,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  columns: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-[var(--foreground)]">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+      >
+        <option value="">-- Non mappé --</option>
+        {columns.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

@@ -116,6 +116,11 @@ function TrashIcon({ className }: { className?: string }) {
 }
 
 const BALANCE_FILTER_EPS = 1e-6;
+const DEFAULT_VISIBLE_STATUS_IDS = [
+  "ccaa0782-386a-4326-81f9-aea94007d6ff",
+  "69d0f273-2015-4395-97c4-14b8d56ded1d",
+  "04b79ba1-058d-4198-a3ad-8a17a8defe39",
+];
 
 /** Filtre société : source (catalogue) ou ancien champ texte `fournisseur`. */
 function bankAccountFournisseurFacetKey(ba: BankAccount): string {
@@ -1190,17 +1195,17 @@ function AccountsPageContent() {
   >("alpha");
   const canEditData = canMutate(sessionRole);
   const canViewTransactions = canAccessTransactions(sessionRole);
-  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+  const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
   const [accountsFilterPanel, setAccountsFilterPanel] = useState<
     "hub" | "banks" | "status" | "fournisseur" | "client" | "balance"
   >("hub");
-  const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
-  /** Type de compte (« Client » dans création / édition compte) = `account_type_id`. */
-  const [selectedAccountTypeFilterId, setSelectedAccountTypeFilterId] = useState<string | null>(
-    null
+  const [selectedStatusIds, setSelectedStatusIds] = useState<string[]>(
+    DEFAULT_VISIBLE_STATUS_IDS
   );
-  /** null = tous ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent(texte) */
-  const [selectedFournisseurKey, setSelectedFournisseurKey] = useState<string | null>(null);
+  /** Type de compte (« Client » dans création / édition compte) = `account_type_id`. */
+  const [selectedAccountTypeFilterIds, setSelectedAccountTypeFilterIds] = useState<string[]>([]);
+  /** Multi-source ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent(texte). */
+  const [selectedFournisseurKeys, setSelectedFournisseurKeys] = useState<string[]>([]);
   const [balanceBucket, setBalanceBucket] = useState<"all" | "negative" | "zero" | "positive">("all");
 
   const balanceExtent = useMemo(() => {
@@ -1278,42 +1283,17 @@ function AccountsPageContent() {
           (ba.name ?? "").toLowerCase().includes(q)
       );
     }
-    if (selectedBankId !== null) {
-      if (selectedBankId === "") {
-        list = list.filter((ba) => !ba.bank_id);
-      } else {
-        list = list.filter((ba) => ba.bank_id === selectedBankId);
-      }
+    if (selectedBankIds.length > 0) {
+      list = list.filter((ba) => selectedBankIds.includes(ba.bank_id ?? ""));
     }
-    if (selectedStatusId !== null) {
-      list = list.filter((ba) => ba.account_status_id === selectedStatusId);
+    if (selectedStatusIds.length > 0) {
+      list = list.filter((ba) => !!ba.account_status_id && selectedStatusIds.includes(ba.account_status_id));
     }
-    if (selectedAccountTypeFilterId !== null) {
-      if (selectedAccountTypeFilterId === "") {
-        list = list.filter((ba) => !ba.account_type_id);
-      } else {
-        list = list.filter((ba) => ba.account_type_id === selectedAccountTypeFilterId);
-      }
+    if (selectedAccountTypeFilterIds.length > 0) {
+      list = list.filter((ba) => selectedAccountTypeFilterIds.includes(ba.account_type_id ?? ""));
     }
-    if (selectedFournisseurKey !== null) {
-      if (selectedFournisseurKey === "") {
-        list = list.filter((ba) => bankAccountFournisseurFacetKey(ba) === "");
-      } else if (selectedFournisseurKey.startsWith("s:")) {
-        const id = selectedFournisseurKey.slice(2);
-        list = list.filter((ba) => ba.company_source_id === id);
-      } else if (selectedFournisseurKey.startsWith("l:")) {
-        let raw: string;
-        try {
-          raw = decodeURIComponent(selectedFournisseurKey.slice(2));
-        } catch {
-          raw = selectedFournisseurKey.slice(2);
-        }
-        list = list.filter(
-          (ba) =>
-            !ba.company_source_id &&
-            (ba.company_fournisseur ?? "").trim() === raw
-        );
-      }
+    if (selectedFournisseurKeys.length > 0) {
+      list = list.filter((ba) => selectedFournisseurKeys.includes(bankAccountFournisseurFacetKey(ba)));
     }
     if (balanceBucket !== "all") {
       list = list.filter((ba) => {
@@ -1334,10 +1314,10 @@ function AccountsPageContent() {
   }, [
     bankAccounts,
     search,
-    selectedBankId,
-    selectedStatusId,
-    selectedAccountTypeFilterId,
-    selectedFournisseurKey,
+    selectedBankIds,
+    selectedStatusIds,
+    selectedAccountTypeFilterIds,
+    selectedFournisseurKeys,
     balanceBucket,
     balanceRangeFilterActive,
     balanceRangeMin,
@@ -1562,18 +1542,18 @@ function AccountsPageContent() {
   }, [bankAccounts]);
 
   const hasActiveAccountFilters =
-    selectedBankId !== null ||
-    selectedStatusId !== null ||
-    selectedAccountTypeFilterId !== null ||
-    selectedFournisseurKey !== null ||
+    selectedBankIds.length > 0 ||
+    selectedStatusIds.length > 0 ||
+    selectedAccountTypeFilterIds.length > 0 ||
+    selectedFournisseurKeys.length > 0 ||
     balanceBucket !== "all" ||
     balanceRangeFilterActive;
 
   const resetAccountFilters = useCallback(() => {
-    setSelectedBankId(null);
-    setSelectedStatusId(null);
-    setSelectedAccountTypeFilterId(null);
-    setSelectedFournisseurKey(null);
+    setSelectedBankIds([]);
+    setSelectedStatusIds(DEFAULT_VISIBLE_STATUS_IDS);
+    setSelectedAccountTypeFilterIds([]);
+    setSelectedFournisseurKeys([]);
     setBalanceBucket("all");
     setBalanceRangeMin(balanceExtent.min);
     setBalanceRangeMax(balanceExtent.max);
@@ -2181,16 +2161,21 @@ function AccountsPageContent() {
                   )}
                   {banksWithCounts.length > 1 && (
                     <select
-                      value={selectedBankId ?? "__all__"}
+                      multiple
+                      value={selectedBankIds.map((id) => (id === "" ? "__empty__" : id))}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setSelectedBankId(v === "__all__" ? null : v);
+                        const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                        if (values.includes("__all__")) {
+                          setSelectedBankIds([]);
+                          return;
+                        }
+                        setSelectedBankIds(values.map((v) => (v === "__empty__" ? "" : v)));
                       }}
-                      className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                      aria-label="Filtrer par banque"
+                      className="min-h-[7rem] min-w-[12rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par banque (plusieurs)"
                     >
                       {banksWithCounts.map((item) => (
-                        <option key={item.id} value={item.id}>
+                        <option key={item.id} value={item.id === "" ? "__empty__" : item.id}>
                           Banque · {item.name} ({item.count})
                         </option>
                       ))}
@@ -2198,13 +2183,18 @@ function AccountsPageContent() {
                   )}
                   {statusesWithCounts.length > 1 && (
                     <select
-                      value={selectedStatusId ?? "__all__"}
+                      multiple
+                      value={selectedStatusIds}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setSelectedStatusId(v === "__all__" ? null : v);
+                        const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                        if (values.includes("__all__")) {
+                          setSelectedStatusIds([]);
+                          return;
+                        }
+                        setSelectedStatusIds(values);
                       }}
-                      className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                      aria-label="Filtrer par statut"
+                      className="min-h-[7rem] min-w-[12rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par statut (plusieurs)"
                     >
                       {statusesWithCounts.map((item) => (
                         <option key={item.id} value={item.id}>
@@ -2215,18 +2205,23 @@ function AccountsPageContent() {
                   )}
                   {accountTypesWithFilterCounts.length > 1 && (
                     <select
-                      value={selectedAccountTypeFilterId ?? "__all__"}
+                      multiple
+                      value={selectedAccountTypeFilterIds.map((id) => (id === "" ? "__empty__" : id))}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setSelectedAccountTypeFilterId(v === "__all__" ? null : v);
+                        const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                        if (values.includes("__all__")) {
+                          setSelectedAccountTypeFilterIds([]);
+                          return;
+                        }
+                        setSelectedAccountTypeFilterIds(values.map((v) => (v === "__empty__" ? "" : v)));
                       }}
-                      className="min-w-[10rem] max-w-[16rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                      aria-label="Filtrer par client (type de compte)"
+                      className="min-h-[7rem] min-w-[12rem] max-w-[16rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par client (plusieurs)"
                     >
                       {accountTypesWithFilterCounts.map((item) => (
                         <option
                           key={item.id === "" ? "__aucun_client__" : item.id}
-                          value={item.id}
+                          value={item.id === "" ? "__empty__" : item.id}
                         >
                           Client · {item.name} ({item.count})
                         </option>
@@ -2235,21 +2230,18 @@ function AccountsPageContent() {
                   )}
                   {fournisseursWithCounts.length > 1 && (
                     <select
-                      value={
-                        selectedFournisseurKey === null
-                          ? "__all__"
-                          : selectedFournisseurKey === ""
-                            ? "__empty__"
-                            : selectedFournisseurKey
-                      }
+                      multiple
+                      value={selectedFournisseurKeys.map((k) => (k === "" ? "__empty__" : k))}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === "__all__") setSelectedFournisseurKey(null);
-                        else if (v === "__empty__") setSelectedFournisseurKey("");
-                        else setSelectedFournisseurKey(v);
+                        const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                        if (values.includes("__all__")) {
+                          setSelectedFournisseurKeys([]);
+                          return;
+                        }
+                        setSelectedFournisseurKeys(values.map((v) => (v === "__empty__" ? "" : v)));
                       }}
-                      className="min-w-[10rem] max-w-[16rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                      aria-label="Filtrer par source ou fournisseur (société du compte)"
+                      className="min-h-[7rem] min-w-[12rem] max-w-[16rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par source/fournisseur (plusieurs)"
                     >
                       {fournisseursWithCounts.map((item) => (
                         <option
@@ -2461,17 +2453,25 @@ function AccountsPageContent() {
                       {banksWithCounts.map((item) => {
                         const isActive =
                           item.id === "__all__"
-                            ? selectedBankId === null
+                            ? selectedBankIds.length === 0
                             : item.id === ""
-                              ? selectedBankId === ""
-                              : selectedBankId === item.id;
+                              ? selectedBankIds.includes("")
+                              : selectedBankIds.includes(item.id);
                         return (
                           <button
                             key={item.id}
                             type="button"
-                            onClick={() =>
-                              setSelectedBankId(item.id === "__all__" ? null : item.id)
-                            }
+                            onClick={() => {
+                              if (item.id === "__all__") {
+                                setSelectedBankIds([]);
+                                return;
+                              }
+                              setSelectedBankIds((prev) =>
+                                prev.includes(item.id)
+                                  ? prev.filter((v) => v !== item.id)
+                                  : [...prev, item.id]
+                              );
+                            }}
                             className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                               isActive
                                 ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
@@ -2512,15 +2512,23 @@ function AccountsPageContent() {
                       {statusesWithCounts.map((item) => {
                         const isActive =
                           item.id === "__all__"
-                            ? selectedStatusId === null
-                            : selectedStatusId === item.id;
+                            ? selectedStatusIds.length === 0
+                            : selectedStatusIds.includes(item.id);
                         return (
                           <button
                             key={item.id}
                             type="button"
-                            onClick={() =>
-                              setSelectedStatusId(item.id === "__all__" ? null : item.id)
-                            }
+                            onClick={() => {
+                              if (item.id === "__all__") {
+                                setSelectedStatusIds([]);
+                                return;
+                              }
+                              setSelectedStatusIds((prev) =>
+                                prev.includes(item.id)
+                                  ? prev.filter((v) => v !== item.id)
+                                  : [...prev, item.id]
+                              );
+                            }}
                             className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                               isActive
                                 ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
@@ -2552,19 +2560,25 @@ function AccountsPageContent() {
                       {fournisseursWithCounts.map((item) => {
                         const isActive =
                           item.key === "__all__"
-                            ? selectedFournisseurKey === null
+                            ? selectedFournisseurKeys.length === 0
                             : item.key === ""
-                              ? selectedFournisseurKey === ""
-                              : selectedFournisseurKey === item.key;
+                              ? selectedFournisseurKeys.includes("")
+                              : selectedFournisseurKeys.includes(item.key);
                         return (
                           <button
                             key={item.key === "" ? "__empty__" : item.key}
                             type="button"
-                            onClick={() =>
-                              setSelectedFournisseurKey(
-                                item.key === "__all__" ? null : item.key
-                              )
-                            }
+                            onClick={() => {
+                              if (item.key === "__all__") {
+                                setSelectedFournisseurKeys([]);
+                                return;
+                              }
+                              setSelectedFournisseurKeys((prev) =>
+                                prev.includes(item.key)
+                                  ? prev.filter((k) => k !== item.key)
+                                  : [...prev, item.key]
+                              );
+                            }}
                             className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                               isActive
                                 ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
@@ -2593,19 +2607,25 @@ function AccountsPageContent() {
                       {accountTypesWithFilterCounts.map((item) => {
                         const isActive =
                           item.id === "__all__"
-                            ? selectedAccountTypeFilterId === null
+                            ? selectedAccountTypeFilterIds.length === 0
                             : item.id === ""
-                              ? selectedAccountTypeFilterId === ""
-                              : selectedAccountTypeFilterId === item.id;
+                              ? selectedAccountTypeFilterIds.includes("")
+                              : selectedAccountTypeFilterIds.includes(item.id);
                         return (
                           <button
                             key={item.id === "" ? "__aucun_client__" : item.id}
                             type="button"
-                            onClick={() =>
-                              setSelectedAccountTypeFilterId(
-                                item.id === "__all__" ? null : item.id
-                              )
-                            }
+                            onClick={() => {
+                              if (item.id === "__all__") {
+                                setSelectedAccountTypeFilterIds([]);
+                                return;
+                              }
+                              setSelectedAccountTypeFilterIds((prev) =>
+                                prev.includes(item.id)
+                                  ? prev.filter((v) => v !== item.id)
+                                  : [...prev, item.id]
+                              );
+                            }}
                             className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                               isActive
                                 ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"

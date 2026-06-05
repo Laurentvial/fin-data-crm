@@ -43,6 +43,11 @@ import {
 const TRANSACTION_PAGE_SIZE = 500;
 const FILTER_OPTIONS_PAGE_SIZE = 1000;
 
+interface DuplicateAmountGroup {
+  amountCents: number;
+  rows: Transaction[];
+}
+
 const TransactionsGrid = dynamic(
   () => import("@/components/TransactionsGrid").then((m) => ({ default: m.TransactionsGrid })),
   { ssr: false, loading: () => <div className="flex min-h-[400px] items-center justify-center text-[var(--muted-foreground)]">Chargement du tableau…</div> }
@@ -51,6 +56,13 @@ const TransactionsGrid = dynamic(
 function signedAmount(t: Transaction): number {
   const num = Number(t.amount);
   return Number.isNaN(num) ? 0 : t.type === "DEBIT" ? -num : num;
+}
+
+function formatAmountCentsFR(amountCents: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountCents / 100);
 }
 
 /** Jour courant en fuseau local (YYYY-MM-DD). */
@@ -110,6 +122,14 @@ function HomeContent() {
   const [selectionStats, setSelectionStats] = useState<TransactionSelectionStats | null>(null);
   const [transactionGridSelectionResetNonce, setTransactionGridSelectionResetNonce] = useState(0);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [duplicateScanBusy, setDuplicateScanBusy] = useState(false);
+  const [duplicateScanSummary, setDuplicateScanSummary] = useState<string | null>(null);
+  const [duplicateAmountGroups, setDuplicateAmountGroups] = useState<DuplicateAmountGroup[]>(
+    []
+  );
+  const [duplicateScanModalOpen, setDuplicateScanModalOpen] = useState(false);
+  const [duplicateSelectedIds, setDuplicateSelectedIds] = useState<string[]>([]);
+  const [duplicateDeleteBusy, setDuplicateDeleteBusy] = useState(false);
   const [sessionRole, setSessionRole] = useState<string | null>(null);
   const [sessionRoleLoading, setSessionRoleLoading] = useState(true);
 
@@ -789,6 +809,142 @@ function HomeContent() {
     URL.revokeObjectURL(url);
   }, [filteredTransactions]);
 
+  const handleScanAmountDuplicates = useCallback(async () => {
+    setDuplicateScanBusy(true);
+    setDuplicateScanSummary(null);
+    setDuplicateAmountGroups([]);
+    setDuplicateSelectedIds([]);
+    try {
+      const api = filtersToApiParams(filterValues);
+      const pageSize = 1000;
+      let offset = 0;
+      let keepGoing = true;
+      const allRows: Transaction[] = [];
+
+      while (keepGoing) {
+        const params = new URLSearchParams();
+        if (api.bank_account_id) params.set("bank_account_id", api.bank_account_id);
+        if (api.date_from) params.set("date_from", api.date_from);
+        if (api.date_to) params.set("date_to", api.date_to);
+        if (api.type) params.set("type", api.type);
+        params.set("limit", String(pageSize));
+        params.set("offset", String(offset));
+
+        const res = await fetch(`/api/transactions?${params.toString()}`);
+        if (!res.ok) throw new Error("Échec du scan des transactions");
+        const data = await res.json();
+        const batch = (Array.isArray(data) ? data : data.transactions ?? []) as Transaction[];
+        allRows.push(...batch);
+
+        const hasMore =
+          typeof data?.has_more === "boolean"
+            ? data.has_more
+            : batch.length >= pageSize;
+        keepGoing = hasMore && batch.length > 0;
+        offset += batch.length;
+      }
+
+      const scopedRows = applyClientTransactionFilters(allRows, filterValues);
+      const rowsByAmount = new Map<number, Transaction[]>();
+      for (const t of scopedRows) {
+        const amount = Number(t.amount);
+        if (!Number.isFinite(amount)) continue;
+        const cents = Math.round(amount * 100);
+        const bucket = rowsByAmount.get(cents);
+        if (bucket) bucket.push(t);
+        else rowsByAmount.set(cents, [t]);
+      }
+
+      const duplicateGroups = [...rowsByAmount.entries()]
+        .filter(([, rows]) => rows.length > 1)
+        .map(([amountCents, rows]) => ({
+          amountCents,
+          rows: rows.sort((a, b) => {
+            const ad = new Date(a.transaction_date ?? a.created_at ?? 0).getTime();
+            const bd = new Date(b.transaction_date ?? b.created_at ?? 0).getTime();
+            return bd - ad;
+          }),
+        }))
+        .sort((a, b) => b.rows.length - a.rows.length);
+
+      if (duplicateGroups.length === 0) {
+        setDuplicateScanSummary(
+          `Scan doublons terminé: aucun doublon potentiel par montant sur ${scopedRows.length} lignes.`
+        );
+        setDuplicateScanModalOpen(false);
+        return;
+      }
+
+      const topExamples = duplicateGroups
+        .slice(0, 5)
+        .map((g) => {
+          return `${formatAmountCentsFR(g.amountCents)} (${g.rows.length})`;
+        })
+        .join(" ; ");
+
+      setDuplicateScanSummary(
+        `Scan doublons terminé: ${duplicateGroups.length} montants potentiellement dupliqués (analyse sur ${scopedRows.length} lignes). Exemples: ${topExamples}.`
+      );
+      setDuplicateAmountGroups(duplicateGroups);
+      setDuplicateScanModalOpen(true);
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveMessage(err instanceof Error ? err.message : "Erreur durant le scan de doublons");
+    } finally {
+      setDuplicateScanBusy(false);
+    }
+  }, [filterValues]);
+
+  const handleDeleteDuplicateSelection = useCallback(async () => {
+    const ids = [...new Set(duplicateSelectedIds)];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Supprimer ${ids.length} transaction${ids.length > 1 ? "s" : ""} sélectionnée${ids.length > 1 ? "s" : ""} ?`)) {
+      return;
+    }
+    setDuplicateDeleteBusy(true);
+    setSaveStatus("saving");
+    setSaveMessage("");
+    try {
+      for (const id of ids) {
+        const res = await fetch(`/api/transactions/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error ?? `HTTP ${res.status}`);
+        }
+      }
+      await fetchTransactions();
+      setDuplicateAmountGroups((prev) => {
+        const next = prev
+          .map((g) => ({
+            ...g,
+            rows: g.rows.filter((r) => !ids.includes(r.id)),
+          }))
+          .filter((g) => g.rows.length > 1);
+        if (next.length === 0) {
+          setDuplicateScanModalOpen(false);
+          setDuplicateScanSummary("Suppression terminée: plus aucun doublon potentiel dans le scan.");
+        }
+        return next;
+      });
+      setDuplicateSelectedIds([]);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveMessage(err instanceof Error ? err.message : "Erreur pendant la suppression");
+    } finally {
+      setDuplicateDeleteBusy(false);
+    }
+  }, [duplicateSelectedIds, fetchTransactions]);
+
+  const duplicateTotalRows = useMemo(
+    () => duplicateAmountGroups.reduce((sum, g) => sum + g.rows.length, 0),
+    [duplicateAmountGroups]
+  );
+
   if (sessionRoleLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-[var(--muted-foreground)]">
@@ -822,6 +978,8 @@ function HomeContent() {
       <SheetToolbar
         onResetFiltersClick={handleResetFilters}
         onExportClick={handleExport}
+        onScanAmountDuplicatesClick={handleScanAmountDuplicates}
+        scanAmountDuplicatesBusy={duplicateScanBusy}
         onAddClick={
           canEditData && bankAccounts.length > 0 && !loadingBankAccounts
             ? () => setAddModalOpen(true)
@@ -836,6 +994,11 @@ function HomeContent() {
         groupedInvoice={canEditData ? groupedInvoiceToolbar : undefined}
         bulkDeleteSelected={canEditData ? bulkDeleteToolbar : null}
       />
+      {duplicateScanSummary && (
+        <div className="mx-4 mt-3 rounded-lg border border-[var(--primary-muted-border)] bg-[var(--primary-muted)]/50 px-3 py-2 text-sm text-[var(--foreground)]">
+          {duplicateScanSummary}
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="flex min-h-full flex-1 flex-col px-4 py-4">
           <div className="flex min-h-0 flex-1 flex-col">
@@ -906,6 +1069,127 @@ function HomeContent() {
           onClose={() => setInternalCreditModalTxn(null)}
           onPaired={() => void fetchTransactions()}
         />
+      )}
+      {duplicateScanModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setDuplicateScanModalOpen(false);
+            }
+          }}
+        >
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-[var(--card-hover-shadow)]">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+              <div>
+                <h2 className="text-base font-semibold text-[var(--foreground)]">
+                  Doublons potentiels (montant)
+                </h2>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {duplicateAmountGroups.length} montant{duplicateAmountGroups.length > 1 ? "s" : ""} dupliqué{duplicateAmountGroups.length > 1 ? "s" : ""} · {duplicateTotalRows} ligne{duplicateTotalRows > 1 ? "s" : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDuplicateScanModalOpen(false)}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+              >
+                Fermer
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-4 py-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setDuplicateSelectedIds(
+                    duplicateAmountGroups.flatMap((g) => g.rows.map((r) => r.id))
+                  )
+                }
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+              >
+                Tout sélectionner
+              </button>
+              <button
+                type="button"
+                onClick={() => setDuplicateSelectedIds([])}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+              >
+                Vider sélection
+              </button>
+              <button
+                type="button"
+                disabled={duplicateDeleteBusy || duplicateSelectedIds.length === 0}
+                onClick={handleDeleteDuplicateSelection}
+                className="rounded-lg border border-[var(--destructive)] bg-[var(--destructive)]/10 px-3 py-1.5 text-sm font-medium text-[var(--destructive)] hover:bg-[var(--destructive)]/15 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {duplicateDeleteBusy
+                  ? "Suppression…"
+                  : `Supprimer sélection (${duplicateSelectedIds.length})`}
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              <div className="space-y-4">
+                {duplicateAmountGroups.map((group) => (
+                  <section
+                    key={`dup-${group.amountCents}`}
+                    className="rounded-lg border border-[var(--border)]"
+                  >
+                    <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2">
+                      <h3 className="text-sm font-medium text-[var(--foreground)]">
+                        Montant {formatAmountCentsFR(group.amountCents)}
+                      </h3>
+                      <span className="text-xs text-[var(--muted-foreground)]">
+                        {group.rows.length} lignes
+                      </span>
+                    </header>
+                    <div className="divide-y divide-[var(--border)]">
+                      {group.rows.map((row) => {
+                        const checked = duplicateSelectedIds.includes(row.id);
+                        return (
+                          <label
+                            key={row.id}
+                            className="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-[var(--muted)]/20"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const next = e.target.checked;
+                                setDuplicateSelectedIds((prev) =>
+                                  next
+                                    ? [...prev, row.id]
+                                    : prev.filter((id) => id !== row.id)
+                                );
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--foreground)]">
+                                <span className="font-medium">
+                                  {row.transaction_date ?? "—"}
+                                </span>
+                                <span className="text-[var(--muted-foreground)]">
+                                  {row.type}
+                                </span>
+                                <span className="truncate text-[var(--muted-foreground)]">
+                                  {row.bank_account_name ?? "Compte inconnu"}
+                                </span>
+                              </div>
+                              <div className="truncate text-xs text-[var(--muted-foreground)]">
+                                {row.company_name ?? "Société inconnue"} ·{" "}
+                                {row.description?.trim() || "Sans description"}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       <SheetFooter
         saveStatus={saveStatus}

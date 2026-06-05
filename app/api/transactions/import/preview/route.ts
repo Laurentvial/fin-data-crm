@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
-import { extractTransactionsFromPdfBuffer } from "@/lib/bank-statement-extract";
+import {
+  type CsvColumnMapping,
+  extractTransactionsFromCsvBuffer,
+  extractTransactionsFromPdfBuffer,
+} from "@/lib/bank-statement-extract";
 import { findDuplicateCandidates, type DbTxnMatchRow } from "@/lib/bank-statement-import-match";
 
 export const maxDuration = 120;
@@ -33,29 +37,41 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const bankAccountId = form.get("bank_account_id");
     const file = form.get("file");
+    const csvMappingRaw = form.get("csv_mapping");
 
     if (typeof bankAccountId !== "string" || !bankAccountId.trim()) {
       return NextResponse.json({ error: "bank_account_id est requis." }, { status: 400 });
     }
     if (!(file instanceof Blob)) {
-      return NextResponse.json({ error: "Fichier PDF requis (champ file)." }, { status: 400 });
+      return NextResponse.json({ error: "Fichier PDF ou CSV requis (champ file)." }, { status: 400 });
     }
 
+    const filename =
+      typeof (file as File).name === "string" && (file as File).name ? (file as File).name : "statement.pdf";
     const mime = (file.type || "").toLowerCase();
-    if (mime && mime !== "application/pdf" && mime !== "application/octet-stream") {
-      return NextResponse.json({ error: "Seuls les fichiers PDF sont acceptés." }, { status: 400 });
+    const filenameLc = filename.toLowerCase();
+    const isCsv =
+      filenameLc.endsWith(".csv") ||
+      mime.includes("text/csv") ||
+      mime.includes("application/csv") ||
+      mime.includes("application/vnd.ms-excel");
+    const isPdf =
+      filenameLc.endsWith(".pdf") || mime === "application/pdf" || mime === "application/octet-stream";
+    if (!isCsv && !isPdf) {
+      return NextResponse.json({ error: "Seuls les fichiers PDF ou CSV sont acceptés." }, { status: 400 });
     }
 
     const buf = Buffer.from(await file.arrayBuffer());
-    const filename =
-      typeof (file as File).name === "string" && (file as File).name ? (file as File).name : "statement.pdf";
-
-    const extracted = await extractTransactionsFromPdfBuffer(buf, filename);
+    const extracted = isCsv
+      ? await extractTransactionsFromCsvBuffer(buf, {
+          mapping: parseCsvMapping(csvMappingRaw),
+        })
+      : await extractTransactionsFromPdfBuffer(buf, filename);
 
     if (extracted.length === 0) {
       return NextResponse.json({
         rows: [],
-        message: "Aucune transaction exploitable n'a été détectée dans ce PDF.",
+        message: `Aucune transaction exploitable n'a été détectée dans ce ${isCsv ? "CSV" : "PDF"}.`,
       });
     }
 
@@ -128,4 +144,27 @@ export async function POST(request: NextRequest) {
 function roundDisplayAmount(a: number | string): number {
   const n = Number(a);
   return Math.round(n * 100) / 100;
+}
+
+function parseCsvMapping(raw: FormDataEntryValue | null): CsvColumnMapping | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const clean = (v: unknown): string | undefined =>
+      typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+    const date = clean(parsed.date);
+    if (!date) return undefined;
+    const mapping: CsvColumnMapping = {
+      date,
+      description: clean(parsed.description),
+      amount: clean(parsed.amount),
+      debit: clean(parsed.debit),
+      credit: clean(parsed.credit),
+      type: clean(parsed.type),
+    };
+    return mapping;
+  } catch {
+    return undefined;
+  }
 }

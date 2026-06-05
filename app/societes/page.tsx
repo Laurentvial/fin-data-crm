@@ -7,10 +7,16 @@ import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { Select } from "@/components/Select";
 import { canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
-import type { Bank, Company, Source } from "@/lib/types";
+import type { Bank, BankAccount, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import { COUNTRY_LABELS_FR, PAYS_NAISSANCE_OPTIONS } from "@/lib/countries-fr";
+
+const DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS = [
+  "ccaa0782-386a-4326-81f9-aea94007d6ff",
+  "69d0f273-2015-4395-97c4-14b8d56ded1d",
+  "04b79ba1-058d-4198-a3ad-8a17a8defe39",
+];
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -1141,8 +1147,9 @@ function SocietesPageContent() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [societesFilterPanel, setSocietesFilterPanel] = useState<
-    "hub" | "activite" | "fournisseur" | "departement" | "pays"
+    "hub" | "activite" | "fournisseur" | "departement" | "pays" | "status"
   >("hub");
+  const [activiteFilterSearch, setActiviteFilterSearch] = useState("");
   /** null = toutes ; "" = sans activité ; sinon libellé exact (trim). */
   const [selectedActiviteKey, setSelectedActiviteKey] = useState<string | null>(null);
   /** null = tous ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent */
@@ -1151,14 +1158,142 @@ function SocietesPageContent() {
   const [selectedDepartementKey, setSelectedDepartementKey] = useState<string | null>(null);
   /** null = tous ; "" = pays non renseigné ; sinon code ISO alpha-2 majuscules */
   const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null);
+  /** Multi-sélection des statuts de compte ; société gardée si au moins 1 compte matche. */
+  const [selectedAccountStatusKeys, setSelectedAccountStatusKeys] = useState<string[]>(
+    DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS
+  );
   const [createEmailRows, setCreateEmailRows] = useState<CompanyCreateEmailRow[]>([]);
   const [createPhoneRows, setCreatePhoneRows] = useState<CompanyCreatePhoneRow[]>([]);
   const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const canEditData = canMutate(sessionRole);
+
+  const companyAccountStatusKeys = useMemo(() => {
+    const byCompany = new Map<string, Set<string>>();
+    for (const ba of bankAccounts) {
+      const key = (ba.account_status_id ?? "").trim();
+      const current = byCompany.get(ba.company_id);
+      if (current) current.add(key);
+      else byCompany.set(ba.company_id, new Set([key]));
+    }
+    return byCompany;
+  }, [bankAccounts]);
+
+  const applySocietesFilters = useCallback(
+    (
+      input: Company[],
+      omit?: {
+        activite?: boolean;
+        fournisseur?: boolean;
+        departement?: boolean;
+        pays?: boolean;
+        status?: boolean;
+      }
+    ) => {
+      let list = input;
+      const q = search.trim().toLowerCase();
+      if (q) {
+        list = list.filter((c) => {
+          const name = (c.name ?? "").toLowerCase();
+          const directeur = (c.directeur ?? "").toLowerCase();
+          return name.includes(q) || directeur.includes(q);
+        });
+      }
+      if (!omit?.activite && selectedActiviteKey !== null) {
+        if (selectedActiviteKey === "") {
+          list = list.filter((c) => !(c.activite ?? "").trim());
+        } else {
+          list = list.filter((c) => (c.activite ?? "").trim() === selectedActiviteKey);
+        }
+      }
+      if (!omit?.fournisseur && selectedFournisseurKey !== null) {
+        if (selectedFournisseurKey === "") {
+          list = list.filter((c) => companyFournisseurFacetKey(c) === "");
+        } else if (selectedFournisseurKey.startsWith("s:")) {
+          const id = selectedFournisseurKey.slice(2);
+          list = list.filter((c) => c.source_id === id);
+        } else if (selectedFournisseurKey.startsWith("l:")) {
+          let raw: string;
+          try {
+            raw = decodeURIComponent(selectedFournisseurKey.slice(2));
+          } catch {
+            raw = selectedFournisseurKey.slice(2);
+          }
+          list = list.filter(
+            (c) => !c.source_id && (c.fournisseur ?? "").trim() === raw
+          );
+        }
+      }
+      if (!omit?.departement && selectedDepartementKey !== null) {
+        if (selectedDepartementKey === "") {
+          list = list.filter((c) => companyDepartementFacetKey(c) === "");
+        } else {
+          list = list.filter(
+            (c) => companyDepartementFacetKey(c) === selectedDepartementKey
+          );
+        }
+      }
+      if (!omit?.pays && selectedCountryCode !== null) {
+        if (selectedCountryCode === "") {
+          list = list.filter((c) => !(c.country_code ?? "").trim());
+        } else {
+          list = list.filter(
+            (c) => (c.country_code ?? "").trim().toUpperCase() === selectedCountryCode
+          );
+        }
+      }
+      if (!omit?.status && selectedAccountStatusKeys.length > 0) {
+        list = list.filter((c) => {
+          const statuses = companyAccountStatusKeys.get(c.id);
+          if (!statuses || statuses.size === 0) return false;
+          return selectedAccountStatusKeys.some((key) => statuses.has(key));
+        });
+      }
+      return list;
+    },
+    [
+      search,
+      selectedActiviteKey,
+      selectedFournisseurKey,
+      selectedDepartementKey,
+      selectedCountryCode,
+      selectedAccountStatusKeys,
+      companyAccountStatusKeys,
+    ]
+  );
+
+  const filteredCompanies = useMemo(
+    () => applySocietesFilters(companies),
+    [companies, applySocietesFilters]
+  );
+
+  const companiesForActiviteCounts = useMemo(
+    () => applySocietesFilters(companies, { activite: true }),
+    [companies, applySocietesFilters]
+  );
+  const companiesForFournisseurCounts = useMemo(
+    () => applySocietesFilters(companies, { fournisseur: true }),
+    [companies, applySocietesFilters]
+  );
+  const companiesForDepartementCounts = useMemo(
+    () => applySocietesFilters(companies, { departement: true }),
+    [companies, applySocietesFilters]
+  );
+  const companiesForPaysCounts = useMemo(
+    () => applySocietesFilters(companies, { pays: true }),
+    [companies, applySocietesFilters]
+  );
+  const companyIdsForStatusCounts = useMemo(
+    () =>
+      new Set(
+        applySocietesFilters(companies, { status: true }).map((c) => c.id)
+      ),
+    [companies, applySocietesFilters]
+  );
 
   const activitesWithCounts = useMemo(() => {
     const meta = new Map<string, number>();
-    for (const c of companies) {
+    for (const c of companiesForActiviteCounts) {
       const a = (c.activite ?? "").trim();
       meta.set(a, (meta.get(a) ?? 0) + 1);
     }
@@ -1166,7 +1301,7 @@ function SocietesPageContent() {
       {
         key: "__all__",
         label: "Toutes les activités",
-        count: companies.length,
+        count: companiesForActiviteCounts.length,
       },
     ];
     if (meta.has("")) {
@@ -1183,11 +1318,22 @@ function SocietesPageContent() {
       rows.push({ key: k, label: k, count: meta.get(k)! });
     }
     return rows;
-  }, [companies]);
+  }, [companiesForActiviteCounts]);
+
+  const activitesWithCountsFiltered = useMemo(() => {
+    const query = activiteFilterSearch.trim().toLocaleLowerCase("fr");
+    if (!query) return activitesWithCounts;
+    return activitesWithCounts.filter(
+      (item) =>
+        item.key === "__all__" ||
+        item.key === "" ||
+        item.label.toLocaleLowerCase("fr").includes(query)
+    );
+  }, [activiteFilterSearch, activitesWithCounts]);
 
   const societesFournisseursWithCounts = useMemo(() => {
     const meta = new Map<string, { label: string; count: number }>();
-    for (const c of companies) {
+    for (const c of companiesForFournisseurCounts) {
       const key = companyFournisseurFacetKey(c);
       const label =
         key === ""
@@ -1206,7 +1352,7 @@ function SocietesPageContent() {
       {
         key: "__all__",
         label: "Tous les fournisseurs / sources",
-        count: companies.length,
+        count: companiesForFournisseurCounts.length,
       },
     ];
     if (meta.has("")) {
@@ -1221,11 +1367,11 @@ function SocietesPageContent() {
       rows.push({ key, label: m.label, count: m.count });
     }
     return rows;
-  }, [companies]);
+  }, [companiesForFournisseurCounts]);
 
   const paysWithCounts = useMemo(() => {
     const meta = new Map<string, number>();
-    for (const c of companies) {
+    for (const c of companiesForPaysCounts) {
       const code = (c.country_code ?? "").trim().toUpperCase();
       const key = code || "";
       meta.set(key, (meta.get(key) ?? 0) + 1);
@@ -1234,7 +1380,7 @@ function SocietesPageContent() {
       {
         key: "__all__",
         label: "Tous les pays",
-        count: companies.length,
+        count: companiesForPaysCounts.length,
       },
     ];
     if (meta.has("")) {
@@ -1256,11 +1402,11 @@ function SocietesPageContent() {
       rows.push({ key: code, label, count: meta.get(code)! });
     }
     return rows;
-  }, [companies]);
+  }, [companiesForPaysCounts]);
 
   const departementsWithCounts = useMemo(() => {
     const meta = new Map<string, number>();
-    for (const c of companies) {
+    for (const c of companiesForDepartementCounts) {
       const dep = companyDepartementFacetKey(c);
       meta.set(dep, (meta.get(dep) ?? 0) + 1);
     }
@@ -1268,7 +1414,7 @@ function SocietesPageContent() {
       {
         key: "__all__",
         label: "Tous les départements",
-        count: companies.length,
+        count: companiesForDepartementCounts.length,
       },
     ];
     if (meta.has("")) {
@@ -1285,86 +1431,69 @@ function SocietesPageContent() {
       rows.push({ key: dep, label: dep, count: meta.get(dep)! });
     }
     return rows;
-  }, [companies]);
+  }, [companiesForDepartementCounts]);
+
+  const accountStatusesWithCounts = useMemo(() => {
+    const companyIdsByStatus = new Map<string, Set<string>>();
+    const labelByStatus = new Map<string, string>();
+    const emojiByStatus = new Map<string, string>();
+    for (const ba of bankAccounts) {
+      if (!companyIdsForStatusCounts.has(ba.company_id)) continue;
+      const key = (ba.account_status_id ?? "").trim();
+      const label =
+        (ba.account_status_name ?? ba.account_status ?? "").trim() ||
+        "Statut inconnu";
+      const emoji = (ba.account_status_emoji ?? "").trim();
+      if (!companyIdsByStatus.has(key)) {
+        companyIdsByStatus.set(key, new Set<string>());
+      }
+      companyIdsByStatus.get(key)!.add(ba.company_id);
+      if (!labelByStatus.has(key)) {
+        labelByStatus.set(key, label);
+      }
+      if (emoji && !emojiByStatus.has(key)) {
+        emojiByStatus.set(key, emoji);
+      }
+    }
+    const rows: { key: string; label: string; count: number; emoji?: string }[] = [];
+    if (companyIdsByStatus.has("")) {
+      rows.push({
+        key: "",
+        label: "Sans statut",
+        count: companyIdsByStatus.get("")!.size,
+        emoji: emojiByStatus.get(""),
+      });
+    }
+    const keys = [...companyIdsByStatus.keys()]
+      .filter((k) => k !== "")
+      .sort((a, b) => a.localeCompare(b, "fr"));
+    for (const key of keys) {
+      rows.push({
+        key,
+        label: labelByStatus.get(key) ?? key,
+        count: companyIdsByStatus.get(key)!.size,
+        emoji: emojiByStatus.get(key),
+      });
+    }
+    return rows;
+  }, [bankAccounts, companyIdsForStatusCounts]);
 
   const hasActiveSocietesFilters =
     selectedActiviteKey !== null ||
     selectedFournisseurKey !== null ||
     selectedDepartementKey !== null ||
-    selectedCountryCode !== null;
+    selectedCountryCode !== null ||
+    selectedAccountStatusKeys.length > 0;
 
   const resetSocietesFilters = useCallback(() => {
     setSelectedActiviteKey(null);
     setSelectedFournisseurKey(null);
     setSelectedDepartementKey(null);
     setSelectedCountryCode(null);
+    setSelectedAccountStatusKeys(DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS);
     setSocietesFilterPanel("hub");
   }, []);
 
-  const filteredCompanies = useMemo(() => {
-    let list = companies;
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter((c) => {
-        const name = (c.name ?? "").toLowerCase();
-        const directeur = (c.directeur ?? "").toLowerCase();
-        return name.includes(q) || directeur.includes(q);
-      });
-    }
-    if (selectedActiviteKey !== null) {
-      if (selectedActiviteKey === "") {
-        list = list.filter((c) => !(c.activite ?? "").trim());
-      } else {
-        list = list.filter((c) => (c.activite ?? "").trim() === selectedActiviteKey);
-      }
-    }
-    if (selectedFournisseurKey !== null) {
-      if (selectedFournisseurKey === "") {
-        list = list.filter((c) => companyFournisseurFacetKey(c) === "");
-      } else if (selectedFournisseurKey.startsWith("s:")) {
-        const id = selectedFournisseurKey.slice(2);
-        list = list.filter((c) => c.source_id === id);
-      } else if (selectedFournisseurKey.startsWith("l:")) {
-        let raw: string;
-        try {
-          raw = decodeURIComponent(selectedFournisseurKey.slice(2));
-        } catch {
-          raw = selectedFournisseurKey.slice(2);
-        }
-        list = list.filter(
-          (c) =>
-            !c.source_id && (c.fournisseur ?? "").trim() === raw
-        );
-      }
-    }
-    if (selectedDepartementKey !== null) {
-      if (selectedDepartementKey === "") {
-        list = list.filter((c) => companyDepartementFacetKey(c) === "");
-      } else {
-        list = list.filter(
-          (c) => companyDepartementFacetKey(c) === selectedDepartementKey
-        );
-      }
-    }
-    if (selectedCountryCode !== null) {
-      if (selectedCountryCode === "") {
-        list = list.filter((c) => !(c.country_code ?? "").trim());
-      } else {
-        list = list.filter(
-          (c) =>
-            (c.country_code ?? "").trim().toUpperCase() === selectedCountryCode
-        );
-      }
-    }
-    return list;
-  }, [
-    companies,
-    search,
-    selectedActiviteKey,
-    selectedFournisseurKey,
-    selectedDepartementKey,
-    selectedCountryCode,
-  ]);
 
   const companiesByLetter = useMemo(() => {
     const map: Record<string, Company[]> = {};
@@ -1399,10 +1528,11 @@ function SocietesPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const [resAccounts, resBanks, resSources] = await Promise.all([
+      const [resAccounts, resBanks, resSources, resBankAccounts] = await Promise.all([
         fetch("/api/accounts"),
         fetch("/api/banks"),
         fetch("/api/sources"),
+        fetch("/api/bank-accounts"),
       ]);
       if (!resAccounts.ok) throw new Error("Échec du chargement");
       const data = await resAccounts.json();
@@ -1414,6 +1544,10 @@ function SocietesPageContent() {
       if (resSources.ok) {
         const sourcesData = await resSources.json();
         setSources(Array.isArray(sourcesData) ? sourcesData : []);
+      }
+      if (resBankAccounts.ok) {
+        const bankAccountsData = await resBankAccounts.json();
+        setBankAccounts(Array.isArray(bankAccountsData) ? bankAccountsData : []);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1977,6 +2111,32 @@ function SocietesPageContent() {
                       ))}
                     </select>
                   )}
+                  {accountStatusesWithCounts.length > 0 && (
+                    <select
+                      multiple
+                      value={selectedAccountStatusKeys.map((k) =>
+                        k === "" ? "__empty__" : k
+                      )}
+                      onChange={(e) => {
+                        const values = Array.from(e.target.selectedOptions).map((opt) =>
+                          opt.value === "__empty__" ? "" : opt.value
+                        );
+                        setSelectedAccountStatusKeys(values);
+                      }}
+                      className="min-h-[7rem] min-w-[12rem] max-w-[18rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      aria-label="Filtrer par statut du compte (plusieurs)"
+                    >
+                      {accountStatusesWithCounts.map((item) => (
+                        <option
+                          key={item.key === "" ? "__empty_status__" : item.key}
+                          value={item.key === "" ? "__empty__" : item.key}
+                        >
+                          Statut compte · {item.emoji ? `${item.emoji} ` : ""}
+                          {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </>
             )}
@@ -2075,7 +2235,7 @@ function SocietesPageContent() {
           <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
             <h2 className="mb-1 text-sm font-semibold text-[var(--foreground)]">Filtres</h2>
             <p className="mb-3 text-xs text-[var(--muted-foreground)]">
-              Par activité, fournisseur (source), département ou pays de la fiche société.
+              Par activité, fournisseur (source), département, pays, ou statut du compte.
             </p>
             {hasActiveSocietesFilters && (
               <button
@@ -2147,6 +2307,23 @@ function SocietesPageContent() {
                 <span className="min-w-0 flex-1 font-medium">Pays</span>
                 <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
               </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSocietesFilterPanel((p) => (p === "status" ? "hub" : "status"))
+                }
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  societesFilterPanel === "status"
+                    ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                }`}
+              >
+                <ListIcon className="h-4 w-4 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 font-medium whitespace-nowrap">
+                  Statut compte
+                </span>
+                <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+              </button>
             </nav>
           </div>
           {societesFilterPanel !== "hub" && (
@@ -2160,8 +2337,16 @@ function SocietesPageContent() {
                   <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
                     Par activité
                   </h2>
+                  <input
+                    type="search"
+                    value={activiteFilterSearch}
+                    onChange={(e) => setActiviteFilterSearch(e.target.value)}
+                    placeholder="Rechercher une activité…"
+                    className="mb-3 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+                    aria-label="Rechercher dans les activités"
+                  />
                   <nav className="space-y-1">
-                    {activitesWithCounts.map((item) => {
+                    {activitesWithCountsFiltered.map((item) => {
                       const isActive =
                         item.key === "__all__"
                           ? selectedActiviteKey === null
@@ -2189,6 +2374,11 @@ function SocietesPageContent() {
                       );
                     })}
                   </nav>
+                  {activitesWithCountsFiltered.length === 0 && (
+                    <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+                      Aucune activité ne correspond à la recherche.
+                    </p>
+                  )}
                 </>
               )}
               {societesFilterPanel === "fournisseur" && (
@@ -2298,6 +2488,52 @@ function SocietesPageContent() {
                               : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
                           }`}
                         >
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          <span className="shrink-0 text-xs tabular-nums opacity-70">
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
+              {societesFilterPanel === "status" && (
+                <>
+                  <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                    Par statut du compte
+                  </h2>
+                  <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                    Garde les sociétés avec au moins un compte dans un des statuts sélectionnés.
+                  </p>
+                  <nav className="space-y-1">
+                    {accountStatusesWithCounts.map((item) => {
+                      const isActive = selectedAccountStatusKeys.includes(item.key);
+                      return (
+                        <button
+                          key={item.key === "" ? "__empty__" : item.key}
+                          type="button"
+                          onClick={() =>
+                            setSelectedAccountStatusKeys((prev) =>
+                              prev.includes(item.key)
+                                ? prev.filter((k) => k !== item.key)
+                                : [...prev, item.key]
+                            )
+                          }
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            isActive
+                              ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                          }`}
+                        >
+                          <span className="shrink-0 text-xs tabular-nums">
+                            {isActive ? "✓" : "○"}
+                          </span>
+                          {item.emoji && (
+                            <span className="shrink-0" aria-hidden="true">
+                              {item.emoji}
+                            </span>
+                          )}
                           <span className="min-w-0 flex-1 truncate">{item.label}</span>
                           <span className="shrink-0 text-xs tabular-nums opacity-70">
                             {item.count}
