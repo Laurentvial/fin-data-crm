@@ -1,5 +1,6 @@
 import type { DebitTransactionStatus } from "./debit-status";
 import type { CreditTransactionStatus } from "./credit-status";
+import type { SpendingCategory } from "./spending-category";
 
 export type TransactionType = "DEBIT" | "CREDIT" | "INTERNAL_CREDIT";
 
@@ -268,6 +269,8 @@ export interface Transaction {
   credit_status?: CreditTransactionStatus | null;
   /** Ligne débit miroir (autre compte), uniquement si type = INTERNAL_CREDIT. */
   internal_transfer_debit_id?: string | null;
+  /** Catégorie de dépense, réservée aux débits. */
+  spending_category?: SpendingCategory | null;
 }
 
 export interface TransactionUpdateBody {
@@ -279,6 +282,7 @@ export interface TransactionUpdateBody {
   client_account_type_id?: string | null;
   debit_status?: DebitTransactionStatus | null;
   credit_status?: CreditTransactionStatus | null;
+  spending_category?: SpendingCategory | null;
 }
 
 export interface CompanyEmail {

@@ -4,6 +4,7 @@ import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
 import { isCreditTransactionStatus } from "@/lib/credit-status";
+import { isSpendingCategory } from "@/lib/spending-category";
 import type { TransactionType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -178,6 +179,25 @@ export async function PATCH(
         return NextResponse.json({ error: "credit_status invalide" }, { status: 400 });
       }
     }
+    if (body.spending_category !== undefined) {
+      const v = body.spending_category;
+      if (v === null || v === "") {
+        updates.spending_category = null;
+      } else if (typeof v === "string") {
+        if (!isSpendingCategory(v)) {
+          return NextResponse.json(
+            {
+              error:
+                "spending_category invalide (META, Ads setup, Domain, Dev, Autre ou vide)",
+            },
+            { status: 400 }
+          );
+        }
+        updates.spending_category = v;
+      } else {
+        return NextResponse.json({ error: "spending_category invalide" }, { status: 400 });
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -232,12 +252,25 @@ export async function PATCH(
         { status: 400 }
       );
     }
+    if (
+      updates.spending_category !== undefined &&
+      updates.spending_category !== null &&
+      effectiveType !== "DEBIT"
+    ) {
+      return NextResponse.json(
+        { error: "La catégorie de dépense ne s'applique qu'aux débits" },
+        { status: 400 }
+      );
+    }
 
     if (updates.type === "CREDIT") {
       updates.debit_status = null;
     }
     if (updates.type === "DEBIT" || updates.type === "INTERNAL_CREDIT") {
       updates.credit_status = null;
+    }
+    if (updates.type === "CREDIT" || updates.type === "INTERNAL_CREDIT") {
+      updates.spending_category = null;
     }
 
     const setClauses: string[] = [];
@@ -274,6 +307,10 @@ export async function PATCH(
     if (updates.credit_status !== undefined) {
       setClauses.push(`credit_status = $${idx++}`);
       values.push(updates.credit_status);
+    }
+    if (updates.spending_category !== undefined) {
+      setClauses.push(`spending_category = $${idx++}`);
+      values.push(updates.spending_category);
     }
     if (clearInternalPair) {
       setClauses.push("internal_transfer_debit_id = NULL");
@@ -329,6 +366,7 @@ export async function PATCH(
           t.processed_by_user_id,
           t.debit_status,
           t.credit_status,
+          t.spending_category,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
           t.client_account_type_id,

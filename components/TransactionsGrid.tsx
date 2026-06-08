@@ -43,6 +43,11 @@ import {
   creditStatusPillStyle,
   type CreditTransactionStatus,
 } from "@/lib/credit-status";
+import {
+  SPENDING_CATEGORY_VALUES,
+  spendingCategoryLabel,
+  type SpendingCategory,
+} from "@/lib/spending-category";
 import { isCreditLikeType, transactionTypeLabel } from "@/lib/transaction-type";
 
 const LIGHT_THEME: Partial<Theme> = {
@@ -953,6 +958,88 @@ function createTransactionTypeRenderer(
   } as CustomRenderer<CustomCell<TransactionTypeCellData>>;
 }
 
+interface SpendingCategoryCellData {
+  type: "spending_category";
+  value: "" | SpendingCategory;
+  editable: boolean;
+}
+
+function createSpendingCategoryRenderer(): CustomRenderer<CustomCell<SpendingCategoryCellData>> {
+  return {
+    kind: GridCellKind.Custom,
+    isMatch: (cell): cell is CustomCell<SpendingCategoryCellData> =>
+      cell.kind === GridCellKind.Custom &&
+      (cell as CustomCell<SpendingCategoryCellData>).data?.type === "spending_category",
+    draw: (args: DrawArgs<CustomCell<SpendingCategoryCellData>>, cell) => {
+      const v = cell.data.value;
+      if (!v) {
+        const { ctx, rect, theme } = args;
+        ctx.save();
+        ctx.fillStyle = theme.textMedium ?? theme.textLight ?? "#94a3b8";
+        ctx.font = `${theme.baseFontStyle} ${theme.fontFamily}`;
+        ctx.textBaseline = "middle";
+        ctx.fillText("—", rect.x + 8, rect.y + rect.height / 2);
+        ctx.restore();
+        return;
+      }
+      drawTextCell(args as Parameters<typeof drawTextCell>[0], spendingCategoryLabel(v));
+    },
+    provideEditor: () => (p) => {
+      const theme = p.theme;
+      const current = p.value.data.value === "" ? "" : p.value.data.value;
+      const inputStyle: React.CSSProperties = {
+        height: 36,
+        paddingTop: 6,
+        paddingBottom: 6,
+        paddingLeft: 8,
+        border: `1px solid ${theme.borderColor ?? "#e2e8f0"}`,
+        borderRadius: 6,
+        fontSize: 14,
+        fontFamily: "inherit",
+        backgroundColor: theme.bgCell ?? "#fff",
+        color: theme.textDark ?? "#171717",
+        width: "100%",
+        minWidth: 160,
+        maxWidth: 260,
+      };
+      return (
+        <select
+          autoFocus
+          value={current}
+          style={inputStyle}
+          className="focus:outline-none focus:border-[var(--muted)]"
+          onChange={(e) => {
+            const v = e.target.value;
+            const nextVal: "" | SpendingCategory = v === "" ? "" : (v as SpendingCategory);
+            const next = {
+              ...p.value,
+              data: {
+                type: "spending_category" as const,
+                value: nextVal,
+                editable: true as const,
+              },
+            } satisfies CustomCell<SpendingCategoryCellData>;
+            p.onChange(next);
+            p.onFinishedEditing(next);
+          }}
+        >
+          <option value="">—</option>
+          {SPENDING_CATEGORY_VALUES.map((k) => (
+            <option key={k} value={k}>
+              {spendingCategoryLabel(k)}
+            </option>
+          ))}
+        </select>
+      );
+    },
+    getAccessibilityString: (cell: CustomCell<SpendingCategoryCellData>) => {
+      const v = cell.data.value;
+      if (!v) return "Aucune categorie";
+      return spendingCategoryLabel(v);
+    },
+  } as CustomRenderer<CustomCell<SpendingCategoryCellData>>;
+}
+
 /** Même géométrie / rendu que le pilule « Statut » (débit), couleurs type OK. */
 interface InvoiceLinkCellData {
   type: "invoice_link";
@@ -1155,6 +1242,7 @@ const COL_FIELDS: (keyof Transaction | "rowNum" | "delete" | "invoice")[] = [
   "company_name",
   "amount",
   "type",
+  "spending_category",
   "description",
   "fournisseur_id",
   "client_account_type_id",
@@ -1216,6 +1304,7 @@ export function TransactionsGrid({
   );
   const debitStatusRenderer = useMemo(() => createDebitStatusRenderer(), []);
   const creditStatusRenderer = useMemo(() => createCreditStatusRenderer(), []);
+  const spendingCategoryRenderer = useMemo(() => createSpendingCategoryRenderer(), []);
   const transactionTypeRenderer = useMemo(
     () => createTransactionTypeRenderer(onBeginInternalCreditPair),
     [onBeginInternalCreditPair]
@@ -1327,6 +1416,11 @@ export function TransactionsGrid({
         id: "amount",
       }),
       menuCol({ title: "Type", width: Math.round(80 * scale), id: "type" }),
+      menuCol({
+        title: "Categorie",
+        width: Math.round(140 * scale),
+        id: "spending_category",
+      }),
       menuCol({
         title: "Description",
         width: 220,
@@ -1529,6 +1623,34 @@ export function TransactionsGrid({
           cursor: "pointer",
         };
       }
+      if (field === "spending_category") {
+        if (txn.type !== "DEBIT") {
+          return {
+            kind: GridCellKind.Text,
+            data: "",
+            displayData: "",
+            allowOverlay: false,
+            readonly: true,
+          };
+        }
+        const category = txn.spending_category;
+        const value =
+          category && (SPENDING_CATEGORY_VALUES as readonly string[]).includes(category)
+            ? category
+            : "";
+        return {
+          kind: GridCellKind.Custom,
+          data: {
+            type: "spending_category",
+            value: value as "" | SpendingCategory,
+            editable: true,
+          },
+          copyData: value ? spendingCategoryLabel(value as SpendingCategory) : "",
+          allowOverlay: true,
+          activationBehaviorOverride: "single-click",
+          cursor: "pointer",
+        };
+      }
       if (field === "description") {
         return {
           kind: GridCellKind.Text,
@@ -1693,6 +1815,23 @@ export function TransactionsGrid({
             txn.type === "DEBIT" ? "debit_status" : "credit_status",
             v
           );
+        } catch {
+          // Page handles error display
+        }
+        return;
+      }
+      if (field === "spending_category") {
+        if (txn.type !== "DEBIT") return;
+        let v: unknown;
+        if (newValue.kind === GridCellKind.Custom) {
+          const d = (newValue as CustomCell<SpendingCategoryCellData>).data;
+          if (d?.type === "spending_category") {
+            v = d.value === "" ? null : d.value;
+          }
+        }
+        if (v === undefined) return;
+        try {
+          await onCellValueChanged(txn.id, "spending_category", v);
         } catch {
           // Page handles error display
         }
@@ -2082,6 +2221,7 @@ export function TransactionsGrid({
                   settingsClientRenderer,
                   debitStatusRenderer,
                   creditStatusRenderer,
+                  spendingCategoryRenderer,
                   transactionTypeRenderer,
                   invoiceLinkRenderer,
                   deleteActionRenderer,

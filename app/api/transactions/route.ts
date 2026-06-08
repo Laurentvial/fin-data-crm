@@ -4,6 +4,7 @@ import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
 import { isCreditTransactionStatus } from "@/lib/credit-status";
+import { isSpendingCategory } from "@/lib/spending-category";
 import type { TransactionType } from "@/lib/types";
 
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
@@ -96,6 +97,31 @@ export async function POST(request: NextRequest) {
       creditStatus = rawCreditStatus;
     }
 
+    let spendingCategory: string | null = null;
+    const rawSpendingCategory = body.spending_category;
+    if (
+      rawSpendingCategory !== undefined &&
+      rawSpendingCategory !== null &&
+      rawSpendingCategory !== ""
+    ) {
+      if (typeof rawSpendingCategory !== "string" || !isSpendingCategory(rawSpendingCategory)) {
+        return NextResponse.json(
+          {
+            error:
+              "spending_category invalide (META, Ads setup, Domain, Dev, Autre ou vide)",
+          },
+          { status: 400 }
+        );
+      }
+      if (type !== "DEBIT") {
+        return NextResponse.json(
+          { error: "spending_category réservé aux débits" },
+          { status: 400 }
+        );
+      }
+      spendingCategory = rawSpendingCategory;
+    }
+
     // processed_by_user_id is bigint (Telegram ID) - shared with Python service
     const telegramRow = await sql`
       SELECT telegram_id FROM user_telegram WHERE user_id = ${session.user.id}::uuid
@@ -104,9 +130,9 @@ export async function POST(request: NextRequest) {
     const processedByUserId = telegramId != null ? Number(telegramId) : null;
 
     const rows = await sql`
-      INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id, debit_status, credit_status)
-      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${processedByUserId}, ${debitStatus}, ${creditStatus})
-      RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id, debit_status, credit_status
+      INSERT INTO transactions (bank_account_id, transaction_date, amount, description, type, processed_by_user_id, debit_status, credit_status, spending_category)
+      VALUES (${bank_account_id}::uuid, ${transaction_date}::date, ${n}, ${description}, ${type}::transactiontype, ${processedByUserId}, ${debitStatus}, ${creditStatus}, ${spendingCategory})
+      RETURNING id, bank_account_id, transaction_date, amount, description, type, raw_image_path, extracted_data_json, created_at, processed_by_user_id, debit_status, credit_status, spending_category
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
     if (!row) {
@@ -119,6 +145,7 @@ export async function POST(request: NextRequest) {
         t.raw_image_path, t.extracted_data_json, t.created_at, t.processed_by_user_id,
         t.debit_status,
         t.credit_status,
+        t.spending_category,
         t.fournisseur_id, fn.name AS fournisseur_name,
         t.client_account_type_id,
         bat.name AS bank_account_type_name,
@@ -188,6 +215,7 @@ export async function GET(request: NextRequest) {
           t.processed_by_user_id,
           t.debit_status,
           t.credit_status,
+          t.spending_category,
           t.fournisseur_id,
           fn.name AS fournisseur_name,
           t.client_account_type_id,

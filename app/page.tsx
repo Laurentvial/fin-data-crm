@@ -585,6 +585,8 @@ function HomeContent() {
         body.debit_status = value === "" || value == null ? null : value;
       if (field === "credit_status")
         body.credit_status = value === "" || value == null ? null : value;
+      if (field === "spending_category")
+        body.spending_category = value === "" || value == null ? null : value;
       setSaveStatus("saving");
       setSaveMessage("");
       try {
