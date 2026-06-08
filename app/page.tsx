@@ -13,6 +13,7 @@ import { TransactionsSummaryPanel } from "@/components/layout/TransactionsSummar
 import type { TransactionSelectionStats } from "@/components/TransactionsGrid";
 import { debitStatusLabel } from "@/lib/debit-status";
 import { creditStatusLabel } from "@/lib/credit-status";
+import { isSpendingCategory } from "@/lib/spending-category";
 import { canAccessTransactions, canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
 import type { AccountType, BankAccount, Fournisseur, Transaction } from "@/lib/types";
@@ -122,6 +123,8 @@ function HomeContent() {
   const [selectionStats, setSelectionStats] = useState<TransactionSelectionStats | null>(null);
   const [transactionGridSelectionResetNonce, setTransactionGridSelectionResetNonce] = useState(0);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [bulkCategoryBusy, setBulkCategoryBusy] = useState(false);
+  const [bulkCategoryValue, setBulkCategoryValue] = useState("");
   const [duplicateScanBusy, setDuplicateScanBusy] = useState(false);
   const [duplicateScanSummary, setDuplicateScanSummary] = useState<string | null>(null);
   const [duplicateAmountGroups, setDuplicateAmountGroups] = useState<DuplicateAmountGroup[]>(
@@ -752,6 +755,61 @@ function HomeContent() {
     };
   }, [selectionStats, bulkDeleteBusy, handleBulkDeleteSelected]);
 
+  const handleBulkApplyCategory = useCallback(async () => {
+    const ids = selectionStats?.selectedTransactionIds;
+    if (!ids?.length) return;
+    const unique = [...new Set(ids)];
+    const byId = new Map(filteredTransactions.map((t) => [t.id, t]));
+    const debitIds = unique.filter((id) => byId.get(id)?.type === "DEBIT");
+    if (debitIds.length === 0) {
+      window.alert("Aucune transaction débit cochée pour appliquer une categorie.");
+      return;
+    }
+
+    const nextCategory =
+      bulkCategoryValue.trim() === ""
+        ? null
+        : (isSpendingCategory(bulkCategoryValue) ? bulkCategoryValue : null);
+
+    setBulkCategoryBusy(true);
+    setSaveStatus("saving");
+    setSaveMessage("");
+    try {
+      for (const id of debitIds) {
+        const res = await fetch(`/api/transactions/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spending_category: nextCategory }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error ?? `HTTP ${res.status}`);
+        }
+      }
+      await fetchTransactions();
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveMessage(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setBulkCategoryBusy(false);
+    }
+  }, [selectionStats, filteredTransactions, bulkCategoryValue, fetchTransactions]);
+
+  const bulkCategoryToolbar = useMemo(() => {
+    const ids = selectionStats?.selectedTransactionIds;
+    if (!ids?.length) return null;
+    const unique = [...new Set(ids)];
+    return {
+      count: unique.length,
+      busy: bulkCategoryBusy,
+      value: bulkCategoryValue,
+      onValueChange: setBulkCategoryValue,
+      onApply: handleBulkApplyCategory,
+    };
+  }, [selectionStats, bulkCategoryBusy, bulkCategoryValue, handleBulkApplyCategory]);
+
   const handleZoomIn = useCallback(() => {
     setZoom((z) => Math.min(150, z + 10));
   }, []);
@@ -995,6 +1053,7 @@ function HomeContent() {
         createInvoice={canEditData ? createInvoiceToolbar : undefined}
         groupedInvoice={canEditData ? groupedInvoiceToolbar : undefined}
         bulkDeleteSelected={canEditData ? bulkDeleteToolbar : null}
+        bulkCategoryEdit={canEditData ? bulkCategoryToolbar : null}
       />
       {duplicateScanSummary && (
         <div className="mx-4 mt-3 rounded-lg border border-[var(--primary-muted-border)] bg-[var(--primary-muted)]/50 px-3 py-2 text-sm text-[var(--foreground)]">

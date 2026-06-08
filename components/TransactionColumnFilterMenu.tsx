@@ -607,7 +607,7 @@ export function TransactionColumnFilterMenu({
     body = (
       <>
         {sectionTitle("Filtrer par condition")}
-        <div className="px-3 pb-2">
+        <div className="space-y-2 px-3 pb-2">
           <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
             Le texte contient
             <input
@@ -615,6 +615,18 @@ export function TransactionColumnFilterMenu({
               value={draft.descriptionContains}
               onChange={(e) => setDraft({ ...draft, descriptionContains: e.target.value })}
               placeholder="Rechercher dans la description…"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+            Le texte ne contient pas
+            <input
+              type="search"
+              value={draft.descriptionNotContains}
+              onChange={(e) =>
+                setDraft({ ...draft, descriptionNotContains: e.target.value })
+              }
+              placeholder="Exclure un texte dans la description…"
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
             />
           </label>

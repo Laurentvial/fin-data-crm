@@ -20,6 +20,14 @@ interface SheetToolbarProps {
   groupedInvoice?: InvoiceToolbarAction | null;
   /** À côté de « Facture groupée » : suppression des lignes cochées (colonne cases). */
   bulkDeleteSelected?: { count: number; busy: boolean; onClick: () => void } | null;
+  /** Édition groupée de la catégorie sur les lignes cochées (débits). */
+  bulkCategoryEdit?: {
+    count: number;
+    busy: boolean;
+    value: string;
+    onValueChange: (value: string) => void;
+    onApply: () => void;
+  } | null;
   /** Lance une analyse des doublons potentiels basée uniquement sur le montant. */
   onScanAmountDuplicatesClick?: () => void;
   scanAmountDuplicatesBusy?: boolean;
@@ -89,6 +97,7 @@ export function SheetToolbar({
   createInvoice,
   groupedInvoice,
   bulkDeleteSelected,
+  bulkCategoryEdit,
   onScanAmountDuplicatesClick,
   scanAmountDuplicatesBusy = false,
 }: SheetToolbarProps) {
@@ -154,6 +163,35 @@ export function SheetToolbar({
               ? "Supprimer la cochée"
               : `Supprimer (${bulkDeleteSelected.count})`}
         </button>
+      ) : null}
+      {bulkCategoryEdit && bulkCategoryEdit.count > 0 ? (
+        <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+          <span className="text-xs text-[var(--muted-foreground)]">
+            Categorie ({bulkCategoryEdit.count})
+          </span>
+          <select
+            value={bulkCategoryEdit.value}
+            onChange={(e) => bulkCategoryEdit.onValueChange(e.target.value)}
+            disabled={bulkCategoryEdit.busy}
+            className="rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)] disabled:opacity-60"
+            aria-label="Categorie bulk edit"
+          >
+            <option value="">— Effacer —</option>
+            <option value="META">META</option>
+            <option value="Ads setup">Ads setup</option>
+            <option value="Domain">Domain</option>
+            <option value="Dev">Dev</option>
+            <option value="Autre">Autre</option>
+          </select>
+          <button
+            type="button"
+            disabled={bulkCategoryEdit.busy}
+            onClick={bulkCategoryEdit.onApply}
+            className="rounded-md bg-[var(--primary)] px-2.5 py-1 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {bulkCategoryEdit.busy ? "Application…" : "Appliquer"}
+          </button>
+        </div>
       ) : null}
       {onResetFiltersClick && (
         <button

@@ -17,6 +17,7 @@ export interface TransactionFilterValues {
   dateTo: string;
   typeFilter: { mode: "all" } | { mode: "include"; types: TransactionType[] };
   descriptionContains: string;
+  descriptionNotContains: string;
   amountMin: string;
   amountMax: string;
   /** Avec min/max : compare le montant signé (débit négatif) ou uniquement les lignes débit / crédit (montant positif stocké). */
@@ -44,6 +45,7 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
   dateTo: "",
   typeFilter: { mode: "all" },
   descriptionContains: "",
+  descriptionNotContains: "",
   amountMin: "",
   amountMax: "",
   amountFilterMode: "signed",
@@ -126,6 +128,8 @@ export function applyClientTransactionFilters(
 
     const q = f.descriptionContains.trim().toLowerCase();
     if (q && !(t.description ?? "").toLowerCase().includes(q)) return false;
+    const qNot = f.descriptionNotContains.trim().toLowerCase();
+    if (qNot && (t.description ?? "").toLowerCase().includes(qNot)) return false;
 
     const minN = f.amountMin.trim() === "" ? null : Number(f.amountMin.replace(",", "."));
     const maxN = f.amountMax.trim() === "" ? null : Number(f.amountMax.replace(",", "."));
@@ -437,6 +441,7 @@ export function hasActiveTransactionFilters(f: TransactionFilterValues): boolean
   if (Boolean(f.dateFrom.trim() || f.dateTo.trim())) return true;
   if (f.typeFilter.mode === "include") return true;
   if (Boolean(f.descriptionContains.trim())) return true;
+  if (Boolean(f.descriptionNotContains.trim())) return true;
   if (Boolean(f.amountMin.trim() || f.amountMax.trim())) return true;
   if (f.processedByFilter !== null) return true;
   if (f.fournisseurFilter !== null) return true;
@@ -464,7 +469,7 @@ export function columnHasActiveFilter(
     case "type":
       return f.typeFilter.mode === "include";
     case "description":
-      return Boolean(f.descriptionContains.trim());
+      return Boolean(f.descriptionContains.trim() || f.descriptionNotContains.trim());
     case "amount":
       return Boolean(f.amountMin.trim() || f.amountMax.trim());
     case "processed_by_user_name":
