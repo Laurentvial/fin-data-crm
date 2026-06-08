@@ -40,46 +40,105 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const rows = await sql`
-      SELECT
-        COALESCE(SUM(CASE WHEN t.type = 'CREDIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS chiffre_affaires,
-        COALESCE(SUM(CASE
-          WHEN t.type = 'DEBIT'::transactiontype
-            AND NOT EXISTS (
-              SELECT 1 FROM transactions ic
-              WHERE ic.internal_transfer_debit_id = t.id
-                AND ic.type = 'INTERNAL_CREDIT'::transactiontype
-            )
-          THEN t.amount::numeric
-          ELSE 0
-        END), 0)::float AS debits_total,
-        COUNT(*) FILTER (WHERE t.type = 'CREDIT'::transactiontype)::int AS credits_count,
-        COUNT(*) FILTER (
-          WHERE t.type = 'DEBIT'::transactiontype
-            AND NOT EXISTS (
-              SELECT 1 FROM transactions ic
-              WHERE ic.internal_transfer_debit_id = t.id
-                AND ic.type = 'INTERNAL_CREDIT'::transactiontype
-            )
-        )::int AS debits_count
-      FROM transactions t
-      LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
-      LEFT JOIN banks b ON b.id = ba.bank_id
-      WHERE t.transaction_date >= ${date_from}::date
-        AND t.transaction_date <= ${date_to}::date
-        AND (
-          (${bank_id})::text IS NULL
-          OR ba.bank_id::text = (${bank_id})::text
-        )
-        AND (
-          (${client_account_type_id})::text IS NULL
-          OR COALESCE(t.client_account_type_id, ba.account_type_id)::text = (${client_account_type_id})::text
-        )
-        AND (
-          (${company_id})::text IS NULL
-          OR ba.company_id::text = (${company_id})::text
-        )
-    `;
+    const [rows, expenseByCategoryRows, revenueByCategoryRows] = await Promise.all([
+      sql`
+        SELECT
+          COALESCE(SUM(CASE WHEN t.type = 'CREDIT'::transactiontype THEN t.amount::numeric ELSE 0 END), 0)::float AS chiffre_affaires,
+          COALESCE(SUM(CASE
+            WHEN t.type = 'DEBIT'::transactiontype
+              AND NOT EXISTS (
+                SELECT 1 FROM transactions ic
+                WHERE ic.internal_transfer_debit_id = t.id
+                  AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+              )
+            THEN t.amount::numeric
+            ELSE 0
+          END), 0)::float AS debits_total,
+          COUNT(*) FILTER (WHERE t.type = 'CREDIT'::transactiontype)::int AS credits_count,
+          COUNT(*) FILTER (
+            WHERE t.type = 'DEBIT'::transactiontype
+              AND NOT EXISTS (
+                SELECT 1 FROM transactions ic
+                WHERE ic.internal_transfer_debit_id = t.id
+                  AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+              )
+          )::int AS debits_count
+        FROM transactions t
+        LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN banks b ON b.id = ba.bank_id
+        WHERE t.transaction_date >= ${date_from}::date
+          AND t.transaction_date <= ${date_to}::date
+          AND (
+            (${bank_id})::text IS NULL
+            OR ba.bank_id::text = (${bank_id})::text
+          )
+          AND (
+            (${client_account_type_id})::text IS NULL
+            OR COALESCE(t.client_account_type_id, ba.account_type_id)::text = (${client_account_type_id})::text
+          )
+          AND (
+            (${company_id})::text IS NULL
+            OR ba.company_id::text = (${company_id})::text
+          )
+      `,
+      sql`
+        SELECT
+          COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')::text AS category,
+          COALESCE(SUM(t.amount::numeric), 0)::float AS amount,
+          COUNT(*)::int AS count
+        FROM transactions t
+        LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN banks b ON b.id = ba.bank_id
+        WHERE t.transaction_date >= ${date_from}::date
+          AND t.transaction_date <= ${date_to}::date
+          AND t.type = 'DEBIT'::transactiontype
+          AND NOT EXISTS (
+            SELECT 1 FROM transactions ic
+            WHERE ic.internal_transfer_debit_id = t.id
+              AND ic.type = 'INTERNAL_CREDIT'::transactiontype
+          )
+          AND (
+            (${bank_id})::text IS NULL
+            OR ba.bank_id::text = (${bank_id})::text
+          )
+          AND (
+            (${client_account_type_id})::text IS NULL
+            OR COALESCE(t.client_account_type_id, ba.account_type_id)::text = (${client_account_type_id})::text
+          )
+          AND (
+            (${company_id})::text IS NULL
+            OR ba.company_id::text = (${company_id})::text
+          )
+        GROUP BY COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')
+        ORDER BY amount DESC, category ASC
+      `,
+      sql`
+        SELECT
+          COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')::text AS category,
+          COALESCE(SUM(t.amount::numeric), 0)::float AS amount,
+          COUNT(*)::int AS count
+        FROM transactions t
+        LEFT JOIN bank_accounts ba ON ba.id::text = t.bank_account_id::text
+        LEFT JOIN banks b ON b.id = ba.bank_id
+        WHERE t.transaction_date >= ${date_from}::date
+          AND t.transaction_date <= ${date_to}::date
+          AND t.type = 'CREDIT'::transactiontype
+          AND (
+            (${bank_id})::text IS NULL
+            OR ba.bank_id::text = (${bank_id})::text
+          )
+          AND (
+            (${client_account_type_id})::text IS NULL
+            OR COALESCE(t.client_account_type_id, ba.account_type_id)::text = (${client_account_type_id})::text
+          )
+          AND (
+            (${company_id})::text IS NULL
+            OR ba.company_id::text = (${company_id})::text
+          )
+        GROUP BY COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')
+        ORDER BY amount DESC, category ASC
+      `,
+    ]);
     const row = Array.isArray(rows) ? rows[0] : rows;
     if (!row || typeof row !== "object") {
       return NextResponse.json(
@@ -88,6 +147,8 @@ export async function GET(request: NextRequest) {
           debits_total: 0,
           credits_count: 0,
           debits_count: 0,
+          expenses_by_category: [],
+          revenue_by_category: [],
           date_from,
           date_to,
         },
@@ -100,11 +161,25 @@ export async function GET(request: NextRequest) {
       credits_count: number;
       debits_count: number;
     };
+    const expensesByCategory = (Array.isArray(expenseByCategoryRows) ? expenseByCategoryRows : [])
+      .map((x) => ({
+        category: String((x as { category: string }).category),
+        amount: Math.round(Number((x as { amount: number }).amount) * 100) / 100,
+        count: Number((x as { count: number }).count),
+      }));
+    const revenueByCategory = (Array.isArray(revenueByCategoryRows) ? revenueByCategoryRows : [])
+      .map((x) => ({
+        category: String((x as { category: string }).category),
+        amount: Math.round(Number((x as { amount: number }).amount) * 100) / 100,
+        count: Number((x as { count: number }).count),
+      }));
     return NextResponse.json({
       chiffre_affaires: Math.round(Number(r.chiffre_affaires) * 100) / 100,
       debits_total: Math.round(Number(r.debits_total) * 100) / 100,
       credits_count: Number(r.credits_count),
       debits_count: Number(r.debits_count),
+      expenses_by_category: expensesByCategory,
+      revenue_by_category: revenueByCategory,
       date_from,
       date_to,
     });

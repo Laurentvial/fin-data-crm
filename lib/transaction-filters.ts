@@ -28,6 +28,8 @@ export interface TransactionFilterValues {
   fournisseurFilter: null | { mode: "include"; names: string[] };
   /** null = tous les clients */
   clientFilter: null | { mode: "include"; names: string[] };
+  /** null = toutes les catégories */
+  spendingCategoryFilter: null | { mode: "include"; names: string[] };
   /** Filtre sur la date/heure de création (colonne "Créé le"). */
   createdAtFrom: string;
   createdAtTo: string;
@@ -52,6 +54,7 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilterValues = {
   processedByFilter: null,
   fournisseurFilter: null,
   clientFilter: null,
+  spendingCategoryFilter: null,
   createdAtFrom: "",
   createdAtTo: "",
   etatFilter: null,
@@ -71,16 +74,22 @@ export function filtersToApiParams(f: TransactionFilterValues): {
   date_from: string;
   date_to: string;
   type: string;
+  description_contains: string;
+  description_not_contains: string;
 } {
   const bank_account_id =
     f.bankFilter.mode === "include" && f.bankFilter.ids.length === 1 ? f.bankFilter.ids[0] : "";
   const type =
     f.typeFilter.mode === "include" && f.typeFilter.types.length === 1 ? f.typeFilter.types[0] : "";
+  const description_contains = f.descriptionContains.trim();
+  const description_not_contains = f.descriptionNotContains.trim();
   return {
     bank_account_id,
     date_from: f.dateFrom,
     date_to: f.dateTo,
     type,
+    description_contains,
+    description_not_contains,
   };
 }
 
@@ -176,6 +185,13 @@ export function applyClientTransactionFilters(
       if (!names.includes(key)) return false;
     }
 
+    if (f.spendingCategoryFilter !== null) {
+      const names = f.spendingCategoryFilter.names;
+      if (names.length === 0) return false;
+      const key = transactionSpendingCategoryFilterKey(t);
+      if (!names.includes(key)) return false;
+    }
+
     if (f.createdAtFrom || f.createdAtTo) {
       const created = t.created_at ? new Date(t.created_at).getTime() : Number.NaN;
       if (Number.isNaN(created)) return false;
@@ -220,6 +236,8 @@ export const ACCOUNT_STATUS_EMPTY_KEY = "\u2060acctst\u2060";
 
 /** Valeur sentinelle pour état (débit/crédit) vide. */
 export const ETAT_EMPTY_KEY = "\u2060etat\u2060";
+/** Valeur sentinelle pour catégorie vide. */
+export const SPENDING_CATEGORY_EMPTY_KEY = "\u2060spendcat\u2060";
 
 export function transactionBankNameFilterKey(t: Transaction): string {
   const n = (t.bank_name ?? "").trim();
@@ -303,6 +321,11 @@ export function transactionEtatFilterKey(t: Transaction): string {
   return ETAT_EMPTY_KEY;
 }
 
+export function transactionSpendingCategoryFilterKey(t: Transaction): string {
+  const n = (t.spending_category ?? "").trim();
+  return n === "" ? SPENDING_CATEGORY_EMPTY_KEY : n;
+}
+
 export function getEtatFilterKeys(rows: Transaction[]): string[] {
   const names = new Set<string>();
   let hasEmpty = false;
@@ -342,6 +365,19 @@ export function getClientFilterKeys(rows: Transaction[]): string[] {
   return list;
 }
 
+export function getSpendingCategoryFilterKeys(rows: Transaction[]): string[] {
+  const names = new Set<string>();
+  let hasEmpty = false;
+  for (const t of rows) {
+    const n = transactionSpendingCategoryFilterKey(t);
+    if (n === SPENDING_CATEGORY_EMPTY_KEY) hasEmpty = true;
+    else names.add(n);
+  }
+  const list = [...names].sort((a, b) => a.localeCompare(b, "fr"));
+  if (hasEmpty) list.unshift(SPENDING_CATEGORY_EMPTY_KEY);
+  return list;
+}
+
 export function normalizeTransactionFilters(
   f: TransactionFilterValues,
   ctx: {
@@ -352,6 +388,7 @@ export function normalizeTransactionFilters(
     allCompanyKeys: string[];
     allFournisseurKeys: string[];
     allClientKeys: string[];
+    allSpendingCategoryKeys: string[];
     allEtatKeys: string[];
   }
 ): TransactionFilterValues {
@@ -421,6 +458,16 @@ export function normalizeTransactionFilters(
     }
   }
 
+  if (f.spendingCategoryFilter !== null && ctx.allSpendingCategoryKeys.length > 0) {
+    const n = new Set(f.spendingCategoryFilter.names);
+    if (
+      ctx.allSpendingCategoryKeys.every((k) => n.has(k)) &&
+      n.size === ctx.allSpendingCategoryKeys.length
+    ) {
+      out.spendingCategoryFilter = null;
+    }
+  }
+
   if (f.etatFilter !== null && ctx.allEtatKeys.length > 0) {
     const n = new Set(f.etatFilter.names);
     if (ctx.allEtatKeys.every((k) => n.has(k)) && n.size === ctx.allEtatKeys.length) {
@@ -446,6 +493,7 @@ export function hasActiveTransactionFilters(f: TransactionFilterValues): boolean
   if (f.processedByFilter !== null) return true;
   if (f.fournisseurFilter !== null) return true;
   if (f.clientFilter !== null) return true;
+  if (f.spendingCategoryFilter !== null) return true;
   if (Boolean(f.createdAtFrom.trim() || f.createdAtTo.trim())) return true;
   if (f.etatFilter !== null) return true;
   return false;
@@ -478,6 +526,8 @@ export function columnHasActiveFilter(
       return f.fournisseurFilter !== null;
     case "client_name":
       return f.clientFilter !== null;
+    case "spending_category":
+      return f.spendingCategoryFilter !== null;
     case "created_at":
       return Boolean(f.createdAtFrom || f.createdAtTo);
     case "debit_status":

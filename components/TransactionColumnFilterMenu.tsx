@@ -14,11 +14,13 @@ import {
   COMPANY_EMPTY_KEY,
   ETAT_EMPTY_KEY,
   FOURNISSEUR_EMPTY_KEY,
+  SPENDING_CATEGORY_EMPTY_KEY,
   getClientFilterKeys,
   getAccountStatusFilterKeys,
   getBankNameFilterKeys,
   getEtatFilterKeys,
   getFournisseurFilterKeys,
+  getSpendingCategoryFilterKeys,
   type TransactionAmountFilterMode,
   type TransactionFilterValues,
   PROCESSED_BY_EMPTY_KEY,
@@ -146,6 +148,10 @@ export function TransactionColumnFilterMenu({
     () => getEtatFilterKeys(transactionsForOptions),
     [transactionsForOptions]
   );
+  const spendingCategoryOptions = useMemo(
+    () => getSpendingCategoryFilterKeys(transactionsForOptions),
+    [transactionsForOptions]
+  );
 
   const filteredBankNameOptions = useMemo(() => {
     const q = valueSearch.trim().toLowerCase();
@@ -217,6 +223,14 @@ export function TransactionColumnFilterMenu({
       return k.toLowerCase().includes(q);
     });
   }, [etatOptions, valueSearch]);
+  const filteredSpendingCategoryOptions = useMemo(() => {
+    const q = valueSearch.trim().toLowerCase();
+    if (!q) return spendingCategoryOptions;
+    return spendingCategoryOptions.filter((n) => {
+      if (n === SPENDING_CATEGORY_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      return n.toLowerCase().includes(q);
+    });
+  }, [spendingCategoryOptions, valueSearch]);
 
   const applyDraft = useCallback(() => {
     onApply(draft);
@@ -247,6 +261,7 @@ export function TransactionColumnFilterMenu({
     columnId === "processed_by_user_name" ||
     columnId === "fournisseur" ||
     columnId === "client_name" ||
+    columnId === "spending_category" ||
     columnId === "debit_status";
 
   const valueListUlClass =
@@ -874,6 +889,76 @@ export function TransactionColumnFilterMenu({
         </div>
         <ul className={valueListUlClass}>
           {filteredClientOptions.map((n) => (
+            <li key={n}>
+              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={selected.has(n)}
+                  onChange={() => toggle(n)}
+                  className="rounded border-[var(--border)]"
+                />
+                <span className="truncate">{displayName(n)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  } else if (columnId === "spending_category") {
+    const allNames = spendingCategoryOptions;
+    const selected =
+      draft.spendingCategoryFilter === null
+        ? new Set(allNames)
+        : new Set(draft.spendingCategoryFilter.names);
+    const toggle = (name: string) => {
+      const next = new Set(selected);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setDraft({
+        ...draft,
+        spendingCategoryFilter: { mode: "include", names: [...next] },
+      });
+    };
+    const selectAll = () =>
+      setDraft({
+        ...draft,
+        spendingCategoryFilter: { mode: "include", names: [...allNames] },
+      });
+    const clearAll = () =>
+      setDraft({ ...draft, spendingCategoryFilter: { mode: "include", names: [] } });
+    const displayName = (n: string) => (n === SPENDING_CATEGORY_EMPTY_KEY ? "(Vide)" : n);
+    body = (
+      <>
+        <div className="shrink-0">
+          {sectionTitle("Filtrer par catégorie")}
+          <div className="flex flex-wrap gap-2 px-3 pb-2 text-xs">
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={selectAll}>
+              Tout sélectionner ({allNames.length})
+            </button>
+            <button type="button" className="text-[var(--primary)] hover:underline" onClick={clearAll}>
+              Effacer
+            </button>
+          </div>
+          <p className="px-3 pb-1 text-xs text-[var(--muted-foreground)]">
+            Affichage de {filteredSpendingCategoryOptions.length}
+          </p>
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <input
+                type="search"
+                value={valueSearch}
+                onChange={(e) => setValueSearch(e.target.value)}
+                placeholder="Rechercher…"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2 pl-3 pr-9 text-sm"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                ⌕
+              </span>
+            </div>
+          </div>
+        </div>
+        <ul className={valueListUlClass}>
+          {filteredSpendingCategoryOptions.map((n) => (
             <li key={n}>
               <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--muted)]">
                 <input

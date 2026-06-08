@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { FinancialTrendChart, type TrendPoint } from "@/components/reporting/FinancialTrendChart";
+import {
+  CategoryBreakdownChart,
+  type CategoryBreakdownPoint,
+} from "@/components/reporting/CategoryBreakdownChart";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
@@ -171,6 +175,8 @@ function ReportingContent() {
     debits_total: number;
     credits_count: number;
     debits_count: number;
+    expenses_by_category: CategoryBreakdownPoint[];
+    revenue_by_category: CategoryBreakdownPoint[];
   } | null>(null);
   const [trendPoints, setTrendPoints] = useState<TrendPoint[]>([]);
   const [trendGranularity, setTrendGranularity] = useState<"day" | "hour">("day");
@@ -332,6 +338,8 @@ function ReportingContent() {
         debits_total: data.debits_total,
         credits_count: data.credits_count,
         debits_count: data.debits_count,
+        expenses_by_category: Array.isArray(data.expenses_by_category) ? data.expenses_by_category : [],
+        revenue_by_category: Array.isArray(data.revenue_by_category) ? data.revenue_by_category : [],
       });
       if (tsRes.ok) {
         const tsJson = await tsRes.json();
@@ -579,6 +587,33 @@ function ReportingContent() {
             <FinancialTrendChart points={trendPoints} granularity={trendGranularity} />
           )}
         </section>
+
+        <div className="mt-8 grid gap-4 xl:grid-cols-2">
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
+            <h2 className="subsection-header mb-1 text-base font-medium">
+              Dépenses par catégorie
+            </h2>
+            <p className="mb-4 text-xs text-[var(--muted-foreground)]">
+              Total des débits ventilé par catégorie de dépense sur la période.
+            </p>
+            <CategoryBreakdownChart
+              points={summary?.expenses_by_category ?? []}
+              color="var(--destructive)"
+            />
+          </section>
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
+            <h2 className="subsection-header mb-1 text-base font-medium">
+              Revenus par catégorie
+            </h2>
+            <p className="mb-4 text-xs text-[var(--muted-foreground)]">
+              Total des crédits ventilé par catégorie sur la période.
+            </p>
+            <CategoryBreakdownChart
+              points={summary?.revenue_by_category ?? []}
+              color="var(--primary)"
+            />
+          </section>
+        </div>
       </main>
     </div>
   );

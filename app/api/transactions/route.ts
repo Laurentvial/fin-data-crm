@@ -113,9 +113,9 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (type !== "DEBIT") {
+      if (type === "INTERNAL_CREDIT") {
         return NextResponse.json(
-          { error: "spending_category réservé aux débits" },
+          { error: "spending_category indisponible pour les crédits internes" },
           { status: 400 }
         );
       }
@@ -196,6 +196,8 @@ export async function GET(request: NextRequest) {
     const date_from = searchParams.get("date_from") || null;
     const date_to = searchParams.get("date_to") || null;
     const type = searchParams.get("type") || null;
+    const description_contains = searchParams.get("description_contains") || null;
+    const description_not_contains = searchParams.get("description_not_contains") || null;
     const limit = Math.min(Number(searchParams.get("limit")) || 500, 1000);
     const offset = Math.max(0, Number(searchParams.get("offset")) || 0);
 
@@ -261,6 +263,14 @@ export async function GET(request: NextRequest) {
           AND ((${date_from})::date IS NULL OR t.transaction_date >= (${date_from})::date)
           AND ((${date_to})::date IS NULL OR t.transaction_date <= (${date_to})::date)
           AND ((${type})::text IS NULL OR t.type::text = (${type})::text)
+          AND (
+            (${description_contains})::text IS NULL
+            OR COALESCE(t.description, '') ILIKE ('%' || (${description_contains})::text || '%')
+          )
+          AND (
+            (${description_not_contains})::text IS NULL
+            OR COALESCE(t.description, '') NOT ILIKE ('%' || (${description_not_contains})::text || '%')
+          )
         ORDER BY t.transaction_date DESC, t.created_at DESC
         LIMIT ${limit}
         OFFSET ${offset}
@@ -275,6 +285,14 @@ export async function GET(request: NextRequest) {
           AND ((${date_from})::date IS NULL OR t.transaction_date >= (${date_from})::date)
           AND ((${date_to})::date IS NULL OR t.transaction_date <= (${date_to})::date)
           AND ((${type})::text IS NULL OR t.type::text = (${type})::text)
+          AND (
+            (${description_contains})::text IS NULL
+            OR COALESCE(t.description, '') ILIKE ('%' || (${description_contains})::text || '%')
+          )
+          AND (
+            (${description_not_contains})::text IS NULL
+            OR COALESCE(t.description, '') NOT ILIKE ('%' || (${description_not_contains})::text || '%')
+          )
       `,
     ]);
 

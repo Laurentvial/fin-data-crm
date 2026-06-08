@@ -123,6 +123,7 @@ const SORTABLE_FIELDS = new Set<string>([
   "company_name",
   "amount",
   "type",
+  "spending_category",
   "debit_status",
   "description",
   "client_name",
@@ -140,6 +141,7 @@ const COLUMN_FILTER_IDS = new Set<string>([
   "type",
   "debit_status",
   "description",
+  "spending_category",
   "fournisseur",
   "client_name",
   "created_at",
@@ -1624,7 +1626,7 @@ export function TransactionsGrid({
         };
       }
       if (field === "spending_category") {
-        if (txn.type !== "DEBIT") {
+        if (txn.type === "INTERNAL_CREDIT") {
           return {
             kind: GridCellKind.Text,
             data: "",
@@ -1821,7 +1823,7 @@ export function TransactionsGrid({
         return;
       }
       if (field === "spending_category") {
-        if (txn.type !== "DEBIT") return;
+        if (txn.type === "INTERNAL_CREDIT") return;
         let v: unknown;
         if (newValue.kind === GridCellKind.Custom) {
           const d = (newValue as CustomCell<SpendingCategoryCellData>).data;

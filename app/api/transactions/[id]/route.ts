@@ -255,10 +255,10 @@ export async function PATCH(
     if (
       updates.spending_category !== undefined &&
       updates.spending_category !== null &&
-      effectiveType !== "DEBIT"
+      effectiveType === "INTERNAL_CREDIT"
     ) {
       return NextResponse.json(
-        { error: "La catégorie de dépense ne s'applique qu'aux débits" },
+        { error: "La catégorie de dépense ne s'applique pas aux crédits internes" },
         { status: 400 }
       );
     }
@@ -269,7 +269,7 @@ export async function PATCH(
     if (updates.type === "DEBIT" || updates.type === "INTERNAL_CREDIT") {
       updates.credit_status = null;
     }
-    if (updates.type === "CREDIT" || updates.type === "INTERNAL_CREDIT") {
+    if (updates.type === "INTERNAL_CREDIT") {
       updates.spending_category = null;
     }
 

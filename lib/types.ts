@@ -269,7 +269,7 @@ export interface Transaction {
   credit_status?: CreditTransactionStatus | null;
   /** Ligne débit miroir (autre compte), uniquement si type = INTERNAL_CREDIT. */
   internal_transfer_debit_id?: string | null;
-  /** Catégorie de dépense, réservée aux débits. */
+  /** Catégorie de dépense, utilisable sur débit/crédit (hors crédit interne). */
   spending_category?: SpendingCategory | null;
 }
 

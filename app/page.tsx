@@ -30,6 +30,7 @@ import {
   getAccountStatusFilterKeys,
   getAllBankIdsForFilter,
   getBankNameFilterKeys,
+  getSpendingCategoryFilterKeys,
   getClientFilterKeys,
   getCompanyFilterKeys,
   getEtatFilterKeys,
@@ -318,6 +319,9 @@ function HomeContent() {
       if (api.date_from) params.set("date_from", api.date_from);
       if (api.date_to) params.set("date_to", api.date_to);
       if (api.type) params.set("type", api.type);
+      if (api.description_contains) params.set("description_contains", api.description_contains);
+      if (api.description_not_contains)
+        params.set("description_not_contains", api.description_not_contains);
       params.set("limit", String(TRANSACTION_PAGE_SIZE));
       params.set("offset", "0");
       const res = await fetch(`/api/transactions?${params.toString()}`);
@@ -346,6 +350,10 @@ function HomeContent() {
               if (api.date_from) nextParams.set("date_from", api.date_from);
               if (api.date_to) nextParams.set("date_to", api.date_to);
               if (api.type) nextParams.set("type", api.type);
+              if (api.description_contains)
+                nextParams.set("description_contains", api.description_contains);
+              if (api.description_not_contains)
+                nextParams.set("description_not_contains", api.description_not_contains);
               nextParams.set("limit", String(FILTER_OPTIONS_PAGE_SIZE));
               nextParams.set("offset", String(offset));
               const nextRes = await fetch(`/api/transactions?${nextParams.toString()}`);
@@ -391,6 +399,9 @@ function HomeContent() {
       if (api.date_from) params.set("date_from", api.date_from);
       if (api.date_to) params.set("date_to", api.date_to);
       if (api.type) params.set("type", api.type);
+      if (api.description_contains) params.set("description_contains", api.description_contains);
+      if (api.description_not_contains)
+        params.set("description_not_contains", api.description_not_contains);
       params.set("limit", String(TRANSACTION_PAGE_SIZE));
       params.set("offset", String(offset));
       const res = await fetch(`/api/transactions?${params.toString()}`);
@@ -500,6 +511,7 @@ function HomeContent() {
       const allCompanyKeys = getCompanyFilterKeys(transactionsForFilterOptions);
       const allFournisseurKeys = getFournisseurFilterKeys(transactionsForFilterOptions);
       const allClientKeys = getClientFilterKeys(transactionsForFilterOptions);
+      const allSpendingCategoryKeys = getSpendingCategoryFilterKeys(transactionsForFilterOptions);
       const allEtatKeys = getEtatFilterKeys(transactionsForFilterOptions);
       setFilterValues(
         normalizeTransactionFilters(next, {
@@ -510,6 +522,7 @@ function HomeContent() {
           allCompanyKeys,
           allFournisseurKeys,
           allClientKeys,
+          allSpendingCategoryKeys,
           allEtatKeys,
         })
       );
@@ -760,9 +773,12 @@ function HomeContent() {
     if (!ids?.length) return;
     const unique = [...new Set(ids)];
     const byId = new Map(filteredTransactions.map((t) => [t.id, t]));
-    const debitIds = unique.filter((id) => byId.get(id)?.type === "DEBIT");
-    if (debitIds.length === 0) {
-      window.alert("Aucune transaction débit cochée pour appliquer une categorie.");
+    const eligibleIds = unique.filter((id) => {
+      const type = byId.get(id)?.type;
+      return type === "DEBIT" || type === "CREDIT";
+    });
+    if (eligibleIds.length === 0) {
+      window.alert("Aucune transaction débit/crédit cochée pour appliquer une categorie.");
       return;
     }
 
@@ -775,7 +791,7 @@ function HomeContent() {
     setSaveStatus("saving");
     setSaveMessage("");
     try {
-      for (const id of debitIds) {
+      for (const id of eligibleIds) {
         const res = await fetch(`/api/transactions/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -887,6 +903,9 @@ function HomeContent() {
         if (api.date_from) params.set("date_from", api.date_from);
         if (api.date_to) params.set("date_to", api.date_to);
         if (api.type) params.set("type", api.type);
+        if (api.description_contains) params.set("description_contains", api.description_contains);
+        if (api.description_not_contains)
+          params.set("description_not_contains", api.description_not_contains);
         params.set("limit", String(pageSize));
         params.set("offset", String(offset));
 

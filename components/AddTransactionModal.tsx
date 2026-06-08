@@ -69,7 +69,11 @@ export function AddTransactionModal({
           type,
           description: description.trim(),
           ...(type === "DEBIT" && debitStatus ? { debit_status: debitStatus } : {}),
-          ...(type === "DEBIT" && spendingCategory ? { spending_category: spendingCategory } : {}),
+          ...(
+            (type === "DEBIT" || type === "CREDIT") && spendingCategory
+              ? { spending_category: spendingCategory }
+              : {}
+          ),
           ...(type === "CREDIT" && creditStatus ? { credit_status: creditStatus } : {}),
         }),
       });
@@ -168,7 +172,6 @@ export function AddTransactionModal({
                 setType(next);
                 if (next === "CREDIT") {
                   setDebitStatus("");
-                  setSpendingCategory("");
                 }
                 if (next !== "CREDIT") setCreditStatus("");
               }}
@@ -227,6 +230,31 @@ export function AddTransactionModal({
                   ))}
                 </select>
               </div>
+            </div>
+          )}
+          {type === "CREDIT" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                Categorie
+              </label>
+              <select
+                value={spendingCategory}
+                onChange={(e) => {
+                  suppressNextModalBackdropClose();
+                  setSpendingCategory(
+                    e.target.value === "" ? "" : (e.target.value as SpendingCategory)
+                  );
+                }}
+                onBlur={() => suppressNextModalBackdropClose()}
+                className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+              >
+                <option value="">—</option>
+                {SPENDING_CATEGORY_VALUES.map((k) => (
+                  <option key={k} value={k}>
+                    {spendingCategoryLabel(k)}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           {type === "CREDIT" && (
