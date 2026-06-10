@@ -17,6 +17,7 @@ const DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS = [
   "69d0f273-2015-4395-97c4-14b8d56ded1d",
   "04b79ba1-058d-4198-a3ad-8a17a8defe39",
 ];
+const NO_ACCOUNT_STATUS_FILTER_KEY = "__no_account__";
 
 function MoreVerticalIcon({ className }: { className?: string }) {
   return (
@@ -1158,9 +1159,9 @@ function SocietesPageContent() {
   const [selectedDepartementKey, setSelectedDepartementKey] = useState<string | null>(null);
   /** null = tous ; "" = pays non renseigné ; sinon code ISO alpha-2 majuscules */
   const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null);
-  /** Multi-sélection des statuts de compte ; société gardée si au moins 1 compte matche. */
+  /** Multi-sélection des statuts de compte ; inclut aussi "Pas de compte" pour garder les sociétés sans compte associé. */
   const [selectedAccountStatusKeys, setSelectedAccountStatusKeys] = useState<string[]>(
-    DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS
+    [...DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS, NO_ACCOUNT_STATUS_FILTER_KEY]
   );
   const [createEmailRows, setCreateEmailRows] = useState<CompanyCreateEmailRow[]>([]);
   const [createPhoneRows, setCreatePhoneRows] = useState<CompanyCreatePhoneRow[]>([]);
@@ -1245,7 +1246,9 @@ function SocietesPageContent() {
       if (!omit?.status && selectedAccountStatusKeys.length > 0) {
         list = list.filter((c) => {
           const statuses = companyAccountStatusKeys.get(c.id);
-          if (!statuses || statuses.size === 0) return false;
+          if (!statuses || statuses.size === 0) {
+            return selectedAccountStatusKeys.includes(NO_ACCOUNT_STATUS_FILTER_KEY);
+          }
           return selectedAccountStatusKeys.some((key) => statuses.has(key));
         });
       }
@@ -1455,7 +1458,19 @@ function SocietesPageContent() {
         emojiByStatus.set(key, emoji);
       }
     }
+    let companiesWithoutAccountCount = 0;
+    for (const companyId of companyIdsForStatusCounts) {
+      const statuses = companyAccountStatusKeys.get(companyId);
+      if (!statuses || statuses.size === 0) companiesWithoutAccountCount += 1;
+    }
     const rows: { key: string; label: string; count: number; emoji?: string }[] = [];
+    if (companiesWithoutAccountCount > 0) {
+      rows.push({
+        key: NO_ACCOUNT_STATUS_FILTER_KEY,
+        label: "Pas de compte",
+        count: companiesWithoutAccountCount,
+      });
+    }
     if (companyIdsByStatus.has("")) {
       rows.push({
         key: "",
@@ -1476,7 +1491,7 @@ function SocietesPageContent() {
       });
     }
     return rows;
-  }, [bankAccounts, companyIdsForStatusCounts]);
+  }, [bankAccounts, companyIdsForStatusCounts, companyAccountStatusKeys]);
 
   const hasActiveSocietesFilters =
     selectedActiviteKey !== null ||
@@ -1490,7 +1505,10 @@ function SocietesPageContent() {
     setSelectedFournisseurKey(null);
     setSelectedDepartementKey(null);
     setSelectedCountryCode(null);
-    setSelectedAccountStatusKeys(DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS);
+    setSelectedAccountStatusKeys([
+      ...DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS,
+      NO_ACCOUNT_STATUS_FILTER_KEY,
+    ]);
     setSocietesFilterPanel("hub");
   }, []);
 
@@ -2504,7 +2522,7 @@ function SocietesPageContent() {
                     Par statut du compte
                   </h2>
                   <p className="mb-2 text-xs text-[var(--muted-foreground)]">
-                    Garde les sociétés avec au moins un compte dans un des statuts sélectionnés.
+                    Garde les sociétés avec au moins un compte dans un des statuts sélectionnés, ou sans compte si "Pas de compte" est coché.
                   </p>
                   <nav className="space-y-1">
                     {accountStatusesWithCounts.map((item) => {
