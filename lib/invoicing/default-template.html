@@ -34,6 +34,17 @@
       margin: 0;
       letter-spacing: -0.5px;
     }
+    .invoice-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+    .logo-wrap img {
+      max-height: 54px;
+      max-width: 180px;
+      object-fit: contain;
+    }
     .invoice-meta {
       text-align: right;
       font-size: 11px;
@@ -157,20 +168,43 @@
     .footer-mentions p {
       margin: 0 0 6px 0;
     }
+    .payment-box {
+      margin-top: 16px;
+      margin-left: auto;
+      width: 280px;
+      padding: 12px;
+      border: 1px solid #e9ecef;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #333;
+    }
+    .payment-box strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #2c3e50;
+    }
   </style>
 </head>
 <body>
   <div class="page">
     <header class="invoice-header">
       <h1 class="invoice-title">Facture {{invoice.number}}</h1>
-      <div class="invoice-meta">
-        <strong>Date d'émission</strong>
-        {{formatDate invoice.issueDate}}
-        <br><br>
-        {{#if invoice.dueDate}}
-        <strong>Échéance</strong>
-        {{formatDate invoice.dueDate}}
+      <div class="invoice-right">
+        {{#if company.logo_url}}
+        <div class="logo-wrap">
+          <img src="{{company.logo_url}}" alt="{{company.name}}" />
+        </div>
         {{/if}}
+        <div class="invoice-meta">
+          <strong>Date d'émission</strong>
+          {{formatDate invoice.issueDate}}
+          {{#if invoice.dueDate}}
+          <br><br>
+          <strong>Échéance</strong>
+          {{formatDate invoice.dueDate}}
+          {{/if}}
+        </div>
       </div>
     </header>
 
@@ -229,6 +263,14 @@
         <span>{{formatNumber invoice.total}} {{invoice.currency}}</span>
       </div>
     </div>
+
+    {{#if payment.iban}}
+    <div class="payment-box">
+      <strong>Coordonnées bancaires (RIB)</strong>
+      <div>IBAN : {{payment.iban}}</div>
+      {{#if payment.bic}}<div>BIC : {{payment.bic}}</div>{{/if}}
+    </div>
+    {{/if}}
 
     {{#if countryRules.requiredMentions}}
     <div class="footer-mentions">

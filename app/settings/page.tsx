@@ -2907,20 +2907,28 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
   <style>
     * { box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; }
-    .invoice-header { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #2c3e50; }
+    .invoice-header { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #2c3e50; align-items: flex-start; }
     .invoice-title { font-size: 24px; font-weight: 700; color: #2c3e50; margin: 0; }
+    .invoice-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .logo-wrap img { max-height: 54px; max-width: 180px; object-fit: contain; }
+    .invoice-meta { text-align: right; }
     .addresses { display: flex; justify-content: space-between; gap: 40px; margin-bottom: 24px; }
     table.line-items { width: 100%; border-collapse: collapse; }
     table.line-items th, table.line-items td { padding: 10px 12px; text-align: left; }
     table.line-items th.text-right, table.line-items td.text-right { text-align: right; }
     .totals { margin-left: auto; width: 280px; margin-top: 24px; }
     .totals-row { display: flex; justify-content: space-between; padding: 8px 0; }
+    .payment-box { margin-top: 16px; margin-left: auto; width: 280px; padding: 12px; border: 1px solid #e9ecef; border-radius: 4px; line-height: 1.5; }
+    .payment-box strong { display: block; margin-bottom: 4px; color: #2c3e50; }
   </style>
 </head>
 <body>
   <header class="invoice-header">
     <h1 class="invoice-title">Facture {{invoice.number}}</h1>
-    <div><strong>Date d'émission</strong> {{formatDate invoice.issueDate}}<br><strong>Échéance</strong> {{formatDate invoice.dueDate}}</div>
+    <div class="invoice-right">
+      {{#if company.logo_url}}<div class="logo-wrap"><img src="{{company.logo_url}}" alt="{{company.name}}" /></div>{{/if}}
+      <div class="invoice-meta"><strong>Date d'émission</strong> {{formatDate invoice.issueDate}}{{#if invoice.dueDate}}<br><br><strong>Échéance</strong> {{formatDate invoice.dueDate}}{{/if}}</div>
+    </div>
   </header>
   <div class="addresses">
     <div><h3>Émetteur</h3><div>{{company.name}}</div>{{#if company.address}}<p>{{company.address}}</p>{{/if}}{{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}</div>
@@ -2935,6 +2943,7 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
     <div class="totals-row"><span>{{countryRules.vatLabel}}</span><span>{{formatNumber invoice.taxAmount}} {{invoice.currency}}</span></div>
     <div class="totals-row"><span>Total TTC</span><span>{{formatNumber invoice.total}} {{invoice.currency}}</span></div>
   </div>
+  {{#if payment.iban}}<div class="payment-box"><strong>Coordonnées bancaires (RIB)</strong><div>IBAN : {{payment.iban}}</div>{{#if payment.bic}}<div>BIC : {{payment.bic}}</div>{{/if}}</div>{{/if}}
 </body>
 </html>`;
 

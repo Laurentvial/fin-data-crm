@@ -24,13 +24,35 @@
       margin: 0 auto;
       position: relative;
     }
+    /* Zone logo sur fond blanc (au-dessus du bandeau) */
+    .top-logo {
+      padding: 14px 20px 10px;
+      display: flex;
+      justify-content: center;
+    }
+    .top-logo .logo-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      min-height: 52px;
+      min-width: 140px;
+      padding: 8px 16px;
+      border: 1px solid #d9d9d9;
+      border-radius: 8px;
+    }
+    .top-logo .logo-wrap img {
+      max-height: 44px;
+      max-width: 170px;
+      object-fit: contain;
+    }
     /* Bandeau neutre en haut */
     .header-bar {
       background: #2f2f2f;
       color: #fff;
       padding: 12px 20px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
       margin-bottom: 20px;
     }
@@ -40,38 +62,6 @@
       text-transform: uppercase;
       letter-spacing: 2px;
       color: #fff;
-    }
-    .header-bar .brand-block {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-align: right;
-    }
-    .header-bar .logo-circle {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    .header-bar .logo-circle img {
-      max-width: 40px;
-      max-height: 40px;
-      object-fit: contain;
-    }
-    .header-bar .brand-name {
-      font-size: 14px;
-      font-weight: 700;
-      color: #fff;
-      line-height: 1.2;
-    }
-    .header-bar .brand-subtitle {
-      font-size: 9px;
-      color: rgba(255,255,255,0.9);
-      text-transform: lowercase;
     }
     /* Bloc principal : Facturé à gauche, n° + date à droite */
     .main-top {
@@ -250,22 +240,17 @@
 </head>
 <body>
   <div class="page">
-    <!-- Bandeau neutre FACTURE + logo -->
+    {{#if company.logo_url}}
+    <div class="top-logo">
+      <div class="logo-wrap">
+        <img src="{{company.logo_url}}" alt="{{company.name}}" />
+      </div>
+    </div>
+    {{/if}}
+
+    <!-- Bandeau neutre FACTURE -->
     <div class="header-bar">
       <div class="facture-label">FACTURE</div>
-      <div class="brand-block">
-        {{#if company.logo_url}}
-        <div class="logo-circle">
-          <img src="{{company.logo_url}}" alt="{{company.name}}" />
-        </div>
-        {{/if}}
-        <div>
-          <div class="brand-name">{{company.name}}</div>
-          {{#if company.directeur}}
-          <div class="brand-subtitle">{{company.directeur}}</div>
-          {{/if}}
-        </div>
-      </div>
     </div>
 
     <!-- Facturé à gauche, n° + date à droite -->
@@ -299,6 +284,8 @@
     <div class="company-block">
       <div class="name">{{company.name}}</div>
       {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+      {{#if company.code_postal}}<p>{{company.code_postal}}{{#if company.ville}} {{company.ville}}{{/if}}</p>{{/if}}
+      {{#if company.ville}}{{#unless company.code_postal}}<p>{{company.ville}}</p>{{/unless}}{{/if}}
       {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
       {{#if company.vat_number}}<p>TVA intracom : {{company.vat_number}}</p>{{/if}}
       {{#if company.website}}<p><a href="{{company.website}}" style="color:#444;text-decoration:none;">{{company.website}}</a></p>{{/if}}
