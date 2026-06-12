@@ -14,19 +14,23 @@ function StatBlock({
   value,
   valueClassName,
   size = "lg",
+  hideLabel = false,
 }: {
   label: string;
   value: string;
   valueClassName?: string;
   size?: "lg" | "md";
+  hideLabel?: boolean;
 }) {
   const valueCls =
     size === "lg"
       ? "text-4xl font-semibold tabular-nums tracking-tight"
-      : "text-3xl font-semibold tabular-nums tracking-tight";
+      : "text-2xl font-semibold tabular-nums tracking-tight";
   return (
     <div>
-      <p className="mb-1 text-sm font-medium text-[var(--muted-foreground)]">{label}</p>
+      {!hideLabel && (
+        <p className="mb-1 text-sm font-medium text-[var(--muted-foreground)]">{label}</p>
+      )}
       <p className={`${valueCls} ${valueClassName ?? "text-[var(--foreground)]"}`}>{value}</p>
     </div>
   );
@@ -37,6 +41,11 @@ interface TransactionsSummaryPanelProps {
   summaryNetTotal: number;
   summaryDebitsTotal: number;
   summaryCreditsTotal: number;
+  /** Totaux sur l'ensemble des lignes filtrées, y compris celles non affichées dans la grille. */
+  allFilteredSummaryNetTotal: number;
+  allFilteredSummaryDebitsTotal: number;
+  allFilteredSummaryCreditsTotal: number;
+  allFilteredSummaryCount: number;
   /** Si true, les totaux portent sur toutes les lignes filtrées (plus de vue « uniquement aujourd’hui »). */
   filtersNarrowingView: boolean;
   selectionStats: TransactionSelectionStats | null;
@@ -44,19 +53,25 @@ interface TransactionsSummaryPanelProps {
 
 const summaryRowClass =
   "flex flex-wrap items-baseline gap-x-8 gap-y-6 sm:gap-x-10 lg:gap-x-12";
+const alignedTotalsGridClass =
+  "grid grid-cols-1 gap-y-3 sm:grid-cols-3 sm:gap-x-10 lg:gap-x-12";
 
 /** Indicateurs d’un bloc sur une ligne (wrap si besoin). À partir de `md`, vue actuelle et sélection sont côte à côte. */
 export function TransactionsSummaryPanel({
   summaryNetTotal,
   summaryDebitsTotal,
   summaryCreditsTotal,
+  allFilteredSummaryNetTotal,
+  allFilteredSummaryDebitsTotal,
+  allFilteredSummaryCreditsTotal,
+  allFilteredSummaryCount,
   filtersNarrowingView,
   selectionStats,
 }: TransactionsSummaryPanelProps) {
   return (
     <section
       data-keep-transaction-grid-selection
-      className="relative z-30 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-4 py-5 shadow-[0_6px_20px_rgba(13,148,136,0.08)] md:h-56 md:max-h-56 md:overflow-y-auto md:py-4"
+      className="relative z-30 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-4 py-4 shadow-[0_6px_20px_rgba(13,148,136,0.08)] md:h-48 md:max-h-48 md:overflow-y-auto md:py-3"
       aria-label={
         filtersNarrowingView
           ? "Totaux sur les lignes filtrées et sélection"
@@ -84,12 +99,12 @@ export function TransactionsSummaryPanel({
               <>Aujourd&apos;hui</>
             )}
           </p>
-          <p className="mb-3 text-[11px] font-normal normal-case tracking-normal text-[var(--muted-foreground)]">
-            {filtersNarrowingView
-              ? "Somme de toutes les transactions visibles dans le tableau (filtres actifs)."
-              : "Vue par défaut : uniquement les transactions à la date du jour parmi le tableau chargé. Aucun filtre actif."}
-          </p>
-          <div className={summaryRowClass}>
+          {!filtersNarrowingView && (
+            <p className="mb-3 text-[11px] font-normal normal-case tracking-normal text-[var(--muted-foreground)]">
+              Vue par défaut : uniquement les transactions à la date du jour parmi le tableau chargé. Aucun filtre actif.
+            </p>
+          )}
+          <div className={filtersNarrowingView ? alignedTotalsGridClass : summaryRowClass}>
             <StatBlock
               label={filtersNarrowingView ? "Total net" : "Total aujourd'hui"}
               value={`${formatEur(summaryNetTotal)} €`}
@@ -106,6 +121,36 @@ export function TransactionsSummaryPanel({
               valueClassName="text-[var(--success)]"
             />
           </div>
+          {filtersNarrowingView && (
+            <div className="mt-2">
+              <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                Toutes les lignes filtrées ({allFilteredSummaryCount})
+              </p>
+              <div className={alignedTotalsGridClass}>
+                <StatBlock
+                  label="Net (toutes lignes)"
+                  value={`${formatEur(allFilteredSummaryNetTotal)} €`}
+                  valueClassName="text-[var(--primary)]"
+                  size="md"
+                  hideLabel
+                />
+                <StatBlock
+                  label="Débits (toutes lignes)"
+                  value={`-${formatEur(allFilteredSummaryDebitsTotal)} €`}
+                  valueClassName="text-[var(--destructive)]"
+                  size="md"
+                  hideLabel
+                />
+                <StatBlock
+                  label="Crédits (toutes lignes)"
+                  value={`${formatEur(allFilteredSummaryCreditsTotal)} €`}
+                  valueClassName="text-[var(--success)]"
+                  size="md"
+                  hideLabel
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {selectionStats !== null && (

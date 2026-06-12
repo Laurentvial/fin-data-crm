@@ -112,6 +112,7 @@ function HomeContent() {
   const [transactionsForFilterOptions, setTransactionsForFilterOptions] = useState<Transaction[]>(
     []
   );
+  const [apiTotalBalance, setApiTotalBalance] = useState<number | null>(null);
   const [loadingBankAccounts, setLoadingBankAccounts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
@@ -284,6 +285,63 @@ function HomeContent() {
     return { summaryDebitsTotal: debits, summaryCreditsTotal: credits };
   }, [transactionsForSummaryTotals]);
 
+  const allFilteredTransactionsForSummary = useMemo(
+    () => applyClientTransactionFilters(transactionsForFilterOptions, filterValues),
+    [transactionsForFilterOptions, filterValues]
+  );
+
+  const allFilteredSummaryNetTotalFromClient = useMemo(() => {
+    return allFilteredTransactionsForSummary.reduce((sum, t) => sum + signedAmount(t), 0);
+  }, [allFilteredTransactionsForSummary]);
+
+  /**
+   * Filtres strictement équivalents entre client et API /transactions.
+   * Dans ce cas, on privilégie le total SQL (`total_balance`) pour garantir
+   * la même valeur que les cartes comptes bancaires.
+   */
+  const apiFiltersAreExact = useMemo(() => {
+    const noClientOnlyFilters =
+      filterValues.idContains.trim() === "" &&
+      filterValues.bankNameFilter === null &&
+      filterValues.accountStatusFilter === null &&
+      filterValues.companyFilter === null &&
+      filterValues.amountMin.trim() === "" &&
+      filterValues.amountMax.trim() === "" &&
+      filterValues.processedByFilter === null &&
+      filterValues.fournisseurFilter === null &&
+      filterValues.clientFilter === null &&
+      filterValues.spendingCategoryFilter === null &&
+      filterValues.createdAtFrom.trim() === "" &&
+      filterValues.createdAtTo.trim() === "" &&
+      filterValues.etatFilter === null;
+    if (!noClientOnlyFilters) return false;
+    if (filterValues.bankFilter.mode === "include" && filterValues.bankFilter.ids.length > 1) return false;
+    if (filterValues.typeFilter.mode === "include" && filterValues.typeFilter.types.length > 1) return false;
+    return true;
+  }, [filterValues]);
+
+  const allFilteredSummaryNetTotal = useMemo(() => {
+    if (apiFiltersAreExact && apiTotalBalance != null && Number.isFinite(apiTotalBalance)) {
+      return apiTotalBalance;
+    }
+    return allFilteredSummaryNetTotalFromClient;
+  }, [apiFiltersAreExact, apiTotalBalance, allFilteredSummaryNetTotalFromClient]);
+
+  const { allFilteredSummaryDebitsTotal, allFilteredSummaryCreditsTotal } = useMemo(() => {
+    let debits = 0;
+    let credits = 0;
+    for (const t of allFilteredTransactionsForSummary) {
+      const num = Number(t.amount);
+      if (Number.isNaN(num)) continue;
+      if (t.type === "DEBIT") debits += num;
+      else if (isCreditLikeType(t.type)) credits += num;
+    }
+    return {
+      allFilteredSummaryDebitsTotal: debits,
+      allFilteredSummaryCreditsTotal: credits,
+    };
+  }, [allFilteredTransactionsForSummary]);
+
   const fetchBankAccounts = useCallback(async () => {
     setLoadingBankAccounts(true);
     try {
@@ -312,6 +370,7 @@ function HomeContent() {
     const epoch = transactionsListEpochRef.current;
     setLoadingTransactions(true);
     setHasMoreTransactions(false);
+    setApiTotalBalance(null);
     try {
       const api = filtersToApiParams(filterValues);
       const params = new URLSearchParams();
@@ -328,8 +387,17 @@ function HomeContent() {
       if (!res.ok) throw new Error("Failed to fetch transactions");
       const data = await res.json();
       const txns = Array.isArray(data) ? data : data.transactions ?? [];
+      const totalBalanceRaw =
+        data != null && typeof data === "object" && "total_balance" in data
+          ? Number((data as { total_balance?: number | string }).total_balance)
+          : Number.NaN;
       if (transactionsListEpochRef.current !== epoch) return;
       setTransactions(txns);
+      if (!Number.isNaN(totalBalanceRaw) && Number.isFinite(totalBalanceRaw)) {
+        setApiTotalBalance(totalBalanceRaw);
+      } else {
+        setApiTotalBalance(null);
+      }
       const hasMore =
         typeof data.has_more === "boolean" ? data.has_more : txns.length >= TRANSACTION_PAGE_SIZE;
       setHasMoreTransactions(hasMore);
@@ -1051,6 +1119,10 @@ function HomeContent() {
         summaryNetTotal={summaryNetTotal}
         summaryDebitsTotal={summaryDebitsTotal}
         summaryCreditsTotal={summaryCreditsTotal}
+        allFilteredSummaryNetTotal={allFilteredSummaryNetTotal}
+        allFilteredSummaryDebitsTotal={allFilteredSummaryDebitsTotal}
+        allFilteredSummaryCreditsTotal={allFilteredSummaryCreditsTotal}
+        allFilteredSummaryCount={allFilteredTransactionsForSummary.length}
         filtersNarrowingView={filtersNarrowingView}
         selectionStats={selectionStats}
       />

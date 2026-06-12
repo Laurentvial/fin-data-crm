@@ -154,6 +154,90 @@ function balanceSliderStepFromSpan(span: number): number {
   return 0.01;
 }
 
+/** Saisie jj/mm/aaaa -> yyyy-mm-dd ; renvoie "" si vide, null si invalide. */
+function parseFrDateToIsoOrNull(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return "";
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+
+function formatIsoDateToFr(iso: string): string {
+  const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+function CreatedDateInput({
+  value,
+  onChange,
+  ariaLabel,
+  inputClassName,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  ariaLabel: string;
+  inputClassName: string;
+}) {
+  const pickerRef = useRef<HTMLInputElement | null>(null);
+  const isoValue = useMemo(() => {
+    const parsed = parseFrDateToIsoOrNull(value);
+    return parsed && parsed !== "" ? parsed : "";
+  }, [value]);
+
+  const openPicker = useCallback(() => {
+    const input = pickerRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === "function") {
+      input.showPicker();
+      return;
+    }
+    input.focus();
+    input.click();
+  }, []);
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="jj/mm/aaaa"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputClassName}
+        aria-label={ariaLabel}
+      />
+      <button
+        type="button"
+        onClick={openPicker}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+        aria-label={`${ariaLabel} via calendrier`}
+        title="Ouvrir le calendrier"
+      >
+        📅
+      </button>
+      <input
+        ref={pickerRef}
+        type="date"
+        value={isoValue}
+        onChange={(e) => onChange(formatIsoDateToFr(e.target.value))}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+      />
+    </div>
+  );
+}
+
 function BalanceAmountRangeControls({
   extent,
   rangeMin,
@@ -1197,7 +1281,7 @@ function AccountsPageContent() {
   const canViewTransactions = canAccessTransactions(sessionRole);
   const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
   const [accountsFilterPanel, setAccountsFilterPanel] = useState<
-    "hub" | "banks" | "status" | "fournisseur" | "client" | "balance"
+    "hub" | "banks" | "status" | "fournisseur" | "client" | "balance" | "created"
   >("hub");
   const [selectedStatusIds, setSelectedStatusIds] = useState<string[]>(
     DEFAULT_VISIBLE_STATUS_IDS
@@ -1207,6 +1291,16 @@ function AccountsPageContent() {
   /** Multi-source ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent(texte). */
   const [selectedFournisseurKeys, setSelectedFournisseurKeys] = useState<string[]>([]);
   const [balanceBucket, setBalanceBucket] = useState<"all" | "negative" | "zero" | "positive">("all");
+  const [createdFromInput, setCreatedFromInput] = useState("");
+  const [createdToInput, setCreatedToInput] = useState("");
+  const createdFrom = useMemo(
+    () => parseFrDateToIsoOrNull(createdFromInput) ?? "",
+    [createdFromInput]
+  );
+  const createdTo = useMemo(
+    () => parseFrDateToIsoOrNull(createdToInput) ?? "",
+    [createdToInput]
+  );
 
   const balanceExtent = useMemo(() => {
     if (bankAccounts.length === 0) return { min: 0, max: 0 };
@@ -1310,6 +1404,15 @@ function AccountsPageContent() {
         return bal >= balanceRangeMin - 1e-9 && bal <= balanceRangeMax + 1e-9;
       });
     }
+    if (createdFrom || createdTo) {
+      list = list.filter((ba) => {
+        const created = (ba.created_at ?? "").slice(0, 10);
+        if (!created) return false;
+        if (createdFrom && created < createdFrom) return false;
+        if (createdTo && created > createdTo) return false;
+        return true;
+      });
+    }
     return list;
   }, [
     bankAccounts,
@@ -1322,6 +1425,8 @@ function AccountsPageContent() {
     balanceRangeFilterActive,
     balanceRangeMin,
     balanceRangeMax,
+    createdFrom,
+    createdTo,
   ]);
 
   const accountStatusSortOrder = useMemo(() => {
@@ -1547,7 +1652,9 @@ function AccountsPageContent() {
     selectedAccountTypeFilterIds.length > 0 ||
     selectedFournisseurKeys.length > 0 ||
     balanceBucket !== "all" ||
-    balanceRangeFilterActive;
+    balanceRangeFilterActive ||
+    !!createdFromInput.trim() ||
+    !!createdToInput.trim();
 
   const resetAccountFilters = useCallback(() => {
     setSelectedBankIds([]);
@@ -1557,6 +1664,8 @@ function AccountsPageContent() {
     setBalanceBucket("all");
     setBalanceRangeMin(balanceExtent.min);
     setBalanceRangeMax(balanceExtent.max);
+    setCreatedFromInput("");
+    setCreatedToInput("");
     setAccountsFilterPanel("hub");
   }, [balanceExtent.min, balanceExtent.max]);
 
@@ -2267,6 +2376,26 @@ function AccountsPageContent() {
                       </option>
                     ))}
                   </select>
+                  <div className="flex min-w-[16rem] flex-wrap items-end gap-2">
+                    <label className="flex min-w-[7.5rem] flex-1 flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                      <span>Créé du</span>
+                      <CreatedDateInput
+                        value={createdFromInput}
+                        onChange={setCreatedFromInput}
+                        aria-label="Filtrer par date de création (début)"
+                        inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      />
+                    </label>
+                    <label className="flex min-w-[7.5rem] flex-1 flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                      <span>au</span>
+                      <CreatedDateInput
+                        value={createdToInput}
+                        onChange={setCreatedToInput}
+                        aria-label="Filtrer par date de création (fin)"
+                        inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      />
+                    </label>
+                  </div>
                   {bankAccounts.length > 0 && (
                     <div className="min-w-0 basis-full">
                       <BalanceAmountRangeControls
@@ -2434,6 +2563,23 @@ function AccountsPageContent() {
                 >
                   <ChartIcon className="h-4 w-4 shrink-0 opacity-70" />
                   <span className="min-w-0 flex-1 font-medium">Solde</span>
+                  <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccountsFilterPanel((p) => (p === "created" ? "hub" : "created"))
+                  }
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    accountsFilterPanel === "created"
+                      ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  }`}
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center text-xs opacity-70">
+                    📅
+                  </span>
+                  <span className="min-w-0 flex-1 font-medium">Création</span>
                   <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
                 </button>
               </nav>
@@ -2684,6 +2830,45 @@ function AccountsPageContent() {
                       onMinChange={onBalanceRangeMinChange}
                       onMaxChange={onBalanceRangeMaxChange}
                     />
+                  </>
+                )}
+                {accountsFilterPanel === "created" && (
+                  <>
+                    <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                      Date de création
+                    </h2>
+                    <div className="space-y-3">
+                      <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                        <span>Du</span>
+                        <CreatedDateInput
+                          value={createdFromInput}
+                          onChange={setCreatedFromInput}
+                          aria-label="Date de création minimum"
+                          inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                        <span>Au</span>
+                        <CreatedDateInput
+                          value={createdToInput}
+                          onChange={setCreatedToInput}
+                          aria-label="Date de création maximum"
+                          inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                        />
+                      </label>
+                      {(createdFromInput.trim() || createdToInput.trim()) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreatedFromInput("");
+                            setCreatedToInput("");
+                          }}
+                          className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-left text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                        >
+                          Effacer la période
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
