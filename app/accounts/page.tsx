@@ -2382,7 +2382,7 @@ function AccountsPageContent() {
                       <CreatedDateInput
                         value={createdFromInput}
                         onChange={setCreatedFromInput}
-                        aria-label="Filtrer par date de création (début)"
+                        ariaLabel="Filtrer par date de création (début)"
                         inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                       />
                     </label>
@@ -2391,7 +2391,7 @@ function AccountsPageContent() {
                       <CreatedDateInput
                         value={createdToInput}
                         onChange={setCreatedToInput}
-                        aria-label="Filtrer par date de création (fin)"
+                        ariaLabel="Filtrer par date de création (fin)"
                         inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                       />
                     </label>
@@ -2843,7 +2843,7 @@ function AccountsPageContent() {
                         <CreatedDateInput
                           value={createdFromInput}
                           onChange={setCreatedFromInput}
-                          aria-label="Date de création minimum"
+                          ariaLabel="Date de création minimum"
                           inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                         />
                       </label>
@@ -2852,7 +2852,7 @@ function AccountsPageContent() {
                         <CreatedDateInput
                           value={createdToInput}
                           onChange={setCreatedToInput}
-                          aria-label="Date de création maximum"
+                          ariaLabel="Date de création maximum"
                           inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                         />
                       </label>
