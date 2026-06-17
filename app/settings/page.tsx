@@ -3289,6 +3289,9 @@ function TemplatesSection({ canManage = true }: { canManage?: boolean }) {
   const [createName, setCreateName] = useState("");
   const [createCountry, setCreateCountry] = useState("FR");
   const [createContent, setCreateContent] = useState(DEFAULT_TEMPLATE_CONTENT);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [generatePending, setGeneratePending] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<InvoiceTemplate | null>(null);
   const [editName, setEditName] = useState("");
@@ -3406,7 +3409,50 @@ function TemplatesSection({ canManage = true }: { canManage?: boolean }) {
     setCreateName("");
     setCreateCountry("FR");
     setCreateContent(DEFAULT_TEMPLATE_CONTENT);
+    setImportFile(null);
+    setGeneratePending(false);
+    setGenerateError(null);
     setError(null);
+  };
+
+  const handleGenerateFromFile = async () => {
+    if (!importFile) {
+      setGenerateError("Veuillez sélectionner un fichier image ou PDF.");
+      return;
+    }
+
+    setGeneratePending(true);
+    setGenerateError(null);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", importFile);
+      formData.append("country_code", createCountry);
+
+      const res = await fetch("/api/templates/generate-from-file", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : "Échec de la génération du template."
+        );
+      }
+
+      if (typeof data?.template_content !== "string" || !data.template_content.trim()) {
+        throw new Error("Le modèle IA n'a pas renvoyé de template exploitable.");
+      }
+
+      setCreateContent(data.template_content);
+    } catch (e) {
+      setGenerateError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setGeneratePending(false);
+    }
   };
 
   const openEdit = (t: InvoiceTemplate) => {
@@ -3581,6 +3627,38 @@ function TemplatesSection({ canManage = true }: { canManage?: boolean }) {
                   <option value="PT">Portugal</option>
                   <option value="ES">Espagne</option>
                 </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">
+                  Importer un modèle (image/PDF)
+                </label>
+                <input
+                  type="file"
+                  accept="application/pdf,image/*"
+                  onChange={(e) => {
+                    setGenerateError(null);
+                    setImportFile(e.target.files?.[0] ?? null);
+                  }}
+                  className="block w-full text-sm text-[var(--foreground)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--primary-muted)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--primary)]"
+                />
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    {importFile
+                      ? `Fichier sélectionné: ${importFile.name}`
+                      : "Importez une image ou un PDF pour générer automatiquement le HTML Handlebars."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleGenerateFromFile}
+                    disabled={generatePending || !importFile}
+                    className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+                  >
+                    {generatePending ? "Génération…" : "Générer avec IA"}
+                  </button>
+                </div>
+                {generateError && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{generateError}</p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Contenu HTML (Handlebars)</label>
