@@ -84,21 +84,6 @@
       margin: 0 0 2px 0;
       color: #444;
     }
-    .dates-row {
-      display: flex;
-      gap: 32px;
-      margin-bottom: 24px;
-      padding: 12px 16px;
-      background: #f8f9fa;
-      border-radius: 4px;
-      font-size: 11px;
-    }
-    .dates-row span {
-      color: #666;
-    }
-    .dates-row strong {
-      color: #1a1a1a;
-    }
     table.line-items {
       width: 100%;
       border-collapse: collapse;
@@ -122,10 +107,6 @@
       padding: 12px;
       border-bottom: 1px solid #e9ecef;
       vertical-align: top;
-    }
-    table.line-items tbody td .description {
-      line-height: 1.4;
-      white-space: pre-line;
     }
     table.line-items tbody tr:last-child td {
       border-bottom: 2px solid #dee2e6;
@@ -157,17 +138,6 @@
       margin-top: 8px;
       border-top: 2px solid #2c3e50;
     }
-    .footer-mentions {
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 1px solid #e9ecef;
-      font-size: 9px;
-      color: #666;
-      line-height: 1.5;
-    }
-    .footer-mentions p {
-      margin: 0 0 6px 0;
-    }
     .payment-box {
       margin-top: 16px;
       margin-left: auto;
@@ -184,12 +154,23 @@
       margin-bottom: 4px;
       color: #2c3e50;
     }
+    .footer-mentions {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e9ecef;
+      font-size: 9px;
+      color: #666;
+      line-height: 1.5;
+    }
+    .footer-mentions p {
+      margin: 0 0 6px 0;
+    }
   </style>
 </head>
 <body>
   <div class="page">
     <header class="invoice-header">
-      <h1 class="invoice-title">Facture</h1>
+      <h1 class="invoice-title">Facture {{invoice.number}}</h1>
       <div class="invoice-right">
         {{#if company.logo_url}}
         <div class="logo-wrap">
@@ -199,14 +180,6 @@
         <div class="invoice-meta">
           <strong>Date d'émission</strong>
           {{formatDate invoice.issueDate}}
-          <br><br>
-          <strong>N° facture</strong>
-          {{invoice.number}}
-          {{#if invoice.dueDate}}
-          <br><br>
-          <strong>Échéance</strong>
-          {{formatDate invoice.dueDate}}
-          {{/if}}
         </div>
       </div>
     </header>
@@ -245,7 +218,7 @@
       <tbody>
         {{#each lineItems}}
         <tr>
-          <td><div class="description">{{this.description}}</div></td>
+          <td>{{this.description}}</td>
           <td class="text-right">{{this.quantity}}</td>
           <td class="text-right">{{formatNumber this.unit_price}} {{../invoice.currency}}</td>
           <td class="text-right">{{this.vat_rate}}%</td>

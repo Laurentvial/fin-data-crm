@@ -242,6 +242,10 @@ function HomeContent() {
     () => applyClientTransactionFilters(sortedTransactions, filterValues),
     [sortedTransactions, filterValues]
   );
+  const orderedFournisseurs = useMemo(
+    () => [...fournisseurs].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [fournisseurs]
+  );
 
   const filtersNarrowingView = useMemo(
     () => hasActiveTransactionFilters(filterValues),
@@ -359,7 +363,11 @@ function HomeContent() {
       const res = await fetch("/api/fournisseurs");
       if (!res.ok) return;
       const data = await res.json();
-      setFournisseurs(Array.isArray(data) ? data : []);
+      setFournisseurs(
+        (Array.isArray(data) ? data : []).sort(
+          (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+        )
+      );
     } catch {
       /* liste optionnelle pour le tableau */
     }
@@ -1171,7 +1179,7 @@ function HomeContent() {
               onApplyFilters={handleApplyFilters}
               bankAccounts={bankAccounts}
               transactionsForFilterOptions={transactionsForFilterOptions}
-              fournisseurs={fournisseurs}
+              fournisseurs={orderedFournisseurs}
               settingsClients={settingsClients}
               onQuickCreateFournisseur={canEditData ? handleQuickCreateFournisseur : undefined}
               onQuickCreateSettingsClient={canEditData ? handleQuickCreateSettingsClient : undefined}
@@ -1216,7 +1224,7 @@ function HomeContent() {
       {canEditData && internalCreditModalTxn && (
         <InternalCreditPairModal
           credit={internalCreditModalTxn}
-          fournisseurs={fournisseurs}
+          fournisseurs={orderedFournisseurs}
           onQuickCreateFournisseur={handleQuickCreateFournisseur}
           onClose={() => setInternalCreditModalTxn(null)}
           onPaired={() => void fetchTransactions()}

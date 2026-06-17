@@ -1290,12 +1290,16 @@ export function TransactionsGrid({
   onBeginInternalCreditPair,
 }: TransactionsGridProps) {
   const scale = zoom / 100;
+  const orderedFournisseurs = useMemo(
+    () => [...fournisseurs].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [fournisseurs]
+  );
   const fournisseurRenderer = useMemo(
     () =>
-      createFournisseurRenderer(fournisseurs, {
+      createFournisseurRenderer(orderedFournisseurs, {
         onQuickCreate: onQuickCreateFournisseur,
       }),
-    [fournisseurs, onQuickCreateFournisseur]
+    [orderedFournisseurs, onQuickCreateFournisseur]
   );
   const settingsClientRenderer = useMemo(
     () =>

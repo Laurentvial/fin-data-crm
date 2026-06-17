@@ -2613,6 +2613,11 @@ function SourcesSection() {
 }
 
 function FournisseursSection() {
+  const sortFournisseurs = useCallback(
+    (list: Fournisseur[]) =>
+      [...list].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    []
+  );
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2623,6 +2628,9 @@ function FournisseursSection() {
   const [editName, setEditName] = useState("");
   const [editPending, setEditPending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [reorderPending, setReorderPending] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const fetchFournisseurs = useCallback(async () => {
     setLoading(true);
@@ -2631,13 +2639,13 @@ function FournisseursSection() {
       const res = await fetch("/api/fournisseurs");
       if (!res.ok) throw new Error("Échec du chargement");
       const data = await res.json();
-      setFournisseurs(Array.isArray(data) ? data : []);
+      setFournisseurs(sortFournisseurs(Array.isArray(data) ? data : []));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sortFournisseurs]);
 
   useEffect(() => {
     fetchFournisseurs();
@@ -2660,9 +2668,7 @@ function FournisseursSection() {
         throw new Error(data.error ?? "Échec de la création");
       }
       const created = await res.json();
-      setFournisseurs((prev) =>
-        [...prev, created].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
-      );
+      setFournisseurs((prev) => sortFournisseurs([...prev, created]));
       setCreateName("");
       setCreateModalOpen(false);
     } catch (e) {
@@ -2690,9 +2696,7 @@ function FournisseursSection() {
       }
       const updated = await res.json();
       setFournisseurs((prev) =>
-        prev
-          .map((f) => (f.id === editingFournisseur.id ? { ...f, ...updated } : f))
-          .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+        sortFournisseurs(prev.map((f) => (f.id === editingFournisseur.id ? { ...f, ...updated } : f)))
       );
       setEditingFournisseur(null);
       setEditName("");
@@ -2720,6 +2724,62 @@ function FournisseursSection() {
       setDeletingId(null);
     }
   };
+
+  const persistFournisseurOrder = useCallback(
+    async (nextList: Fournisseur[], prevList: Fournisseur[]) => {
+      const previousById = new Map(prevList.map((f) => [f.id, f]));
+      const updates = nextList
+        .map((f, index) => ({ id: f.id, sort_order: index }))
+        .filter((item) => previousById.get(item.id)?.sort_order !== item.sort_order);
+
+      if (updates.length === 0) return;
+      await Promise.all(
+        updates.map(async (item) => {
+          const res = await fetch(`/api/fournisseurs/${item.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sort_order: item.sort_order }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({} as { error?: string }));
+            throw new Error(data.error ?? "Échec de l'enregistrement de l'ordre des fournisseurs");
+          }
+        })
+      );
+    },
+    []
+  );
+
+  const reorderFournisseurs = useCallback(
+    async (sourceId: string, targetId: string) => {
+      if (sourceId === targetId || reorderPending) return;
+      const previous = [...fournisseurs];
+      const fromIndex = previous.findIndex((f) => f.id === sourceId);
+      const toIndex = previous.findIndex((f) => f.id === targetId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+
+      const reordered = [...previous];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+      const normalized = reordered.map((f, index) => ({ ...f, sort_order: index }));
+
+      setReorderPending(true);
+      setError(null);
+      setFournisseurs(normalized);
+      try {
+        await persistFournisseurOrder(normalized, previous);
+      } catch (e) {
+        setFournisseurs(previous);
+        setError(e instanceof Error ? e.message : "Erreur inconnue");
+        await fetchFournisseurs();
+      } finally {
+        setReorderPending(false);
+        setDraggingId(null);
+        setDragOverId(null);
+      }
+    },
+    [fetchFournisseurs, fournisseurs, persistFournisseurOrder, reorderPending]
+  );
 
   if (loading) {
     return (
@@ -2757,6 +2817,9 @@ function FournisseursSection() {
           Ajouter un fournisseur
         </button>
       </div>
+      <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+        Glissez-déposez une ligne pour modifier l&apos;ordre d&apos;affichage des fournisseurs.
+      </p>
 
       <div>
         <div className="rounded-lg border border-[var(--border)] overflow-hidden">
@@ -2776,7 +2839,34 @@ function FournisseursSection() {
                 </tr>
               ) : (
                 fournisseurs.map((f) => (
-                  <tr key={f.id} className="border-t border-[var(--border)]">
+                  <tr
+                    key={f.id}
+                    draggable={!reorderPending}
+                    onDragStart={() => {
+                      setDraggingId(f.id);
+                      setDragOverId(null);
+                      setError(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (!draggingId || draggingId === f.id) return;
+                      setDragOverId(f.id);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (!draggingId || draggingId === f.id) return;
+                      void reorderFournisseurs(draggingId, f.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDragOverId(null);
+                    }}
+                    className={`border-t border-[var(--border)] ${
+                      draggingId === f.id ? "opacity-60" : ""
+                    } ${dragOverId === f.id ? "bg-[var(--primary-muted)]/40" : ""} ${
+                      reorderPending ? "cursor-progress" : "cursor-move"
+                    }`}
+                  >
                     <td className="px-4 py-2 text-[var(--foreground)]">{f.name}</td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
@@ -2787,6 +2877,7 @@ function FournisseursSection() {
                             setEditName(f.name);
                             setError(null);
                           }}
+                          disabled={reorderPending}
                           className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
                         >
                           Modifier
@@ -2794,7 +2885,7 @@ function FournisseursSection() {
                         <button
                           type="button"
                           onClick={() => handleDelete(f)}
-                          disabled={deletingId === f.id}
+                          disabled={deletingId === f.id || reorderPending}
                           className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
                         >
                           {deletingId === f.id ? "…" : "Supprimer"}
@@ -2906,48 +2997,291 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
   <title>Facture {{invoice.number}}</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; }
-    .invoice-header { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #2c3e50; align-items: flex-start; }
-    .invoice-title { font-size: 24px; font-weight: 700; color: #2c3e50; margin: 0; }
-    .invoice-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-    .logo-wrap img { max-height: 54px; max-width: 180px; object-fit: contain; }
-    .invoice-meta { text-align: right; }
-    .addresses { display: flex; justify-content: space-between; gap: 40px; margin-bottom: 24px; }
-    table.line-items { width: 100%; border-collapse: collapse; }
-    table.line-items th, table.line-items td { padding: 10px 12px; text-align: left; }
-    table.line-items th.text-right, table.line-items td.text-right { text-align: right; }
-    .totals { margin-left: auto; width: 280px; margin-top: 24px; }
-    .totals-row { display: flex; justify-content: space-between; padding: 8px 0; }
-    .payment-box { margin-top: 16px; margin-left: auto; width: 280px; padding: 12px; border: 1px solid #e9ecef; border-radius: 4px; line-height: 1.5; }
-    .payment-box strong { display: block; margin-bottom: 4px; color: #2c3e50; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      margin: 0;
+      padding: 0;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .page {
+      max-width: 100%;
+      margin: 0;
+    }
+    .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #2c3e50;
+    }
+    .invoice-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #2c3e50;
+      margin: 0;
+      letter-spacing: -0.5px;
+    }
+    .invoice-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+    .logo-wrap img {
+      max-height: 54px;
+      max-width: 180px;
+      object-fit: contain;
+    }
+    .invoice-meta {
+      text-align: right;
+      font-size: 11px;
+      color: #555;
+    }
+    .invoice-meta strong {
+      display: block;
+      font-size: 14px;
+      color: #2c3e50;
+      margin-bottom: 4px;
+    }
+    .addresses {
+      display: flex;
+      justify-content: space-between;
+      gap: 40px;
+      margin-bottom: 28px;
+    }
+    .address-block {
+      flex: 1;
+      min-width: 0;
+    }
+    .address-block h3 {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      margin: 0 0 8px 0;
+    }
+    .address-block .name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+    }
+    .address-block p {
+      margin: 0 0 2px 0;
+      color: #444;
+    }
+    .dates-row {
+      display: flex;
+      gap: 32px;
+      margin-bottom: 24px;
+      padding: 12px 16px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .dates-row span {
+      color: #666;
+    }
+    .dates-row strong {
+      color: #1a1a1a;
+    }
+    table.line-items {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    table.line-items thead th {
+      text-align: left;
+      padding: 10px 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555;
+      background: #f1f3f5;
+      border-bottom: 2px solid #dee2e6;
+    }
+    table.line-items thead th.text-right {
+      text-align: right;
+    }
+    table.line-items tbody td {
+      padding: 12px;
+      border-bottom: 1px solid #e9ecef;
+      vertical-align: top;
+    }
+    table.line-items tbody td .description {
+      line-height: 1.4;
+      white-space: pre-line;
+    }
+    table.line-items tbody tr:last-child td {
+      border-bottom: 2px solid #dee2e6;
+    }
+    table.line-items td.text-right {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .totals {
+      margin-left: auto;
+      width: 280px;
+      margin-bottom: 32px;
+    }
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      font-size: 12px;
+    }
+    .totals-row.subtotal,
+    .totals-row.tax {
+      color: #555;
+    }
+    .totals-row.total {
+      font-size: 16px;
+      font-weight: 700;
+      color: #2c3e50;
+      padding-top: 12px;
+      margin-top: 8px;
+      border-top: 2px solid #2c3e50;
+    }
+    .footer-mentions {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e9ecef;
+      font-size: 9px;
+      color: #666;
+      line-height: 1.5;
+    }
+    .footer-mentions p {
+      margin: 0 0 6px 0;
+    }
+    .payment-box {
+      margin-top: 16px;
+      margin-left: auto;
+      width: 280px;
+      padding: 12px;
+      border: 1px solid #e9ecef;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #333;
+    }
+    .payment-box strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #2c3e50;
+    }
   </style>
 </head>
 <body>
-  <header class="invoice-header">
-    <h1 class="invoice-title">Facture {{invoice.number}}</h1>
-    <div class="invoice-right">
-      {{#if company.logo_url}}<div class="logo-wrap"><img src="{{company.logo_url}}" alt="{{company.name}}" /></div>{{/if}}
-      <div class="invoice-meta"><strong>Date d'émission</strong> {{formatDate invoice.issueDate}}{{#if invoice.dueDate}}<br><br><strong>Échéance</strong> {{formatDate invoice.dueDate}}{{/if}}</div>
-    </div>
-  </header>
-  <div class="addresses">
-    <div><h3>Émetteur</h3><div>{{company.name}}</div>{{#if company.address}}<p>{{company.address}}</p>{{/if}}{{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}</div>
-    <div><h3>Client</h3><div>{{customer.name}}</div>{{#if customer.address}}<p>{{customer.address}}</p>{{/if}}</div>
-  </div>
-  <table class="line-items">
-    <thead><tr><th>Description</th><th class="text-right">Qté</th><th class="text-right">Prix unit.</th><th class="text-right">{{countryRules.vatLabel}}</th><th class="text-right">Montant</th></tr></thead>
-    <tbody>{{#each lineItems}}<tr><td>{{this.description}}</td><td class="text-right">{{this.quantity}}</td><td class="text-right">{{formatNumber this.unit_price}} {{../invoice.currency}}</td><td class="text-right">{{this.vat_rate}}%</td><td class="text-right">{{formatNumber this.amount}} {{../invoice.currency}}</td></tr>{{/each}}</tbody>
-  </table>
-  <div class="totals">
-    <div class="totals-row"><span>Sous-total HT</span><span>{{formatNumber invoice.subtotal}} {{invoice.currency}}</span></div>
-    <div class="totals-row"><span>{{countryRules.vatLabel}}</span><span>{{formatNumber invoice.taxAmount}} {{invoice.currency}}</span></div>
-    <div class="totals-row"><span>Total TTC</span><span>{{formatNumber invoice.total}} {{invoice.currency}}</span></div>
-  </div>
-  {{#if payment.iban}}<div class="payment-box"><strong>Coordonnées bancaires (RIB)</strong><div>IBAN : {{payment.iban}}</div>{{#if payment.bic}}<div>BIC : {{payment.bic}}</div>{{/if}}</div>{{/if}}
-</body>
-</html>`;
+  <div class="page">
+    <header class="invoice-header">
+      <h1 class="invoice-title">Facture</h1>
+      <div class="invoice-right">
+        {{#if company.logo_url}}
+        <div class="logo-wrap">
+          <img src="{{company.logo_url}}" alt="{{company.name}}" />
+        </div>
+        {{/if}}
+        <div class="invoice-meta">
+          <strong>Date d'émission</strong>
+          {{formatDate invoice.issueDate}}
+          <br><br>
+          <strong>N° facture</strong>
+          {{invoice.number}}
+          {{#if invoice.dueDate}}
+          <br><br>
+          <strong>Échéance</strong>
+          {{formatDate invoice.dueDate}}
+          {{/if}}
+        </div>
+      </div>
+    </header>
 
-function TemplatesSection() {
+    <div class="addresses">
+      <div class="address-block">
+        <h3>Émetteur</h3>
+        <div class="name">{{company.name}}</div>
+        {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+        {{#if company.code_postal}}<p>{{company.code_postal}}{{#if company.ville}} {{company.ville}}{{/if}}</p>{{/if}}
+        {{#if company.ville}}{{#unless company.code_postal}}<p>{{company.ville}}</p>{{/unless}}{{/if}}
+        {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
+        {{#if company.vat_number}}<p>{{countryRules.vatLabel}} : {{company.vat_number}}</p>{{/if}}
+      </div>
+      <div class="address-block">
+        <h3>Client</h3>
+        <div class="name">{{customer.name}}</div>
+        {{#if customer.address}}<p>{{customer.address}}</p>{{/if}}
+        {{#if customer.code_postal}}<p>{{customer.code_postal}}{{#if customer.ville}} {{customer.ville}}{{/if}}</p>{{/if}}
+        {{#if customer.ville}}{{#unless customer.code_postal}}<p>{{customer.ville}}</p>{{/unless}}{{/if}}
+        {{#if customer.siret}}<p>SIRET : {{customer.siret}}</p>{{/if}}
+        {{#if customer.vat}}<p>{{countryRules.vatLabel}} client : {{customer.vat}}</p>{{/if}}
+      </div>
+    </div>
+
+    <table class="line-items">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Qté</th>
+          <th class="text-right">Prix unitaire</th>
+          <th class="text-right">{{countryRules.vatLabel}}</th>
+          <th class="text-right">Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each lineItems}}
+        <tr>
+          <td><div class="description">{{this.description}}</div></td>
+          <td class="text-right">{{this.quantity}}</td>
+          <td class="text-right">{{formatNumber this.unit_price}} {{../invoice.currency}}</td>
+          <td class="text-right">{{this.vat_rate}}%</td>
+          <td class="text-right">{{formatNumber this.amount}} {{../invoice.currency}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-row subtotal">
+        <span>Sous-total HT</span>
+        <span>{{formatNumber invoice.subtotal}} {{invoice.currency}}</span>
+      </div>
+      <div class="totals-row tax">
+        <span>{{countryRules.vatLabel}}</span>
+        <span>{{formatNumber invoice.taxAmount}} {{invoice.currency}}</span>
+      </div>
+      <div class="totals-row total">
+        <span>Total TTC</span>
+        <span>{{formatNumber invoice.total}} {{invoice.currency}}</span>
+      </div>
+    </div>
+
+    {{#if payment.iban}}
+    <div class="payment-box">
+      <strong>Coordonnées bancaires (RIB)</strong>
+      <div>IBAN : {{payment.iban}}</div>
+      {{#if payment.bic}}<div>BIC : {{payment.bic}}</div>{{/if}}
+    </div>
+    {{/if}}
+
+    {{#if countryRules.requiredMentions}}
+    <div class="footer-mentions">
+      {{#each countryRules.requiredMentions}}
+      <p>{{this}}</p>
+      {{/each}}
+    </div>
+    {{/if}}
+  </div>
+</body>
+</html>
+`;
+
+function TemplatesSection({ canManage = true }: { canManage?: boolean }) {
   const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -3123,7 +3457,9 @@ function TemplatesSection() {
     <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
       <h2 className="section-header mb-4 text-lg font-medium">Templates de facture</h2>
       <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-        Créez et gérez les templates de facture. Chaque société pourra choisir le template à utiliser dans sa page.
+        {canManage
+          ? "Créez et gérez les templates de facture. Chaque société pourra choisir le template à utiliser dans sa page."
+          : "Consultez les templates de facture disponibles et prévisualisez leur rendu PDF."}
       </p>
 
       {error && (
@@ -3134,13 +3470,15 @@ function TemplatesSection() {
 
       <div className="mb-6 flex items-center justify-between">
         <h3 className="subsection-header text-sm font-medium">Templates existants</h3>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
-        >
-          Créer un template
-        </button>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90"
+          >
+            Créer un template
+          </button>
+        ) : null}
       </div>
 
       <div className="rounded-lg border border-[var(--border)] overflow-hidden">
@@ -3150,7 +3488,9 @@ function TemplatesSection() {
               <th className="table-header px-4 py-2 text-left font-medium">Nom</th>
               <th className="table-header px-4 py-2 text-left font-medium">Pays</th>
               <th className="table-header px-4 py-2 text-left font-medium">Par défaut</th>
-              <th className="table-header px-4 py-2 text-right font-medium">Actions</th>
+              <th className="table-header px-4 py-2 text-right font-medium">
+                {canManage ? "Actions" : "Prévisualisation"}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -3176,21 +3516,25 @@ function TemplatesSection() {
                       >
                         {previewPending ? "…" : "Prévisualiser"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(t)}
-                        className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
-                      >
-                        Modifier
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(t)}
-                        disabled={deletingId === t.id}
-                        className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
-                      >
-                        {deletingId === t.id ? "…" : "Supprimer"}
-                      </button>
+                      {canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(t)}
+                            className="rounded px-2 py-1 text-sm text-[var(--primary)] hover:bg-[var(--primary-muted)]"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(t)}
+                            disabled={deletingId === t.id}
+                            className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
+                          >
+                            {deletingId === t.id ? "…" : "Supprimer"}
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -3200,7 +3544,7 @@ function TemplatesSection() {
         </table>
       </div>
 
-      {createModalOpen && (
+      {canManage && createModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={(e) => modalBackdropClose(e, () => setCreateModalOpen(false))}
@@ -3259,7 +3603,7 @@ function TemplatesSection() {
         </div>
       )}
 
-      {editingTemplate && (
+      {canManage && editingTemplate && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={(e) => modalBackdropClose(e, () => setEditingTemplate(null))}
@@ -3334,8 +3678,23 @@ export default function SettingsPage() {
   const [editNewPassword, setEditNewPassword] = useState("");
   const [editConfirmPassword, setEditConfirmPassword] = useState("");
   const [editSavePending, setEditSavePending] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    users: true,
+    myTelegram: false,
+    banks: false,
+    backups: false,
+    clients: false,
+    statuses: false,
+    sources: false,
+    fournisseurs: false,
+    mtproto: false,
+    templates: false,
+  });
 
   const canAccessSettingsPage = canMutate(sessionRole);
+  const toggleSection = useCallback((sectionKey: string) => {
+    setOpenSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }, []);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -3593,163 +3952,180 @@ export default function SettingsPage() {
 
         {/* Section Utilisateurs - visible uniquement aux admins */}
         {!usersLoading && isAdmin && (
-          <section className="mb-8">
-            <h2 className="section-header mb-4 text-lg font-medium">
-              Utilisateurs
-            </h2>
-            <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-              Créez des comptes pour les utilisateurs. Les nouveaux comptes ne
-              peuvent être créés que depuis cette page par un administrateur.
-            </p>
-            <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-              La colonne « Super-admin » donne accès à la page Rapports (statistiques financières agrégées).
-              Pour retirer votre propre accès super-admin, un autre administrateur doit décocher la case.
-            </p>
-
-            <form
-              onSubmit={handleCreateUser}
-              className="mb-8 flex flex-wrap gap-4 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4"
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("users")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.users)}
             >
-              <div className="flex-1 min-w-[200px]">
-                <label
-                  htmlFor="name"
-                  className="mb-1 block text-sm font-medium text-[var(--foreground)]"
-                >
-                  Nom
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  required
-                  placeholder="Jean Dupont"
-                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="flex-1 min-w-[200px]">
-                <label
-                  htmlFor="email"
-                  className="mb-1 block text-sm font-medium text-[var(--foreground)]"
-                >
-                  Email
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  placeholder="jean@exemple.com"
-                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="flex-1 min-w-[200px]">
-                <label
-                  htmlFor="password"
-                  className="mb-1 block text-sm font-medium text-[var(--foreground)]"
-                >
-                  Mot de passe
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  minLength={8}
-                  placeholder="••••••••"
-                  className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  disabled={createPending}
-                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
-                >
-                  {createPending ? "Création..." : "Créer le compte"}
-                </button>
-              </div>
-            </form>
-
-            {(createError || actionError) && (
-              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-                {createError ?? actionError}
-              </div>
-            )}
-
-            <div>
-              <h3 className="subsection-header mb-2 text-sm font-medium">
-                Utilisateurs existants
-              </h3>
-              <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--card)]">
-                <table className="w-full text-sm">
-                  <thead className="bg-[var(--primary-muted)]">
-                    <tr>
-                      <th className="table-header px-4 py-2 text-left font-medium">
-                        Nom
-                      </th>
-                      <th className="table-header px-4 py-2 text-left font-medium">
-                        Email
-                      </th>
-                      <th className="table-header px-4 py-2 text-left font-medium">
-                        Rôle
-                      </th>
-                      <th className="table-header px-4 py-2 text-center font-medium">
-                        Super-admin
-                      </th>
-                      <th className="table-header px-4 py-2 text-left font-medium">
-                        Telegram
-                      </th>
-                      <th className="table-header px-4 py-2 text-right font-medium">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-[var(--card)]">
-                    {users.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-4 py-6 text-center text-[var(--muted-foreground)]"
-                        >
-                          Aucun utilisateur
-                        </td>
-                      </tr>
-                    ) : (
-                      users.map((u) => (
-                        <UserRow
-                          key={u.id}
-                          user={u}
-                          currentUserId={currentUserId}
-                          onDelete={handleDelete}
-                          onSetRole={handleSetRole}
-                          onEdit={openEdit}
-                          isSuperAdmin={superAdminIds.includes(u.id)}
-                          superAdminPending={superAdminSavingId === u.id}
-                          onToggleSuperAdmin={handleToggleSuperAdmin}
-                        />
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {editingUser && (
-              <EditUserModal
-                user={editingUser}
-                currentUserId={currentUserId}
-                name={editName}
-                email={editEmail}
-                newPassword={editNewPassword}
-                confirmPassword={editConfirmPassword}
-                onNameChange={setEditName}
-                onEmailChange={setEditEmail}
-                onNewPasswordChange={setEditNewPassword}
-                onConfirmPasswordChange={setEditConfirmPassword}
-                onSave={handleUpdateUser}
-                onClose={closeEditUserModal}
-                savePending={editSavePending}
+              <h2 className="section-header text-lg font-medium">Utilisateurs</h2>
+              <ChevronDownIcon
+                className={`transition-transform ${openSections.users ? "rotate-180" : ""}`}
               />
+            </button>
+            {openSections.users && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <section className="mb-8">
+                  <h2 className="section-header mb-4 text-lg font-medium">
+                    Utilisateurs
+                  </h2>
+                  <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+                    Créez des comptes pour les utilisateurs. Les nouveaux comptes ne
+                    peuvent être créés que depuis cette page par un administrateur.
+                  </p>
+                  <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+                    La colonne « Super-admin » donne accès à la page Rapports (statistiques financières agrégées).
+                    Pour retirer votre propre accès super-admin, un autre administrateur doit décocher la case.
+                  </p>
+
+                  <form
+                    onSubmit={handleCreateUser}
+                    className="mb-8 flex flex-wrap gap-4 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4"
+                  >
+                    <div className="flex-1 min-w-[200px]">
+                      <label
+                        htmlFor="name"
+                        className="mb-1 block text-sm font-medium text-[var(--foreground)]"
+                      >
+                        Nom
+                      </label>
+                      <input
+                        id="name"
+                        name="name"
+                        type="text"
+                        required
+                        placeholder="Jean Dupont"
+                        className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label
+                        htmlFor="email"
+                        className="mb-1 block text-sm font-medium text-[var(--foreground)]"
+                      >
+                        Email
+                      </label>
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        required
+                        placeholder="jean@exemple.com"
+                        className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label
+                        htmlFor="password"
+                        className="mb-1 block text-sm font-medium text-[var(--foreground)]"
+                      >
+                        Mot de passe
+                      </label>
+                      <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        required
+                        minLength={8}
+                        placeholder="••••••••"
+                        className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        disabled={createPending}
+                        className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                      >
+                        {createPending ? "Création..." : "Créer le compte"}
+                      </button>
+                    </div>
+                  </form>
+
+                  {(createError || actionError) && (
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                      {createError ?? actionError}
+                    </div>
+                  )}
+
+                  <div>
+                    <h3 className="subsection-header mb-2 text-sm font-medium">
+                      Utilisateurs existants
+                    </h3>
+                    <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--card)]">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--primary-muted)]">
+                          <tr>
+                            <th className="table-header px-4 py-2 text-left font-medium">
+                              Nom
+                            </th>
+                            <th className="table-header px-4 py-2 text-left font-medium">
+                              Email
+                            </th>
+                            <th className="table-header px-4 py-2 text-left font-medium">
+                              Rôle
+                            </th>
+                            <th className="table-header px-4 py-2 text-center font-medium">
+                              Super-admin
+                            </th>
+                            <th className="table-header px-4 py-2 text-left font-medium">
+                              Telegram
+                            </th>
+                            <th className="table-header px-4 py-2 text-right font-medium">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-[var(--card)]">
+                          {users.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={6}
+                                className="px-4 py-6 text-center text-[var(--muted-foreground)]"
+                              >
+                                Aucun utilisateur
+                              </td>
+                            </tr>
+                          ) : (
+                            users.map((u) => (
+                              <UserRow
+                                key={u.id}
+                                user={u}
+                                currentUserId={currentUserId}
+                                onDelete={handleDelete}
+                                onSetRole={handleSetRole}
+                                onEdit={openEdit}
+                                isSuperAdmin={superAdminIds.includes(u.id)}
+                                superAdminPending={superAdminSavingId === u.id}
+                                onToggleSuperAdmin={handleToggleSuperAdmin}
+                              />
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {editingUser && (
+                    <EditUserModal
+                      user={editingUser}
+                      currentUserId={currentUserId}
+                      name={editName}
+                      email={editEmail}
+                      newPassword={editNewPassword}
+                      confirmPassword={editConfirmPassword}
+                      onNameChange={setEditName}
+                      onEmailChange={setEditEmail}
+                      onNewPasswordChange={setEditNewPassword}
+                      onConfirmPasswordChange={setEditConfirmPassword}
+                      onSave={handleUpdateUser}
+                      onClose={closeEditUserModal}
+                      savePending={editSavePending}
+                    />
+                  )}
+                </section>
+              </div>
             )}
           </section>
         )}
@@ -3765,34 +4141,195 @@ export default function SettingsPage() {
         )}
 
         {/* Mon Telegram - visible à tous les utilisateurs */}
-        {!usersLoading && <UserTelegramLinkSection />}
+        {!usersLoading && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("myTelegram")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.myTelegram)}
+            >
+              <h2 className="section-header text-lg font-medium">Mon Telegram</h2>
+              <ChevronDownIcon
+                className={`transition-transform ${openSections.myTelegram ? "rotate-180" : ""}`}
+              />
+            </button>
+            {openSections.myTelegram && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <UserTelegramLinkSection />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Section Banques - visible aux admins */}
-        {!usersLoading && isAdmin && <BanksSection />}
+        {!usersLoading && isAdmin && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("banks")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.banks)}
+            >
+              <h2 className="section-header text-lg font-medium">Banques</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.banks ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.banks && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <BanksSection />
+              </div>
+            )}
+          </section>
+        )}
 
-        {!usersLoading && isAdmin && <DatabaseBackupSection />}
+        {!usersLoading && isAdmin && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("backups")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.backups)}
+            >
+              <h2 className="section-header text-lg font-medium">Sauvegardes</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.backups ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.backups && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <DatabaseBackupSection />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Section Clients - visible aux admins */}
-        {!usersLoading && isAdmin && <AccountTypesSection />}
+        {!usersLoading && isAdmin && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("clients")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.clients)}
+            >
+              <h2 className="section-header text-lg font-medium">Clients</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.clients ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.clients && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <AccountTypesSection />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Section Statuts de comptes - visible aux admins */}
-        {!usersLoading && isAdmin && <AccountStatusesSection />}
+        {!usersLoading && isAdmin && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("statuses")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.statuses)}
+            >
+              <h2 className="section-header text-lg font-medium">Statuts de comptes</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.statuses ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.statuses && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <AccountStatusesSection />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Section Sources - visible aux admins */}
         {!usersLoading && isAdmin && (
-          <>
-            <SourcesSection />
-            <FournisseursSection />
-          </>
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("sources")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.sources)}
+            >
+              <h2 className="section-header text-lg font-medium">Sources</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.sources ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.sources && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <SourcesSection />
+              </div>
+            )}
+          </section>
+        )}
+        {!usersLoading && isAdmin && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("fournisseurs")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.fournisseurs)}
+            >
+              <h2 className="section-header text-lg font-medium">Fournisseurs</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.fournisseurs ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.fournisseurs && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <FournisseursSection />
+              </div>
+            )}
+          </section>
         )}
 
         {/* Session MTProto (création de groupes) — visible aux admins */}
         {!usersLoading && isAdmin && (
-          <TelegramConnectionSection />
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("mtproto")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.mtproto)}
+            >
+              <h2 className="section-header text-lg font-medium">Session Telegram (MTProto)</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.mtproto ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.mtproto && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <TelegramConnectionSection />
+              </div>
+            )}
+          </section>
         )}
 
-        {/* Section Templates de facture - visible aux admins */}
-        {!usersLoading && isAdmin && <TemplatesSection />}
+        {/* Section Templates de facture - visible à tous les rôles ayant accès à Paramètres */}
+        {!usersLoading && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("templates")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.templates)}
+            >
+              <h2 className="section-header text-lg font-medium">Templates de facture</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.templates ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.templates && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <TemplatesSection canManage={isAdmin} />
+              </div>
+            )}
+          </section>
+        )}
+
+        <style jsx global>{`
+          .settings-accordion-content > section {
+            margin-bottom: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            padding: 0 !important;
+          }
+          .settings-accordion-content > section > h2.section-header {
+            display: none;
+          }
+        `}</style>
       </main>
     </div>
   );

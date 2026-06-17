@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facture {{invoice.number}}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    @media print {
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      .page {
+        page-break-after: avoid;
+        page-break-inside: avoid;
+      }
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      color: #1f2733;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .page {
+      width: 210mm;
+      margin: 0 auto;
+      padding: 14mm 12mm 10mm;
+    }
+
+    .top-header {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .brand-logo {
+      max-width: 360px;
+      max-height: 90px;
+      object-fit: contain;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .brand-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0b2a5b;
+      letter-spacing: 0.6px;
+      margin: 0 0 4px;
+      text-transform: uppercase;
+    }
+
+    .brand-subtitle {
+      margin: 0;
+      color: #8c94a0;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+    }
+
+    .invoice-box {
+      justify-self: end;
+      width: 100%;
+      max-width: 250px;
+    }
+
+    .invoice-title {
+      margin: 0;
+      color: #0b2a5b;
+      font-size: 42px;
+      line-height: 1;
+      font-weight: 800;
+      text-transform: uppercase;
+      border-bottom: 2px solid #b89b5e;
+      padding-bottom: 8px;
+    }
+
+    .invoice-meta {
+      margin-top: 8px;
+    }
+
+    .invoice-meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #e0e3e8;
+      padding: 7px 0;
+      font-size: 11px;
+    }
+
+    .invoice-meta-row:last-child {
+      border-bottom: 0;
+    }
+
+    .invoice-meta-label {
+      color: #4f5e72;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .invoice-meta-value {
+      color: #1d2737;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .parties {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .party-card {
+      border: 1px solid #d8dde5;
+      min-height: 120px;
+    }
+
+    .party-card-header {
+      margin: 0;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 7px 12px;
+      letter-spacing: 0.4px;
+    }
+
+    .party-card-header.emitter {
+      background: #0b2a5b;
+    }
+
+    .party-card-header.client {
+      background: #b89b5e;
+    }
+
+    .party-card-body {
+      padding: 10px 12px 12px;
+      color: #2d3746;
+      font-size: 12px;
+    }
+
+    .party-name {
+      margin: 0 0 7px;
+      font-weight: 700;
+      font-size: 21px;
+      text-transform: uppercase;
+      color: #1f2c3f;
+    }
+
+    .party-card-body p {
+      margin: 0 0 4px;
+    }
+
+    .line-items {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+      border: 1px solid #d8dde5;
+    }
+
+    .line-items thead th {
+      background: #0b2a5b;
+      color: #ffffff;
+      border: 1px solid #0b2a5b;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 9px 8px;
+    }
+
+    .line-items tbody td {
+      border: 1px solid #d8dde5;
+      padding: 8px;
+      vertical-align: top;
+      font-size: 11px;
+      color: #273242;
+    }
+
+    .line-items td.numeric,
+    .line-items th.numeric {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .line-items .description {
+      white-space: pre-line;
+      line-height: 1.45;
+    }
+
+    .totals-grid {
+      width: 44%;
+      margin-left: auto;
+      border: 1px solid #d8dde5;
+      border-top: 0;
+      margin-bottom: 18px;
+    }
+
+    .totals-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid #d8dde5;
+      min-height: 34px;
+    }
+
+    .totals-row-label {
+      padding: 8px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #253346;
+    }
+
+    .totals-row-value {
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #253346;
+      white-space: nowrap;
+    }
+
+    .totals-row.total-ttc {
+      background: #0b2a5b;
+      border-top-color: #0b2a5b;
+    }
+
+    .totals-row.total-ttc .totals-row-label,
+    .totals-row.total-ttc .totals-row-value {
+      color: #ffffff;
+      font-size: 21px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 12px;
+    }
+
+    .info-box {
+      border: 1px solid #d8dde5;
+      padding: 12px 14px;
+      min-height: 64px;
+    }
+
+    .info-title {
+      margin: 0 0 6px;
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #b89b5e;
+    }
+
+    .info-box p {
+      margin: 0 0 3px;
+      color: #2d3847;
+      font-size: 11px;
+    }
+
+    .thank-you {
+      margin: 8px 0 10px;
+      text-align: center;
+    }
+
+    .thank-you-title {
+      margin: 0 0 4px;
+      color: #b89b5e;
+      font-size: 19px;
+      font-style: italic;
+      font-weight: 700;
+    }
+
+    .thank-you-text {
+      margin: 0;
+      font-size: 11px;
+      color: #374255;
+    }
+
+    .quality-strip {
+      margin-top: 10px;
+      border-top: 2px solid #b89b5e;
+      border-bottom: 2px solid #0b2a5b;
+      padding: 10px 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .quality-item {
+      text-align: center;
+    }
+
+    .quality-item-title {
+      margin: 0 0 3px;
+      color: #0b2a5b;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .quality-item-text {
+      margin: 0;
+      color: #5a6575;
+      font-size: 10px;
+    }
+
+    .footer-mentions {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid #d8dde5;
+      font-size: 9px;
+      color: #6b7482;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .footer-mentions p {
+      margin: 0 0 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top-header">
+      <div class="brand-block">
+        {{#if company.logo_url}}
+        <img class="brand-logo" src="{{company.logo_url}}" alt="{{company.name}}">
+        {{/if}}
+        {{#unless company.logo_url}}
+        <h1 class="brand-name">{{company.name}}</h1>
+        {{/unless}}
+        <p class="brand-subtitle">Batir aujourd'hui, construire demain</p>
+      </div>
+
+      <div class="invoice-box">
+        <h2 class="invoice-title">FACTURE</h2>
+        <div class="invoice-meta">
+          <div class="invoice-meta-row">
+            <span class="invoice-meta-label">No facture</span>
+            <span class="invoice-meta-value">{{invoice.number}}</span>
+          </div>
+          <div class="invoice-meta-row">
+            <span class="invoice-meta-label">Date d'emission</span>
+            <span class="invoice-meta-value">{{formatDate invoice.issueDate}}</span>
+          </div>
+          {{#if invoice.dueDate}}
+          <div class="invoice-meta-row">
+            <span class="invoice-meta-label">Echeance</span>
+            <span class="invoice-meta-value">{{formatDate invoice.dueDate}}</span>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <section class="party-card">
+        <h3 class="party-card-header emitter">Emetteur</h3>
+        <div class="party-card-body">
+          <p class="party-name">{{company.name}}</p>
+          {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
+          {{#if company.vat_number}}<p>N TVA : {{company.vat_number}}</p>{{/if}}
+          {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+          <p>
+            {{#if company.code_postal}}{{company.code_postal}}{{/if}}
+            {{#if company.ville}} {{company.ville}}{{/if}}
+          </p>
+          {{#if company.country}}<p>{{company.country}}</p>{{/if}}
+          {{#if company.capital}}<p>Capital social : {{formatNumber company.capital}} €</p>{{/if}}
+        </div>
+      </section>
+
+      <section class="party-card">
+        <h3 class="party-card-header client">Client</h3>
+        <div class="party-card-body">
+          <p class="party-name">{{customer.name}}</p>
+          {{#if customer.address}}<p>{{customer.address}}</p>{{/if}}
+          <p>
+            {{#if customer.code_postal}}{{customer.code_postal}}{{/if}}
+            {{#if customer.ville}} {{customer.ville}}{{/if}}
+          </p>
+          {{#if customer.country}}<p>{{customer.country}}</p>{{/if}}
+          {{#if customer.siret}}<p>SIRET : {{customer.siret}}</p>{{/if}}
+          {{#if customer.vat}}<p>N TVA : {{customer.vat}}</p>{{/if}}
+        </div>
+      </section>
+    </div>
+
+    <table class="line-items">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="numeric">Qte</th>
+          <th class="numeric">Unite</th>
+          <th class="numeric">P.U. HT</th>
+          <th class="numeric">TVA</th>
+          <th class="numeric">Total HT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each lineItems}}
+        <tr>
+          <td>
+            <div class="description">{{this.description}}</div>
+          </td>
+          <td class="numeric">{{this.quantity}}</td>
+          <td class="numeric">{{#if this.unit}}{{this.unit}}{{else}}Unite{{/if}}</td>
+          <td class="numeric">{{formatNumber this.unit_price}} {{#if ../invoice.isEur}}€{{else}}{{../invoice.currency}}{{/if}}</td>
+          <td class="numeric">{{this.vat_rate}} %</td>
+          <td class="numeric">{{formatNumber this.amount}} {{#if ../invoice.isEur}}€{{else}}{{../invoice.currency}}{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div class="totals-grid">
+      <div class="totals-row">
+        <div class="totals-row-label">Total HT</div>
+        <div class="totals-row-value">{{formatNumber invoice.subtotal}} {{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}}</div>
+      </div>
+      <div class="totals-row">
+        <div class="totals-row-label">TVA ({{invoice.vatRate}} %)</div>
+        <div class="totals-row-value">{{formatNumber invoice.taxAmount}} {{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}}</div>
+      </div>
+      <div class="totals-row total-ttc">
+        <div class="totals-row-label">Total TTC</div>
+        <div class="totals-row-value">{{formatNumber invoice.total}} {{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}}</div>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-box">
+        <h4 class="info-title">Conditions de paiement</h4>
+        {{#if invoice.paymentTerms}}<p>{{invoice.paymentTerms}}</p>{{/if}}
+        {{#if invoice.paymentMethod}}<p>Mode de paiement : {{invoice.paymentMethod}}</p>{{/if}}
+        {{#unless invoice.paymentTerms}}
+        <p>Paiement a reception</p>
+        {{/unless}}
+      </div>
+
+      <div class="info-box">
+        <h4 class="info-title">Informations bancaires</h4>
+        {{#if payment.iban}}<p>IBAN : {{payment.iban}}</p>{{/if}}
+        {{#if payment.bic}}<p>BIC : {{payment.bic}}</p>{{/if}}
+      </div>
+    </div>
+
+    <div class="thank-you">
+      <p class="thank-you-title">Nous vous remercions de votre confiance.</p>
+      <p class="thank-you-text">Pour toute question concernant cette facture, n'hesitez pas a nous contacter.</p>
+    </div>
+
+    <div class="quality-strip">
+      <div class="quality-item">
+        <p class="quality-item-title">Qualite</p>
+        <p class="quality-item-text">Des realisations durables et soignees</p>
+      </div>
+      <div class="quality-item">
+        <p class="quality-item-title">Expertise</p>
+        <p class="quality-item-text">Un savoir-faire reconnu a votre service</p>
+      </div>
+      <div class="quality-item">
+        <p class="quality-item-title">Engagement</p>
+        <p class="quality-item-text">Respect des delais et des normes</p>
+      </div>
+    </div>
+
+    {{#if countryRules.requiredMentions}}
+    <div class="footer-mentions">
+      {{#each countryRules.requiredMentions}}
+      <p>{{this}}</p>
+      {{/each}}
+    </div>
+    {{/if}}
+  </div>
+</body>
+</html>

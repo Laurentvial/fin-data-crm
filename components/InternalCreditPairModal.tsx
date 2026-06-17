@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Fournisseur, Transaction } from "@/lib/types";
 
 export interface InternalTransferCandidate {
@@ -51,6 +51,10 @@ export function InternalCreditPairModal({
   const [fournisseurId, setFournisseurId] = useState(credit.fournisseur_id ?? "");
   const [saving, setSaving] = useState(false);
   const [fournisseurCreateBusy, setFournisseurCreateBusy] = useState(false);
+  const orderedFournisseurs = useMemo(
+    () => [...fournisseurs].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [fournisseurs]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -202,7 +206,7 @@ export function InternalCreditPairModal({
             className="block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm disabled:opacity-60"
           >
             <option value="">—</option>
-            {fournisseurs.map((f) => (
+            {orderedFournisseurs.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}
               </option>
