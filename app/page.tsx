@@ -165,6 +165,21 @@ function HomeContent() {
   const canViewTransactions = canAccessTransactions(sessionRole);
   const canEditData = canMutate(sessionRole);
 
+  const filteredBankAccountId =
+    filterValues.bankFilter.mode === "include" && filterValues.bankFilter.ids.length === 1
+      ? filterValues.bankFilter.ids[0]
+      : null;
+
+  const filteredBankAccount = useMemo(() => {
+    if (!filteredBankAccountId) return null;
+    return bankAccounts.find((ba) => ba.id === filteredBankAccountId) ?? null;
+  }, [filteredBankAccountId, bankAccounts]);
+
+  const companyDetailLink =
+    filteredBankAccount?.company_id
+      ? { href: `/societes/${filteredBankAccount.company_id}` }
+      : null;
+
   const sortedTransactions = useMemo(() => {
     const effective = sortState ?? DEFAULT_TRANSACTION_TABLE_SORT;
     const dir = effective.direction === "asc" ? 1 : -1;
@@ -1153,6 +1168,7 @@ function HomeContent() {
         groupedInvoice={canEditData ? groupedInvoiceToolbar : undefined}
         bulkDeleteSelected={canEditData ? bulkDeleteToolbar : null}
         bulkCategoryEdit={canEditData ? bulkCategoryToolbar : null}
+        companyDetailLink={companyDetailLink}
       />
       {duplicateScanSummary && (
         <div className="mx-4 mt-3 rounded-lg border border-[var(--primary-muted-border)] bg-[var(--primary-muted)]/50 px-3 py-2 text-sm text-[var(--foreground)]">

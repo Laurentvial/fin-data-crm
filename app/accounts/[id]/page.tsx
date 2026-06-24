@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
+import { accountsListHrefFromDetailSearchParams } from "@/lib/accounts-list-url-state";
 import type { BankAccount } from "@/lib/types";
 
 function ChevronLeftIcon({ className }: { className?: string }) {
@@ -51,7 +52,15 @@ function ChartIcon({ className }: { className?: string }) {
 export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+  const backToAccountsHref = accountsListHrefFromDetailSearchParams(searchParams);
+  const editAccountsHref = useMemo(() => {
+    const list = searchParams.get("list")?.trim();
+    const params = list ? new URLSearchParams(list) : new URLSearchParams();
+    params.set("edit", id);
+    return `/accounts?${params.toString()}`;
+  }, [id, searchParams]);
 
   const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,7 +137,7 @@ export default function AccountDetailPage() {
             {error}
           </div>
           <Link
-            href="/accounts"
+            href={backToAccountsHref}
             className="inline-flex items-center gap-2 text-sm text-[var(--primary)] hover:underline"
           >
             <ChevronLeftIcon />
@@ -148,7 +157,7 @@ export default function AccountDetailPage() {
       <main className="flex-1 overflow-auto p-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <Link
-            href="/accounts"
+            href={backToAccountsHref}
             className="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           >
             <ChevronLeftIcon />
@@ -156,7 +165,7 @@ export default function AccountDetailPage() {
           </Link>
           {canEditData && (
             <Link
-              href={`/accounts?edit=${id}`}
+              href={editAccountsHref}
               className="text-sm text-[var(--primary)] hover:underline"
             >
               Modifier les informations

@@ -12,6 +12,15 @@ import { TelegramBankAccountRattrapage } from "@/components/TelegramBankAccountR
 import { IbanCopyRows } from "@/components/IbanCopyRows";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
+import {
+  buildAccountDetailHref,
+  buildAccountsListHref,
+  parseAccountsListUrlState,
+  serializeAccountsListUrlState,
+  stripReservedAccountsListParams,
+  accountsListHrefFromDetailSearchParams,
+  type AccountsListUrlState,
+} from "@/lib/accounts-list-url-state";
 import { canAccessTransactions, canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
 import { buildTelegramWelcomeDraft } from "@/lib/telegram-welcome-draft";
@@ -338,6 +347,7 @@ function AccountCard({
   onCardClick,
   canViewTransactions,
   deleting,
+  listSearch,
 }: {
   bankAccount: BankAccount;
   menuOpen: boolean;
@@ -347,6 +357,7 @@ function AccountCard({
   onCardClick?: (ba: BankAccount) => void;
   canViewTransactions: boolean;
   deleting: boolean;
+  listSearch: string;
 }) {
   const balance = bankAccount.balance ?? 0;
   const fullIbans = getFullIbans(bankAccount.ibans);
@@ -441,6 +452,7 @@ function AccountCard({
           onEdit={onEdit}
           onDelete={onDelete}
           deleting={deleting}
+          listSearch={listSearch}
         />
       )}
     </div>
@@ -454,6 +466,7 @@ function AccountCardMenu({
   onEdit,
   onDelete,
   deleting,
+  listSearch,
 }: {
   bankAccount: BankAccount;
   onClose: () => void;
@@ -461,6 +474,7 @@ function AccountCardMenu({
   onEdit?: (ba: BankAccount) => void;
   onDelete?: (ba: BankAccount) => void;
   deleting: boolean;
+  listSearch: string;
 }) {
   return (
     <>
@@ -478,7 +492,7 @@ function AccountCardMenu({
         onClick={(e) => e.stopPropagation()}
       >
         <Link
-          href={`/accounts/${bankAccount.id}`}
+          href={buildAccountDetailHref(bankAccount.id, listSearch)}
           onClick={onClose}
           className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
         >
@@ -1322,11 +1336,39 @@ function AccountsPageContent() {
 
   const [balanceRangeMin, setBalanceRangeMin] = useState(0);
   const [balanceRangeMax, setBalanceRangeMax] = useState(0);
+  const [balanceRangeFilterEnabled, setBalanceRangeFilterEnabled] = useState(false);
+  const skipUrlSyncRef = useRef(false);
+  const searchParamsKey = searchParams.toString();
 
   useEffect(() => {
+    const params = stripReservedAccountsListParams(new URLSearchParams(searchParamsKey));
+    if (params.has("balMin") || params.has("balMax")) return;
+    setBalanceRangeFilterEnabled(false);
     setBalanceRangeMin(balanceExtent.min);
     setBalanceRangeMax(balanceExtent.max);
-  }, [balanceExtent.min, balanceExtent.max]);
+  }, [balanceExtent.min, balanceExtent.max, searchParamsKey]);
+
+  useEffect(() => {
+    if (loading || bankAccounts.length === 0) return;
+    if (!balanceRangeFilterEnabled) return;
+    const tol = 0.01;
+    const isLikelyUninitializedDefault =
+      Math.abs(balanceRangeMin) < tol &&
+      Math.abs(balanceRangeMax) < tol &&
+      (balanceExtent.min < -tol || balanceExtent.max > tol);
+    if (!isLikelyUninitializedDefault) return;
+    setBalanceRangeFilterEnabled(false);
+    setBalanceRangeMin(balanceExtent.min);
+    setBalanceRangeMax(balanceExtent.max);
+  }, [
+    loading,
+    bankAccounts.length,
+    balanceRangeFilterEnabled,
+    balanceRangeMin,
+    balanceRangeMax,
+    balanceExtent.min,
+    balanceExtent.max,
+  ]);
 
   const balanceSliderStep = useMemo(
     () => balanceSliderStepFromSpan(balanceExtent.max - balanceExtent.min),
@@ -1334,7 +1376,7 @@ function AccountsPageContent() {
   );
 
   const balanceRangeFilterActive = useMemo(() => {
-    if (bankAccounts.length === 0) return false;
+    if (!balanceRangeFilterEnabled || bankAccounts.length === 0) return false;
     const span = balanceExtent.max - balanceExtent.min;
     const tol = Math.max(0.01, span * 1e-9);
     return (
@@ -1342,6 +1384,7 @@ function AccountsPageContent() {
       balanceRangeMax < balanceExtent.max - tol
     );
   }, [
+    balanceRangeFilterEnabled,
     bankAccounts.length,
     balanceExtent.min,
     balanceExtent.max,
@@ -1351,6 +1394,7 @@ function AccountsPageContent() {
 
   const onBalanceRangeMinChange = useCallback(
     (v: number) => {
+      setBalanceRangeFilterEnabled(true);
       const x = Math.min(Math.max(v, balanceExtent.min), balanceExtent.max);
       setBalanceRangeMin(x);
       setBalanceRangeMax((prev) => (x > prev ? x : prev));
@@ -1360,12 +1404,116 @@ function AccountsPageContent() {
 
   const onBalanceRangeMaxChange = useCallback(
     (v: number) => {
+      setBalanceRangeFilterEnabled(true);
       const x = Math.min(Math.max(v, balanceExtent.min), balanceExtent.max);
       setBalanceRangeMax(x);
       setBalanceRangeMin((prev) => (x < prev ? x : prev));
     },
     [balanceExtent.min, balanceExtent.max]
   );
+
+  const currentListUrlState = useMemo(
+    (): AccountsListUrlState => ({
+      search,
+      sort: accountsSortMode,
+      selectedBankIds,
+      selectedStatusIds,
+      selectedAccountTypeFilterIds,
+      selectedFournisseurKeys,
+      balanceBucket,
+      balanceRangeMin,
+      balanceRangeMax,
+      createdFromInput,
+      createdToInput,
+    }),
+    [
+      search,
+      accountsSortMode,
+      selectedBankIds,
+      selectedStatusIds,
+      selectedAccountTypeFilterIds,
+      selectedFournisseurKeys,
+      balanceBucket,
+      balanceRangeMin,
+      balanceRangeMax,
+      createdFromInput,
+      createdToInput,
+    ]
+  );
+
+  const listUrlSerializeOptions = useMemo(
+    () => ({
+      defaultStatusIds: DEFAULT_VISIBLE_STATUS_IDS,
+      balanceRangeFilterActive,
+    }),
+    [balanceRangeFilterActive]
+  );
+
+  const listSearchString = useMemo(
+    () => serializeAccountsListUrlState(currentListUrlState, listUrlSerializeOptions).toString(),
+    [currentListUrlState, listUrlSerializeOptions]
+  );
+
+  const applyAccountsListUrlState = useCallback(
+    (state: AccountsListUrlState & { balanceRangeFilterEnabled?: boolean }) => {
+      setSearch(state.search);
+      setSearchInput(state.search);
+      setAccountsSortMode(state.sort);
+      setSelectedBankIds(state.selectedBankIds);
+      setSelectedStatusIds(state.selectedStatusIds);
+      setSelectedAccountTypeFilterIds(state.selectedAccountTypeFilterIds);
+      setSelectedFournisseurKeys(state.selectedFournisseurKeys);
+      setBalanceBucket(state.balanceBucket);
+      setBalanceRangeFilterEnabled(!!state.balanceRangeFilterEnabled);
+      if (
+        state.balanceRangeFilterEnabled &&
+        state.balanceRangeMin != null &&
+        state.balanceRangeMax != null
+      ) {
+        setBalanceRangeMin(state.balanceRangeMin);
+        setBalanceRangeMax(state.balanceRangeMax);
+      }
+      setCreatedFromInput(state.createdFromInput);
+      setCreatedToInput(state.createdToInput);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const fromUrl = parseAccountsListUrlState(
+      stripReservedAccountsListParams(new URLSearchParams(searchParamsKey)),
+      { defaultStatusIds: DEFAULT_VISIBLE_STATUS_IDS }
+    );
+    skipUrlSyncRef.current = true;
+    applyAccountsListUrlState(fromUrl);
+  }, [searchParamsKey, applyAccountsListUrlState]);
+
+  useEffect(() => {
+    if (skipUrlSyncRef.current) {
+      skipUrlSyncRef.current = false;
+      return;
+    }
+    if (loading) return;
+    const params = serializeAccountsListUrlState(currentListUrlState, listUrlSerializeOptions);
+    const edit = searchParams.get("edit");
+    if (edit) params.set("edit", edit);
+    const company = searchParams.get("company");
+    if (company) params.set("company", company);
+    const nextListQs = params.toString();
+    const currentListQs = stripReservedAccountsListParams(
+      new URLSearchParams(searchParamsKey)
+    ).toString();
+    if (nextListQs === currentListQs) return;
+    skipUrlSyncRef.current = true;
+    router.replace(nextListQs ? `/accounts?${params.toString()}` : "/accounts", { scroll: false });
+  }, [
+    currentListUrlState,
+    listUrlSerializeOptions,
+    loading,
+    router,
+    searchParams,
+    searchParamsKey,
+  ]);
 
   const filteredBankAccounts = useMemo(() => {
     let list = bankAccounts;
@@ -1662,6 +1810,7 @@ function AccountsPageContent() {
     setSelectedAccountTypeFilterIds([]);
     setSelectedFournisseurKeys([]);
     setBalanceBucket("all");
+    setBalanceRangeFilterEnabled(false);
     setBalanceRangeMin(balanceExtent.min);
     setBalanceRangeMax(balanceExtent.max);
     setCreatedFromInput("");
@@ -1824,7 +1973,12 @@ function AccountsPageContent() {
     setEditingAccount(null);
     setMenuOpenId(null);
     setError(null);
-    if (editIdFromUrl) router.replace("/accounts");
+    if (editIdFromUrl) {
+      router.replace(
+        buildAccountsListHref(currentListUrlState, listUrlSerializeOptions),
+        { scroll: false }
+      );
+    }
   };
 
   const handleDelete = async (ba: BankAccount) => {
@@ -1886,8 +2040,19 @@ function AccountsPageContent() {
     if (createFromCompanyUrlRef.current === companyFromUrl) return;
     createFromCompanyUrlRef.current = companyFromUrl;
     openCreateModal(companyFromUrl);
-    router.replace("/accounts", { scroll: false });
-  }, [canEditData, companyFromUrl, loading, companies, openCreateModal, router]);
+    router.replace(buildAccountsListHref(currentListUrlState, listUrlSerializeOptions), {
+      scroll: false,
+    });
+  }, [
+    canEditData,
+    companyFromUrl,
+    loading,
+    companies,
+    openCreateModal,
+    router,
+    currentListUrlState,
+    listUrlSerializeOptions,
+  ]);
 
   const closeCreateModal = () => {
     setCreateModalOpen(false);
@@ -2463,6 +2628,7 @@ function AccountsPageContent() {
                     ? (account) => router.push(`/?bank_account_id=${encodeURIComponent(account.id)}`)
                     : undefined
                 }
+                listSearch={listSearchString}
                 deleting={deletingId === ba.id}
               />
             ))}

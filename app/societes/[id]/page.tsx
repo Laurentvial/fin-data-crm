@@ -94,6 +94,35 @@ type CopyableInfoFieldProps = {
   onCopy: (fieldKey: string, copyValue?: string | null) => void;
 };
 
+function CopyShortcutButton({
+  label,
+  copied,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  copied: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`shrink-0 rounded-md border border-[var(--border)] p-1 transition-colors ${
+        copied
+          ? "bg-[var(--primary-muted)] text-[var(--primary)]"
+          : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+      } disabled:cursor-not-allowed disabled:opacity-50`}
+      aria-label={copied ? `${label} copié` : `Copier ${label}`}
+      title={copied ? "Copié" : "Copier"}
+    >
+      <CopyIcon className="h-4 w-4" />
+    </button>
+  );
+}
+
 function CopyableInfoField({
   fieldKey,
   label,
@@ -110,20 +139,12 @@ function CopyableInfoField({
       <dt className="mb-1 text-sm font-medium uppercase text-[var(--muted-foreground)]">{label}</dt>
       <dd className="flex items-start justify-between gap-2 text-base">
         <span className="min-w-0 break-words">{value}</span>
-        <button
-          type="button"
+        <CopyShortcutButton
+          label={label}
+          copied={copied}
           disabled={!canCopy}
           onClick={() => onCopy(fieldKey, copyValue)}
-          className={`shrink-0 rounded-md border border-[var(--border)] p-1 transition-colors ${
-            copied
-              ? "bg-[var(--primary-muted)] text-[var(--primary)]"
-              : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-          } disabled:cursor-not-allowed disabled:opacity-50`}
-          aria-label={copied ? `${label} copié` : `Copier ${label}`}
-          title={copied ? "Copié" : "Copier"}
-        >
-          <CopyIcon className="h-4 w-4" />
-        </button>
+        />
       </dd>
     </div>
   );
@@ -604,7 +625,27 @@ export default function SocieteDetailPage() {
         setError("Impossible de copier cette valeur.");
       }
     },
-    []
+    [],
+  );
+
+  const handleCopyEmailPassword = useCallback(
+    async (emailId: string) => {
+      const fieldKey = `email-password-${emailId}`;
+      let password = revealedPasswords[emailId];
+      if (password === undefined) {
+        try {
+          const res = await fetch(`/api/accounts/${id}/emails/${emailId}?password=1`);
+          if (!res.ok) throw new Error("Échec");
+          const data = await res.json();
+          password = typeof data.password === "string" ? data.password : "";
+        } catch {
+          setError("Impossible de copier le mot de passe.");
+          return;
+        }
+      }
+      await handleCopyField(fieldKey, password);
+    },
+    [handleCopyField, id, revealedPasswords]
   );
 
   const DOC_TYPE_LABELS: Record<string, string> = {
@@ -1555,20 +1596,37 @@ export default function SocieteDetailPage() {
                               <StarIcon filled={!!em.is_default} />
                             </button>
                           </td>
-                          <td className="px-4 py-2">{em.email}</td>
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="min-w-0 break-all">{em.email}</span>
+                              <CopyShortcutButton
+                                label="l'email"
+                                copied={copiedFieldKey === `email-${em.id}`}
+                                disabled={!em.email.trim()}
+                                onClick={() => void handleCopyField(`email-${em.id}`, em.email)}
+                              />
+                            </div>
+                          </td>
                           <td className="px-4 py-2 font-mono text-xs">
-                            {revealedPasswords[em.id] !== undefined ? (
-                              revealedPasswords[em.id]
-                            ) : (
-                              <span className="text-[var(--muted-foreground)]">••••••••</span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleRevealPassword(em.id)}
-                              className="ml-2 text-[var(--primary)] hover:underline"
-                            >
-                              {revealedPasswords[em.id] !== undefined ? "Masquer" : "Afficher"}
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {revealedPasswords[em.id] !== undefined ? (
+                                revealedPasswords[em.id]
+                              ) : (
+                                <span className="text-[var(--muted-foreground)]">••••••••</span>
+                              )}
+                              <CopyShortcutButton
+                                label="le mot de passe"
+                                copied={copiedFieldKey === `email-password-${em.id}`}
+                                onClick={() => void handleCopyEmailPassword(em.id)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRevealPassword(em.id)}
+                                className="text-[var(--primary)] hover:underline"
+                              >
+                                {revealedPasswords[em.id] !== undefined ? "Masquer" : "Afficher"}
+                              </button>
+                            </div>
                           </td>
                           <td className="px-4 py-2 text-right">
                             {canEditData && (

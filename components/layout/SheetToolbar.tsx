@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export interface InvoiceToolbarAction {
   count: number;
   disabled: boolean;
@@ -31,6 +33,8 @@ interface SheetToolbarProps {
   /** Lance une analyse des doublons potentiels basée uniquement sur le montant. */
   onScanAmountDuplicatesClick?: () => void;
   scanAmountDuplicatesBusy?: boolean;
+  /** Lien vers la fiche société du compte filtré (transactions d'un compte associé). */
+  companyDetailLink?: { href: string; label?: string } | null;
 }
 
 function FilterIcon({ className }: { className?: string }) {
@@ -100,6 +104,7 @@ export function SheetToolbar({
   bulkCategoryEdit,
   onScanAmountDuplicatesClick,
   scanAmountDuplicatesBusy = false,
+  companyDetailLink,
 }: SheetToolbarProps) {
   return (
     <div
@@ -222,6 +227,14 @@ export function SheetToolbar({
         >
           {scanAmountDuplicatesBusy ? "Scan doublons…" : "Scanner doublons montant"}
         </button>
+      ) : null}
+      {companyDetailLink ? (
+        <Link
+          href={companyDetailLink.href}
+          className="ml-auto text-sm font-medium text-[var(--primary)] hover:underline"
+        >
+          {companyDetailLink.label ?? "Fiche société"}
+        </Link>
       ) : null}
       <div className="ml-2 h-6 w-px bg-[var(--border)]" />
       <button type="button" disabled className="rounded p-1.5 text-[var(--muted-foreground)] opacity-50" aria-label="Annuler">
