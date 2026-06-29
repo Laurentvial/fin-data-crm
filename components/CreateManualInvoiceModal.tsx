@@ -77,6 +77,7 @@ export function CreateManualInvoiceModal({
     buildInvoiceNumberPreview()
   );
   const [horsTaxes, setHorsTaxes] = useState(false);
+  const [paymentInInstallments, setPaymentInInstallments] = useState(false);
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
   const [saving, setSaving] = useState(false);
@@ -275,6 +276,7 @@ export function CreateManualInvoiceModal({
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
           customer_siret: customerSiret.trim() || undefined,
+          payment_in_installments: paymentInInstallments,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : {}),
           line_items: payloadItems,
@@ -470,6 +472,15 @@ export function CreateManualInvoiceModal({
               className="rounded border-[var(--border)]"
             />
             <span className="text-sm font-medium">Facture hors taxes</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={paymentInInstallments}
+              onChange={(e) => setPaymentInInstallments(e.target.checked)}
+              className="rounded border-[var(--border)]"
+            />
+            <span className="text-sm font-medium">PAIEMENT EN PLUSIEURS FOIS</span>
           </label>
 
           <div>

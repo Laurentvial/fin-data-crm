@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth/server";
 import { renderHandlebarsTemplate } from "@/lib/invoicing/render-template";
 import { getCountryRules } from "@/lib/invoicing/country-rules";
 import { htmlToPdfBuffer } from "@/lib/invoicing/html-to-pdf";
+import { PAYMENT_INSTALLMENTS_MENTION } from "@/lib/invoicing/payment-installments";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -55,6 +56,8 @@ const SAMPLE_DATA = {
   payment: {
     iban: "FR76 1234 5678 9012 3456 7890 123",
     bic: "BNPAFRPP",
+    installmentsEnabled: true,
+    installmentsMention: PAYMENT_INSTALLMENTS_MENTION,
   },
 };
 

@@ -7,6 +7,7 @@ import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
+import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -16,6 +17,7 @@ const DEFAULT_TEMPLATE = readFileSync(
 export interface GenerateInvoiceInput {
   /** One or more transactions covered by this invoice (same company). */
   transactionIds: string[];
+  paymentInInstallments?: boolean;
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
@@ -71,7 +73,14 @@ function pickAnchorTxn(rows: TxnRow[]): TxnRow {
 export async function generateInvoice(
   input: GenerateInvoiceInput
 ): Promise<GenerateInvoiceResult> {
-  const { customerName, customerAddress, customerVat, customerSiret, lineItems: lineItemsInput } =
+  const {
+    customerName,
+    customerAddress,
+    customerVat,
+    customerSiret,
+    paymentInInstallments = false,
+    lineItems: lineItemsInput,
+  } =
     input;
 
   const transactionIds = [
@@ -212,7 +221,14 @@ export async function generateInvoice(
   }
 
   const bankAccountId = txn.bank_account_id as string;
-  let payment: { iban?: string; bic?: string } | undefined;
+  let payment:
+    | {
+        iban?: string;
+        bic?: string;
+        installmentsEnabled?: boolean;
+        installmentsMention?: string;
+      }
+    | undefined;
   const ibanRows = await sql`
     SELECT iban, bic FROM bank_account_ibans
     WHERE bank_account_id = ${bankAccountId}::uuid
@@ -222,7 +238,12 @@ export async function generateInvoice(
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
   if (ibanRow?.iban) {
     const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
-    payment = { iban, bic: (ibanRow.bic as string) || undefined };
+    payment = {
+      iban,
+      bic: (ibanRow.bic as string) || undefined,
+      installmentsEnabled: paymentInInstallments,
+      installmentsMention: PAYMENT_INSTALLMENTS_MENTION,
+    };
   }
 
   const nameNorm = customerName.trim().toLowerCase();
@@ -321,6 +342,7 @@ export async function generateInvoice(
             INSERT INTO invoices (
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
               bank_account_id,
+              payment_in_installments,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
@@ -328,6 +350,7 @@ export async function generateInvoice(
               ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
               ${issueDate}::date, ${dueDateStr}::date,
               ${bankAccountId}::uuid,
+              ${paymentInInstallments},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},
@@ -338,12 +361,14 @@ export async function generateInvoice(
         : await sql`
             INSERT INTO invoices (
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+              payment_in_installments,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
             VALUES (
               ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
               ${issueDate}::date, ${dueDateStr}::date,
+              ${paymentInInstallments},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},

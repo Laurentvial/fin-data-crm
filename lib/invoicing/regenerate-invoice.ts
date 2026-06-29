@@ -7,6 +7,7 @@ import { renderHandlebarsTemplate } from "./render-template";
 import { uploadPdfToCloudinary } from "./cloudinary";
 import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
+import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -25,6 +26,7 @@ interface RegenerateInvoiceInput {
   customerAddress?: string;
   customerVat?: string;
   customerSiret?: string;
+  paymentInInstallments?: boolean;
   issueDate?: string;
   dueDate?: string;
   bankAccountId?: string;
@@ -36,6 +38,7 @@ type InvoiceRow = {
   company_id: string;
   transaction_id: string | null;
   bank_account_id: string | null;
+  payment_in_installments: boolean | null;
   invoice_number: unknown;
   issue_date: unknown;
   due_date: unknown;
@@ -137,7 +140,7 @@ export async function regenerateInvoice(
   const invoiceRowsReal = canPersistInvoiceBankAccount
     ? await sql`
         SELECT
-          id, company_id, transaction_id, bank_account_id, invoice_number, issue_date, due_date,
+          id, company_id, transaction_id, bank_account_id, payment_in_installments, invoice_number, issue_date, due_date,
           customer_name, customer_address, customer_vat, customer_siret, line_items,
           subtotal, tax_amount, total, currency
         FROM invoices
@@ -146,7 +149,7 @@ export async function regenerateInvoice(
       `
     : await sql`
         SELECT
-          id, company_id, transaction_id, NULL::uuid AS bank_account_id, invoice_number, issue_date, due_date,
+          id, company_id, transaction_id, NULL::uuid AS bank_account_id, payment_in_installments, invoice_number, issue_date, due_date,
           customer_name, customer_address, customer_vat, customer_siret, line_items,
           subtotal, tax_amount, total, currency
         FROM invoices
@@ -251,6 +254,10 @@ export async function regenerateInvoice(
       : typeof invoice.customer_siret === "string"
         ? invoice.customer_siret
         : "";
+  const paymentInInstallments =
+    typeof input.paymentInInstallments === "boolean"
+      ? input.paymentInInstallments
+      : Boolean(invoice.payment_in_installments);
 
   const editedLineItemsInput = Array.isArray(input.lineItems)
     ? input.lineItems
@@ -314,7 +321,14 @@ export async function regenerateInvoice(
     logoUrl = `data:${contentType};base64,${logoRow.data_base64}`;
   }
 
-  let payment: { iban?: string; bic?: string } | undefined;
+  let payment:
+    | {
+        iban?: string;
+        bic?: string;
+        installmentsEnabled?: boolean;
+        installmentsMention?: string;
+      }
+    | undefined;
   const currentBankAccountId =
     typeof invoice.bank_account_id === "string" && invoice.bank_account_id.trim()
       ? invoice.bank_account_id.trim()
@@ -367,7 +381,12 @@ export async function regenerateInvoice(
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
   if (ibanRow?.iban) {
     const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
-    payment = { iban, bic: (ibanRow.bic as string) || undefined };
+    payment = {
+      iban,
+      bic: (ibanRow.bic as string) || undefined,
+      installmentsEnabled: paymentInInstallments,
+      installmentsMention: PAYMENT_INSTALLMENTS_MENTION,
+    };
   }
 
   const templateData = {
@@ -422,6 +441,7 @@ export async function regenerateInvoice(
         customer_address = ${customerAddress || null},
         customer_vat = ${customerVat || null},
         customer_siret = ${customerSiret || null},
+        payment_in_installments = ${paymentInInstallments},
         bank_account_id = ${bankAccountIdToUse}::uuid,
         line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
         subtotal = ${subtotal},
@@ -442,6 +462,7 @@ export async function regenerateInvoice(
         customer_address = ${customerAddress || null},
         customer_vat = ${customerVat || null},
         customer_siret = ${customerSiret || null},
+        payment_in_installments = ${paymentInInstallments},
         line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
         subtotal = ${subtotal},
         tax_amount = ${taxAmount},

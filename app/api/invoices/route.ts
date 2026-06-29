@@ -88,6 +88,10 @@ export async function POST(request: NextRequest) {
       typeof (body as { due_date?: unknown })?.due_date === "string"
         ? (body as { due_date: string }).due_date.trim()
         : "";
+    const paymentInInstallments =
+      typeof (body as { payment_in_installments?: unknown })?.payment_in_installments === "boolean"
+        ? (body as { payment_in_installments: boolean }).payment_in_installments
+        : false;
     const lineItemsRaw = Array.isArray(body?.line_items) ? body.line_items : [];
 
     if ((!transactionIds || transactionIds.length === 0) && !companyId) {
@@ -187,6 +191,7 @@ export async function POST(request: NextRequest) {
           customerSiret,
           issueDate,
           dueDate: dueDate || undefined,
+          paymentInInstallments,
           lineItems,
         })
       : await generateInvoice({
@@ -195,6 +200,7 @@ export async function POST(request: NextRequest) {
           customerAddress,
           customerVat,
           customerSiret,
+          paymentInInstallments,
           lineItems,
         });
 
@@ -255,7 +261,7 @@ export async function GET(request: NextRequest) {
 
     const rows = await sql`
       SELECT
-        i.id, i.company_id, i.transaction_id, i.invoice_number, i.issue_date, i.due_date,
+        i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.invoice_number, i.issue_date, i.due_date,
         i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
         i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
         i.created_at, i.updated_at,
@@ -282,6 +288,7 @@ export async function GET(request: NextRequest) {
       company_id: r.company_id,
       company_name: r.company_name,
       transaction_id: r.transaction_id,
+      payment_in_installments: Boolean(r.payment_in_installments),
       invoice_number: r.invoice_number,
       issue_date: r.issue_date,
       due_date: r.due_date,

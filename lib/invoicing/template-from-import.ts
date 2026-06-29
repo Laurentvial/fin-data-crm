@@ -26,7 +26,7 @@ Règles strictes de sortie:
   - customer (name, address, siret, vat)
   - invoice (number, issueDate, dueDate, subtotal, taxAmount, total, currency, vatRate, isEur)
   - lineItems[] (description, quantity, unit_price, vat_rate, amount)
-  - payment (iban, bic)
+- payment (iban, bic, installmentsEnabled, installmentsMention)
   - countryRules (requiredMentions, vatLabel)
 - Pour les listes, utilise {{#each lineItems}}...{{/each}}.
 - Ajoute des blocs conditionnels pertinents avec {{#if ...}}.

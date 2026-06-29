@@ -24,6 +24,7 @@ interface EditInvoiceModalProps {
 interface InvoiceDetailsResponse {
   id: string;
   bank_account_id?: string | null;
+  payment_in_installments?: boolean | null;
   invoice_number: string;
   issue_date: string;
   due_date?: string | null;
@@ -83,6 +84,7 @@ export function EditInvoiceModal({
   const [dueDate, setDueDate] = useState<string>("");
   const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
   const [horsTaxes, setHorsTaxes] = useState(false);
+  const [paymentInInstallments, setPaymentInInstallments] = useState(false);
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
   const [loadingInitial, setLoadingInitial] = useState(true);
@@ -132,6 +134,7 @@ export function EditInvoiceModal({
         setInvoiceBankAccountId(
           typeof invoice.bank_account_id === "string" ? invoice.bank_account_id : ""
         );
+        setPaymentInInstallments(Boolean(invoice.payment_in_installments));
 
         const mappedRows =
           Array.isArray(invoice.line_items) && invoice.line_items.length > 0
@@ -326,6 +329,7 @@ export function EditInvoiceModal({
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
           customer_siret: customerSiret.trim() || undefined,
+          payment_in_installments: paymentInInstallments,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : { due_date: "" }),
           line_items: payloadItems,
@@ -525,6 +529,15 @@ export function EditInvoiceModal({
                 className="rounded border-[var(--border)]"
               />
               <span className="text-sm font-medium">Facture hors taxes</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={paymentInInstallments}
+                onChange={(e) => setPaymentInInstallments(e.target.checked)}
+                className="rounded border-[var(--border)]"
+              />
+              <span className="text-sm font-medium">PAIEMENT EN PLUSIEURS FOIS</span>
             </label>
 
             <div>

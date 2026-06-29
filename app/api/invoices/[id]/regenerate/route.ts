@@ -31,6 +31,10 @@ export async function POST(
     const hasInvoiceNumberField = Object.prototype.hasOwnProperty.call(body, "invoice_number");
     const hasDueDateField = Object.prototype.hasOwnProperty.call(body, "due_date");
     const hasBankAccountIdField = Object.prototype.hasOwnProperty.call(body, "bank_account_id");
+    const hasPaymentInInstallmentsField = Object.prototype.hasOwnProperty.call(
+      body,
+      "payment_in_installments"
+    );
     const customerName =
       typeof body.customer_name === "string" ? body.customer_name.trim() || undefined : undefined;
     const customerAddress = hasCustomerAddressField
@@ -75,6 +79,11 @@ export async function POST(
           ? ""
           : undefined
       : undefined;
+    const paymentInInstallments = hasPaymentInInstallmentsField
+      ? typeof body.payment_in_installments === "boolean"
+        ? body.payment_in_installments
+        : undefined
+      : undefined;
     const lineItems =
       Array.isArray(body.line_items) ? (body.line_items as InvoiceLineItemInput[]) : undefined;
 
@@ -87,6 +96,7 @@ export async function POST(
       issueDate,
       dueDate,
       bankAccountId,
+      paymentInInstallments,
       lineItems,
     });
     return NextResponse.json(result);

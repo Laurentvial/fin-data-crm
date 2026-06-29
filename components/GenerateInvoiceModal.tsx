@@ -36,8 +36,6 @@ export function GenerateInvoiceModal({
   onClose,
   onSuccess,
 }: GenerateInvoiceModalProps) {
-  if (transactions.length === 0) return null;
-
   const isMulti = transactions.length > 1;
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -53,6 +51,7 @@ export function GenerateInvoiceModal({
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
   const [horsTaxes, setHorsTaxes] = useState(false);
+  const [paymentInInstallments, setPaymentInInstallments] = useState(false);
   const customerListRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -131,6 +130,8 @@ export function GenerateInvoiceModal({
       }
     }, 150);
   }, []);
+
+  if (transactions.length === 0) return null;
 
   const transactionAmount =
     Math.round(
@@ -222,6 +223,7 @@ export function GenerateInvoiceModal({
           customer_address: customerAddress.trim() || undefined,
           customer_vat: customerVat.trim() || undefined,
           customer_siret: customerSiret.trim() || undefined,
+          payment_in_installments: paymentInInstallments,
           line_items: payloadItems,
         }),
       });
@@ -405,6 +407,15 @@ export function GenerateInvoiceModal({
               className="rounded border-[var(--border)]"
             />
             <span className="text-sm font-medium">Facture hors taxes</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={paymentInInstallments}
+              onChange={(e) => setPaymentInInstallments(e.target.checked)}
+              className="rounded border-[var(--border)]"
+            />
+            <span className="text-sm font-medium">PAIEMENT EN PLUSIEURS FOIS</span>
           </label>
 
           <div>

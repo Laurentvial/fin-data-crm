@@ -3266,6 +3266,7 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
       <strong>Coordonnées bancaires (RIB)</strong>
       <div>IBAN : {{payment.iban}}</div>
       {{#if payment.bic}}<div>BIC : {{payment.bic}}</div>{{/if}}
+      {{#if payment.installmentsEnabled}}<div>{{payment.installmentsMention}}</div>{{/if}}
     </div>
     {{/if}}
 

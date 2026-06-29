@@ -7,6 +7,7 @@ import { renderHandlebarsTemplate } from "./render-template";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -17,6 +18,7 @@ export interface CreateManualInvoiceInput {
   companyId: string;
   /** Optional bank account used for payment (IBAN/BIC) display in PDF. */
   bankAccountId?: string;
+  paymentInInstallments?: boolean;
   /** Optional custom invoice number. */
   invoiceNumber?: string;
   customerName: string;
@@ -81,6 +83,7 @@ export async function createManualInvoice(
   const {
     companyId,
     bankAccountId,
+    paymentInInstallments = false,
     invoiceNumber: invoiceNumberInput,
     customerName,
     customerAddress,
@@ -173,7 +176,14 @@ export async function createManualInvoice(
   }
 
   // Payment info: pick first available IBAN of any account of the company.
-  let payment: { iban?: string; bic?: string } | undefined;
+  let payment:
+    | {
+        iban?: string;
+        bic?: string;
+        installmentsEnabled?: boolean;
+        installmentsMention?: string;
+      }
+    | undefined;
   const bankAccountIdNorm =
     typeof bankAccountId === "string" && bankAccountId.trim()
       ? bankAccountId.trim()
@@ -217,7 +227,12 @@ export async function createManualInvoice(
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
   if (ibanRow?.iban) {
     const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
-    payment = { iban, bic: (ibanRow.bic as string) || undefined };
+    payment = {
+      iban,
+      bic: (ibanRow.bic as string) || undefined,
+      installmentsEnabled: paymentInInstallments,
+      installmentsMention: PAYMENT_INSTALLMENTS_MENTION,
+    };
   }
 
   const nameNorm = customerName.trim().toLowerCase();
@@ -318,6 +333,7 @@ export async function createManualInvoice(
             INSERT INTO invoices (
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
               bank_account_id,
+              payment_in_installments,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
@@ -325,6 +341,7 @@ export async function createManualInvoice(
               ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
               ${issueDate}::date, ${dueDateSql}::date,
               ${bankAccountIdNorm}::uuid,
+              ${paymentInInstallments},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},
@@ -335,12 +352,14 @@ export async function createManualInvoice(
         : await sql`
             INSERT INTO invoices (
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+              payment_in_installments,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
             VALUES (
               ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
               ${issueDate}::date, ${dueDateSql}::date,
+              ${paymentInInstallments},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},

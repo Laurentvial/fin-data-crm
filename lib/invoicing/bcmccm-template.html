@@ -459,6 +459,7 @@
         <h4 class="info-title">Informations bancaires</h4>
         {{#if payment.iban}}<p>IBAN : {{payment.iban}}</p>{{/if}}
         {{#if payment.bic}}<p>BIC : {{payment.bic}}</p>{{/if}}
+        {{#if payment.installmentsEnabled}}<p>{{payment.installmentsMention}}</p>{{/if}}
       </div>
     </div>
 
