@@ -3,6 +3,11 @@ import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
+const FIXED_DOC_TYPES = ["logo", "kbis", "statut", "pi_gerant", "pi_recto", "pi_verso", "selfie"] as const;
+const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -13,9 +18,6 @@ async function requireAuth() {
   }
   return null;
 }
-
-const FIXED_DOC_TYPES = ["logo", "kbis", "statut", "pi_gerant", "pi_recto", "pi_verso", "selfie"] as const;
-const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
 function isValidDocType(type: string): boolean {
   if (FIXED_DOC_TYPES.includes(type as (typeof FIXED_DOC_TYPES)[number])) return true;
@@ -51,10 +53,7 @@ export async function GET(
     return NextResponse.json(rows);
   } catch (error) {
     console.error("GET /api/accounts/[id]/files error:", error);
-    return NextResponse.json(
-      { error: "Échec du chargement." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Échec du chargement." }, { status: 500 });
   }
 }
 
@@ -81,10 +80,7 @@ export async function POST(
       SELECT 1 FROM companies WHERE id = ${id} LIMIT 1
     `;
     if (companyCheck.length === 0) {
-      return NextResponse.json(
-        { error: "Société introuvable." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Société introuvable." }, { status: 404 });
     }
 
     const formData = await request.formData();
@@ -92,15 +88,15 @@ export async function POST(
     const type = formData.get("type") as string | null;
 
     if (!file || !type) {
-      return NextResponse.json(
-        { error: "Fichier et type requis." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Fichier et type requis." }, { status: 400 });
     }
 
     if (!isValidDocType(type)) {
       return NextResponse.json(
-        { error: "Type invalide. Types: logo, kbis, statut, pi_gerant, pi_recto, pi_verso, selfie, autre_<nom>." },
+        {
+          error:
+            "Type invalide. Types: logo, kbis, statut, pi_gerant, pi_recto, pi_verso, selfie, autre_<nom>.",
+        },
         { status: 400 }
       );
     }
@@ -129,13 +125,9 @@ export async function POST(
       FROM company_files
       WHERE company_id = ${id} AND file_type = ${type}
     `;
-    const row = rows[0];
-    return NextResponse.json(row);
+    return NextResponse.json(rows[0]);
   } catch (error) {
     console.error("POST /api/accounts/[id]/files error:", error);
-    return NextResponse.json(
-      { error: "Échec de l'upload." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Échec de l'upload." }, { status: 500 });
   }
 }

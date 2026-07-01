@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const ALLOWED_TYPES = ["logo"] as const;
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -29,10 +31,7 @@ export async function POST(
       SELECT 1 FROM banks WHERE id = ${id}::uuid LIMIT 1
     `;
     if (bankCheck.length === 0) {
-      return NextResponse.json(
-        { error: "Banque introuvable." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Banque introuvable." }, { status: 404 });
     }
 
     const formData = await request.formData();
@@ -77,13 +76,9 @@ export async function POST(
       FROM bank_files
       WHERE bank_id = ${id}::uuid AND file_type = ${type}
     `;
-    const row = rows[0];
-    return NextResponse.json(row);
+    return NextResponse.json(rows[0]);
   } catch (error) {
     console.error("POST /api/banks/[id]/files error:", error);
-    return NextResponse.json(
-      { error: "Échec de l'upload." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Échec de l'upload." }, { status: 500 });
   }
 }

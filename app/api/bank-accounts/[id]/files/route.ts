@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const ALLOWED_TYPES = ["rib"] as const;
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -29,10 +31,7 @@ export async function POST(
       SELECT 1 FROM bank_accounts WHERE id = ${id}::uuid LIMIT 1
     `;
     if (accountCheck.length === 0) {
-      return NextResponse.json(
-        { error: "Compte bancaire introuvable." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Compte bancaire introuvable." }, { status: 404 });
     }
 
     const formData = await request.formData();
@@ -47,10 +46,7 @@ export async function POST(
     }
 
     if (!ALLOWED_TYPES.includes(type as (typeof ALLOWED_TYPES)[number])) {
-      return NextResponse.json(
-        { error: "Type invalide. Utilisez rib." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Type invalide. Utilisez rib." }, { status: 400 });
     }
 
     if (file.size > MAX_SIZE) {
@@ -77,13 +73,9 @@ export async function POST(
       FROM bank_account_files
       WHERE bank_account_id = ${id}::uuid AND file_type = ${type}
     `;
-    const row = rows[0];
-    return NextResponse.json(row);
+    return NextResponse.json(rows[0]);
   } catch (error) {
     console.error("POST /api/bank-accounts/[id]/files error:", error);
-    return NextResponse.json(
-      { error: "Échec de l'upload." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Échec de l'upload." }, { status: 500 });
   }
 }

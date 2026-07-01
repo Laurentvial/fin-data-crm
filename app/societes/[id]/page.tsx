@@ -197,6 +197,7 @@ export default function SocieteDetailPage() {
   const [createAccountPinCode, setCreateAccountPinCode] = useState("");
   const [createAccountPlafondLimit, setCreateAccountPlafondLimit] = useState("");
   const [createAccountCards, setCreateAccountCards] = useState<CardItem[]>([]);
+  const [createAccountRibFile, setCreateAccountRibFile] = useState<File | null>(null);
   const [createAccountLinkTelegramEnabled, setCreateAccountLinkTelegramEnabled] = useState(true);
   const [createAccountLinkExistingGroupId, setCreateAccountLinkExistingGroupId] = useState("");
   const [addingBankAccount, setAddingBankAccount] = useState(false);
@@ -782,6 +783,7 @@ export default function SocieteDetailPage() {
     setCreateAccountPinCode("");
     setCreateAccountPlafondLimit("");
     setCreateAccountCards([]);
+    setCreateAccountRibFile(null);
     setCreateAccountLinkTelegramEnabled(true);
     setCreateAccountLinkExistingGroupId("");
     setBankAccountError(null);
@@ -794,6 +796,7 @@ export default function SocieteDetailPage() {
     setCreateAccountModalOpen(false);
     setBankAccountError(null);
     setBankAccountInviteWarning(null);
+    setCreateAccountRibFile(null);
     createAccountLastAutoNameRef.current = null;
   };
 
@@ -941,6 +944,39 @@ export default function SocieteDetailPage() {
         telegram_setup_warning?: string;
         telegram_invite_warnings?: { telegram_id: number; name?: string; telegram_username?: string; reason: string }[];
       };
+
+      let ribUploadFailed = false;
+      if (createAccountRibFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", createAccountRibFile);
+          formData.append("type", "rib");
+          const upRes = await fetch(`/api/bank-accounts/${String(added.id)}/files`, {
+            method: "POST",
+            body: formData,
+          });
+          const upText = await upRes.text();
+          let upJson: unknown = {};
+          try {
+            upJson = upText ? JSON.parse(upText) : {};
+          } catch {
+            upJson = {};
+          }
+          if (!upRes.ok) {
+            const err = upJson as { error?: string };
+            throw new Error(err.error ?? "Échec upload RIB");
+          }
+          (added as BankAccount).has_rib = true;
+        } catch (e) {
+          ribUploadFailed = true;
+          setBankAccountError(
+            e instanceof Error
+              ? `Compte créé, mais upload RIB impossible : ${e.message}`
+              : "Compte créé, mais upload RIB impossible."
+          );
+        }
+      }
+
       setBankAccounts((prev) => [...prev, added as BankAccount].sort((a, b) => a.name.localeCompare(b.name)));
       const setupWarning =
         typeof added.telegram_setup_warning === "string"
@@ -968,7 +1004,8 @@ export default function SocieteDetailPage() {
       }
       if (inviteParts.length > 0) {
         setBankAccountInviteWarning(inviteParts.join("\n\n"));
-      } else {
+      }
+      if (inviteParts.length === 0 && !ribUploadFailed) {
         closeCreateAccountModal();
       }
     } catch (e) {
@@ -2078,6 +2115,11 @@ export default function SocieteDetailPage() {
           }}
           onCardsChange={(v) => {
             setCreateAccountCards(v);
+            if (bankAccountError) setBankAccountError(null);
+          }}
+          ribFileLabel={createAccountRibFile?.name ?? null}
+          onRibFileChange={(file) => {
+            setCreateAccountRibFile(file);
             if (bankAccountError) setBankAccountError(null);
           }}
           onBankIdChange={(v) => {
