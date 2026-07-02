@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
-import { encrypt, decrypt } from "@/lib/encryption";
+import { encrypt, decrypt, isEncryptedEmptyPassword } from "@/lib/encryption";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -44,11 +44,20 @@ export async function GET(
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
-    if (showPassword && row.password) {
-      try {
-        out.password = decrypt(row.password as string);
-      } catch {
-        out.password = null;
+    if (showPassword) {
+      const stored = row.password as string | null | undefined;
+      if (!stored) {
+        out.password = "";
+      } else {
+        try {
+          out.password = decrypt(stored);
+          if (!out.password && isEncryptedEmptyPassword(stored)) {
+            out.password_empty_encrypted = true;
+          }
+        } catch {
+          out.password = null;
+          out.password_error = "decrypt_failed";
+        }
       }
     }
     return NextResponse.json(out);
@@ -99,6 +108,13 @@ export async function PATCH(
     if (email !== undefined && !email) {
       return NextResponse.json(
         { error: "L'email ne peut pas être vide." },
+        { status: 400 }
+      );
+    }
+
+    if (password !== undefined && !password.trim()) {
+      return NextResponse.json(
+        { error: "Le mot de passe ne peut pas être vide." },
         { status: 400 }
       );
     }

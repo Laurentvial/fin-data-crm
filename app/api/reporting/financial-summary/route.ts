@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       `,
       sql`
         SELECT
-          COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')::text AS category,
+          COALESCE(NULLIF(BTRIM(t.spending_category::text), ''), 'Sans catégorie')::text AS category,
           COALESCE(SUM(t.amount::numeric), 0)::float AS amount,
           COUNT(*)::int AS count
         FROM transactions t
@@ -109,12 +109,12 @@ export async function GET(request: NextRequest) {
             (${company_id})::text IS NULL
             OR ba.company_id::text = (${company_id})::text
           )
-        GROUP BY COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')
+        GROUP BY COALESCE(NULLIF(BTRIM(t.spending_category::text), ''), 'Sans catégorie')
         ORDER BY amount DESC, category ASC
       `,
       sql`
         SELECT
-          COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')::text AS category,
+          COALESCE(NULLIF(BTRIM(t.spending_category::text), ''), 'Sans catégorie')::text AS category,
           COALESCE(SUM(t.amount::numeric), 0)::float AS amount,
           COUNT(*)::int AS count
         FROM transactions t
@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
             (${company_id})::text IS NULL
             OR ba.company_id::text = (${company_id})::text
           )
-        GROUP BY COALESCE(NULLIF(t.spending_category, ''), 'Sans catégorie')
+        GROUP BY COALESCE(NULLIF(BTRIM(t.spending_category::text), ''), 'Sans catégorie')
         ORDER BY amount DESC, category ASC
       `,
     ]);

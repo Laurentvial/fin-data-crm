@@ -207,7 +207,10 @@ export default function SocieteDetailPage() {
   const [bankAccountToDelete, setBankAccountToDelete] = useState<BankAccount | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [deletingDocType, setDeletingDocType] = useState<string | null>(null);
-  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string | null>>({});
+  const [editingEmailPasswordId, setEditingEmailPasswordId] = useState<string | null>(null);
+  const [editEmailPassword, setEditEmailPassword] = useState("");
+  const [savingEmailPassword, setSavingEmailPassword] = useState(false);
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; country_code: string; is_default: boolean }>>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [sessionRole, setSessionRole] = useState<string | null>(null);
@@ -359,6 +362,10 @@ export default function SocieteDetailPage() {
     const email = newEmail.trim();
     const password = newPassword;
     if (!email) return;
+    if (!password.trim()) {
+      setError("Le mot de passe est requis pour ajouter un email.");
+      return;
+    }
     setAddingEmail(true);
     setError(null);
     try {
@@ -533,7 +540,7 @@ export default function SocieteDetailPage() {
   };
 
   const handleRevealPassword = async (emailId: string) => {
-    if (revealedPasswords[emailId]) {
+    if (emailId in revealedPasswords) {
       setRevealedPasswords((p) => {
         const next = { ...p };
         delete next[emailId];
@@ -545,9 +552,42 @@ export default function SocieteDetailPage() {
       const res = await fetch(`/api/accounts/${id}/emails/${emailId}?password=1`);
       if (!res.ok) throw new Error("Échec");
       const data = await res.json();
-      setRevealedPasswords((p) => ({ ...p, [emailId]: data.password ?? "" }));
+      const password =
+        data.password_error === "decrypt_failed"
+          ? null
+          : typeof data.password === "string"
+            ? data.password
+            : "";
+      setRevealedPasswords((p) => ({ ...p, [emailId]: password }));
     } catch {
-      setRevealedPasswords((p) => ({ ...p, [emailId]: "—" }));
+      setError("Impossible de récupérer le mot de passe.");
+    }
+  };
+
+  const handleSaveEmailPassword = async (emailId: string) => {
+    setSavingEmailPassword(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}/emails/${emailId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: editEmailPassword }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Échec de la mise à jour");
+      }
+      setEditingEmailPasswordId(null);
+      setEditEmailPassword("");
+      setRevealedPasswords((p) => {
+        const next = { ...p };
+        delete next[emailId];
+        return next;
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setSavingEmailPassword(false);
     }
   };
 
@@ -638,11 +678,19 @@ export default function SocieteDetailPage() {
           const res = await fetch(`/api/accounts/${id}/emails/${emailId}?password=1`);
           if (!res.ok) throw new Error("Échec");
           const data = await res.json();
+          if (data.password_error === "decrypt_failed") {
+            setError("Impossible de déchiffrer le mot de passe.");
+            return;
+          }
           password = typeof data.password === "string" ? data.password : "";
         } catch {
           setError("Impossible de copier le mot de passe.");
           return;
         }
+      }
+      if (!password) {
+        setError("Aucun mot de passe à copier.");
+        return;
       }
       await handleCopyField(fieldKey, password);
     },
@@ -1596,7 +1644,7 @@ export default function SocieteDetailPage() {
                 />
                   <button
                     type="submit"
-                    disabled={addingEmail || !newEmail.trim()}
+                    disabled={addingEmail || !newEmail.trim() || !newPassword.trim()}
                     className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
                   >
                     {addingEmail ? "Ajout…" : "Ajouter"}
@@ -1645,25 +1693,90 @@ export default function SocieteDetailPage() {
                             </div>
                           </td>
                           <td className="px-4 py-2 font-mono text-xs">
-                            <div className="flex flex-wrap items-center gap-2">
-                              {revealedPasswords[em.id] !== undefined ? (
-                                revealedPasswords[em.id]
-                              ) : (
-                                <span className="text-[var(--muted-foreground)]">••••••••</span>
-                              )}
-                              <CopyShortcutButton
-                                label="le mot de passe"
-                                copied={copiedFieldKey === `email-password-${em.id}`}
-                                onClick={() => void handleCopyEmailPassword(em.id)}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleRevealPassword(em.id)}
-                                className="text-[var(--primary)] hover:underline"
+                            {editingEmailPasswordId === em.id ? (
+                              <form
+                                className="flex flex-wrap items-center gap-2"
+                                autoComplete="off"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  void handleSaveEmailPassword(em.id);
+                                }}
                               >
-                                {revealedPasswords[em.id] !== undefined ? "Masquer" : "Afficher"}
-                              </button>
-                            </div>
+                                <input
+                                  type="password"
+                                  name={`societe-email-edit-secret-${em.id}`}
+                                  value={editEmailPassword}
+                                  onChange={(e) => setEditEmailPassword(e.target.value)}
+                                  placeholder="Nouveau mot de passe"
+                                  autoComplete="new-password"
+                                  className="min-w-[10rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={savingEmailPassword || !editEmailPassword}
+                                  className="text-[var(--primary)] hover:underline disabled:opacity-50"
+                                >
+                                  {savingEmailPassword ? "Enregistrement…" : "Enregistrer"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={savingEmailPassword}
+                                  onClick={() => {
+                                    setEditingEmailPasswordId(null);
+                                    setEditEmailPassword("");
+                                  }}
+                                  className="text-[var(--muted-foreground)] hover:underline disabled:opacity-50"
+                                >
+                                  Annuler
+                                </button>
+                              </form>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-2">
+                                {em.id in revealedPasswords ? (
+                                  revealedPasswords[em.id] === null ? (
+                                    <span className="text-red-600 dark:text-red-400">
+                                      Impossible de déchiffrer (ENCRYPTION_KEY ?)
+                                    </span>
+                                  ) : revealedPasswords[em.id] ? (
+                                    <span className="break-all">{revealedPasswords[em.id]}</span>
+                                  ) : (
+                                    <span className="max-w-xs text-[var(--muted-foreground)] italic">
+                                      Mot de passe vide (valeur en base = chiffrement sans contenu)
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[var(--muted-foreground)]">••••••••</span>
+                                )}
+                                <CopyShortcutButton
+                                  label="le mot de passe"
+                                  copied={copiedFieldKey === `email-password-${em.id}`}
+                                  disabled={
+                                    em.id in revealedPasswords &&
+                                    (revealedPasswords[em.id] === null || !revealedPasswords[em.id])
+                                  }
+                                  onClick={() => void handleCopyEmailPassword(em.id)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevealPassword(em.id)}
+                                  className="text-[var(--primary)] hover:underline"
+                                >
+                                  {em.id in revealedPasswords ? "Masquer" : "Afficher"}
+                                </button>
+                                {canEditData && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingEmailPasswordId(em.id);
+                                      setEditEmailPassword("");
+                                    }}
+                                    className="text-[var(--primary)] hover:underline"
+                                  >
+                                    Modifier
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-2 text-right">
                             {canEditData && (

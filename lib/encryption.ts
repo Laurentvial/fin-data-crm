@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 const ALGO = "aes-256-gcm";
 const IV_LEN = 12;
 const AUTH_TAG_LEN = 16;
+const ENCRYPTED_EMPTY_LEN = IV_LEN + AUTH_TAG_LEN;
 
 function getKey(): Buffer {
   const keyB64 = process.env.ENCRYPTION_KEY;
@@ -40,4 +41,14 @@ export function decrypt(encryptedBase64: string): string {
   const decipher = createDecipheriv(ALGO, key, iv);
   decipher.setAuthTag(authTag);
   return decipher.update(ciphertext) + decipher.final("utf8");
+}
+
+/** True when the blob is a valid encrypted empty string (28 bytes, no ciphertext). */
+export function isEncryptedEmptyPassword(encryptedBase64: string): boolean {
+  try {
+    const buf = Buffer.from(encryptedBase64, "base64");
+    return buf.length === ENCRYPTED_EMPTY_LEN;
+  } catch {
+    return false;
+  }
 }

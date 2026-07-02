@@ -40,6 +40,10 @@ import {
   normalizeTransactionFilters,
   type TransactionFilterValues,
 } from "@/lib/transaction-filters";
+import {
+  filterOutInternalTransferDebits,
+  parseTransactionDrilldownSearchParams,
+} from "@/lib/transaction-drilldown-url";
 
 /** Page size for GET /api/transactions (API max 1000 per request). */
 const TRANSACTION_PAGE_SIZE = 500;
@@ -144,6 +148,7 @@ function HomeContent() {
       ? { mode: "include", ids: [bankAccountIdFromUrl] }
       : { mode: "all" },
   }));
+  const [excludeInternalTransferDebits, setExcludeInternalTransferDebits] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [importStatementModalOpen, setImportStatementModalOpen] = useState(false);
   const [invoiceModalTransactions, setInvoiceModalTransactions] = useState<Transaction[] | null>(null);
@@ -180,6 +185,17 @@ function HomeContent() {
       ? { href: `/societes/${filteredBankAccount.company_id}` }
       : null;
 
+  /**
+   * Filtres actifs → jeu complet déjà chargé pour les listes déroulantes (toutes les pages API).
+   * Sans filtre → pagination « Charger plus » sur le premier lot uniquement.
+   */
+  const transactionRowsForFilter = useMemo(() => {
+    if (hasActiveTransactionFilters(filterValues)) {
+      return transactionsForFilterOptions;
+    }
+    return transactions;
+  }, [filterValues, transactionsForFilterOptions, transactions]);
+
   const sortedTransactions = useMemo(() => {
     const effective = sortState ?? DEFAULT_TRANSACTION_TABLE_SORT;
     const dir = effective.direction === "asc" ? 1 : -1;
@@ -188,7 +204,7 @@ function HomeContent() {
       const t = new Date(d).getTime();
       return Number.isNaN(t) ? 0 : t;
     };
-    return [...transactions].sort((a, b) => {
+    return [...transactionRowsForFilter].sort((a, b) => {
       let cmp = 0;
       switch (effective.column) {
         case "id":
@@ -251,12 +267,18 @@ function HomeContent() {
       }
       return cmp * dir;
     });
-  }, [transactions, sortState]);
+  }, [transactionRowsForFilter, sortState]);
 
-  const filteredTransactions = useMemo(
-    () => applyClientTransactionFilters(sortedTransactions, filterValues),
-    [sortedTransactions, filterValues]
-  );
+  const filteredTransactions = useMemo(() => {
+    const rows = applyClientTransactionFilters(sortedTransactions, filterValues);
+    if (!excludeInternalTransferDebits) return rows;
+    return filterOutInternalTransferDebits(rows, transactionsForFilterOptions);
+  }, [
+    sortedTransactions,
+    filterValues,
+    excludeInternalTransferDebits,
+    transactionsForFilterOptions,
+  ]);
   const orderedFournisseurs = useMemo(
     () => [...fournisseurs].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
     [fournisseurs]
@@ -304,10 +326,11 @@ function HomeContent() {
     return { summaryDebitsTotal: debits, summaryCreditsTotal: credits };
   }, [transactionsForSummaryTotals]);
 
-  const allFilteredTransactionsForSummary = useMemo(
-    () => applyClientTransactionFilters(transactionsForFilterOptions, filterValues),
-    [transactionsForFilterOptions, filterValues]
-  );
+  const allFilteredTransactionsForSummary = useMemo(() => {
+    const rows = applyClientTransactionFilters(transactionsForFilterOptions, filterValues);
+    if (!excludeInternalTransferDebits) return rows;
+    return filterOutInternalTransferDebits(rows, transactionsForFilterOptions);
+  }, [transactionsForFilterOptions, filterValues, excludeInternalTransferDebits]);
 
   const allFilteredSummaryNetTotalFromClient = useMemo(() => {
     return allFilteredTransactionsForSummary.reduce((sum, t) => sum + signedAmount(t), 0);
@@ -556,11 +579,11 @@ function HomeContent() {
   }, [fetchSettingsClients]);
 
   useEffect(() => {
-    const id = searchParams.get("bank_account_id") ?? searchParams.get("company_id") ?? "";
-    setFilterValues((prev) => ({
-      ...prev,
-      bankFilter: id ? { mode: "include", ids: [id] } : { mode: "all" },
-    }));
+    setExcludeInternalTransferDebits(
+      parseTransactionDrilldownSearchParams(searchParams, DEFAULT_TRANSACTION_FILTERS)
+        .excludeInternalTransferDebits
+    );
+    setFilterValues((prev) => parseTransactionDrilldownSearchParams(searchParams, prev).filterPatch);
   }, [searchParams]);
 
   useEffect(() => {
@@ -623,6 +646,7 @@ function HomeContent() {
 
   const handleResetFilters = useCallback(() => {
     setFilterValues(DEFAULT_TRANSACTION_FILTERS);
+    setExcludeInternalTransferDebits(false);
   }, []);
 
   const handleQuickCreateFournisseur = useCallback(async (): Promise<Fournisseur | null> => {
@@ -1182,7 +1206,7 @@ function HomeContent() {
               transactions={filteredTransactions}
               loading={loadingTransactions}
               loadingMore={loadingMoreTransactions}
-              hasMore={hasMoreTransactions}
+              hasMore={hasMoreTransactions && !filtersNarrowingView}
               onLoadMore={loadMoreTransactions}
               zoom={zoom}
               onCellValueChanged={canEditData ? handleCellValueChanged : undefined}

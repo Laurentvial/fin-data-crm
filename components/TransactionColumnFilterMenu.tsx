@@ -28,6 +28,7 @@ import {
 import { transactionTypeLabel } from "@/lib/transaction-type";
 import { CREDIT_STATUS_VALUES, creditStatusLabel } from "@/lib/credit-status";
 import { DEBIT_STATUS_VALUES, debitStatusLabel } from "@/lib/debit-status";
+import { UNCATEGORIZED_SPENDING_CATEGORY_LABEL } from "@/lib/spending-category";
 
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT", "INTERNAL_CREDIT"];
 
@@ -227,7 +228,10 @@ export function TransactionColumnFilterMenu({
     const q = valueSearch.trim().toLowerCase();
     if (!q) return spendingCategoryOptions;
     return spendingCategoryOptions.filter((n) => {
-      if (n === SPENDING_CATEGORY_EMPTY_KEY) return "(vide)".includes(q) || "vide".includes(q);
+      if (n === SPENDING_CATEGORY_EMPTY_KEY) {
+        const label = UNCATEGORIZED_SPENDING_CATEGORY_LABEL.toLowerCase();
+        return label.includes(q) || "vide".includes(q) || "(vide)".includes(q);
+      }
       return n.toLowerCase().includes(q);
     });
   }, [spendingCategoryOptions, valueSearch]);
@@ -926,7 +930,8 @@ export function TransactionColumnFilterMenu({
       });
     const clearAll = () =>
       setDraft({ ...draft, spendingCategoryFilter: { mode: "include", names: [] } });
-    const displayName = (n: string) => (n === SPENDING_CATEGORY_EMPTY_KEY ? "(Vide)" : n);
+    const displayName = (n: string) =>
+      n === SPENDING_CATEGORY_EMPTY_KEY ? UNCATEGORIZED_SPENDING_CATEGORY_LABEL : n;
     body = (
       <>
         <div className="shrink-0">

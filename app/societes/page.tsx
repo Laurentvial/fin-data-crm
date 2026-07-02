@@ -1878,6 +1878,10 @@ function SocietesPageContent() {
         for (const row of createEmailRows) {
           const email = row.email.trim();
           if (!email) continue;
+          if (!row.password.trim()) {
+            postErrors.push(`${email} : mot de passe requis`);
+            continue;
+          }
           const er = await fetch(`/api/accounts/${newCompany.id}/emails`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

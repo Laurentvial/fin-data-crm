@@ -85,6 +85,12 @@ export async function POST(
         { status: 400 }
       );
     }
+    if (!password.trim()) {
+      return NextResponse.json(
+        { error: "Le mot de passe est requis." },
+        { status: 400 }
+      );
+    }
     const encryptedPassword = encrypt(password);
     const existingCount = await sql`SELECT 1 FROM company_emails WHERE company_id = ${id}`;
     const isFirst = existingCount.length === 0;

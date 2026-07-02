@@ -11,6 +11,10 @@ import {
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
+import {
+  buildTransactionDrilldownUrl,
+  spendingCategoryLabelToDrilldownParam,
+} from "@/lib/transaction-drilldown-url";
 import type { BankAccount, Company } from "@/lib/types";
 
 function displayName(ba: BankAccount): string {
@@ -359,6 +363,37 @@ function ReportingContent() {
     }
   }, [allowed, effectiveRange, companyId, clientId, bankId]);
 
+  const handleExpenseCategoryClick = useCallback(
+    (point: CategoryBreakdownPoint) => {
+      const company = companyId ? companies.find((c) => c.id === companyId) : undefined;
+      const client = clientId ? clients.find((c) => c.id === clientId) : undefined;
+      const bank = bankId ? banks.find((b) => b.id === bankId) : undefined;
+      const url = buildTransactionDrilldownUrl({
+        dateFrom: effectiveRange.from,
+        dateTo: effectiveRange.to,
+        type: "DEBIT",
+        spendingCategory: spendingCategoryLabelToDrilldownParam(point.category),
+        bankAccountId: bankAccountIdFromUrl || undefined,
+        companyName: company?.name,
+        bankName: bank?.name,
+        clientName: client?.name,
+        excludeInternalTransfers: true,
+      });
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [
+      bankAccountIdFromUrl,
+      bankId,
+      banks,
+      clientId,
+      clients,
+      companies,
+      companyId,
+      effectiveRange.from,
+      effectiveRange.to,
+    ]
+  );
+
   useEffect(() => {
     if (allowed && accessChecked) {
       loadSummary();
@@ -594,11 +629,14 @@ function ReportingContent() {
               Dépenses par catégorie
             </h2>
             <p className="mb-4 text-xs text-[var(--muted-foreground)]">
-              Total des débits ventilé par catégorie de dépense sur la période.
+              Total des débits ventilé par catégorie de dépense sur la période. Les virements
+              internes sont exclus. « Sans catégorie » = débits sans catégorie renseignée. Cliquez
+              sur une barre pour ouvrir les transactions correspondantes.
             </p>
             <CategoryBreakdownChart
               points={summary?.expenses_by_category ?? []}
               color="var(--destructive)"
+              onCategoryClick={handleExpenseCategoryClick}
             />
           </section>
           <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">

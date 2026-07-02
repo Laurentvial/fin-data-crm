@@ -26,9 +26,11 @@ const euroFmt = new Intl.NumberFormat("fr-FR", {
 function TooltipContent({
   active,
   payload,
+  clickable,
 }: {
   active?: boolean;
   payload?: Array<{ payload?: CategoryBreakdownPoint }>;
+  clickable?: boolean;
 }) {
   if (!active || !payload?.length) return null;
   const p = payload[0]?.payload;
@@ -42,6 +44,9 @@ function TooltipContent({
           {p.count} opération{p.count === 1 ? "" : "s"}
         </p>
       ) : null}
+      {clickable ? (
+        <p className="mt-1 text-xs text-[var(--primary)]">Cliquer pour voir les transactions</p>
+      ) : null}
     </div>
   );
 }
@@ -49,9 +54,11 @@ function TooltipContent({
 export function CategoryBreakdownChart({
   points,
   color,
+  onCategoryClick,
 }: {
   points: CategoryBreakdownPoint[];
   color: string;
+  onCategoryClick?: (point: CategoryBreakdownPoint) => void;
 }) {
   if (points.length === 0) {
     return <p className="text-sm text-[var(--muted-foreground)]">Aucune donnée pour cette période.</p>;
@@ -78,10 +85,26 @@ export function CategoryBreakdownChart({
             axisLine={false}
             width={120}
           />
-          <Tooltip content={<TooltipContent />} />
-          <Bar dataKey="amount" radius={[0, 6, 6, 0]}>
+          <Tooltip content={<TooltipContent clickable={Boolean(onCategoryClick)} />} />
+          <Bar
+            dataKey="amount"
+            radius={[0, 6, 6, 0]}
+            cursor={onCategoryClick ? "pointer" : undefined}
+            onClick={
+              onCategoryClick
+                ? (entry) => {
+                    const payload = (entry as { payload?: CategoryBreakdownPoint }).payload;
+                    if (payload) onCategoryClick(payload);
+                  }
+                : undefined
+            }
+          >
             {top.map((p) => (
-              <Cell key={p.category} fill={color} />
+              <Cell
+                key={p.category}
+                fill={color}
+                className={onCategoryClick ? "transition-opacity hover:opacity-80" : undefined}
+              />
             ))}
           </Bar>
         </BarChart>
