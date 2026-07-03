@@ -1,4 +1,10 @@
-export type AccountsSortMode = "alpha" | "balance_asc" | "balance_desc" | "status";
+export type AccountsSortMode =
+  | "alpha"
+  | "balance_asc"
+  | "balance_desc"
+  | "status"
+  | "created_desc"
+  | "created_asc";
 
 export type AccountsBalanceBucket = "all" | "negative" | "zero" | "positive";
 
@@ -16,7 +22,14 @@ export type AccountsListUrlState = {
   createdToInput: string;
 };
 
-const SORT_MODES: AccountsSortMode[] = ["alpha", "balance_asc", "balance_desc", "status"];
+const SORT_MODES: AccountsSortMode[] = [
+  "alpha",
+  "balance_asc",
+  "balance_desc",
+  "status",
+  "created_desc",
+  "created_asc",
+];
 const BALANCE_BUCKETS: AccountsBalanceBucket[] = ["all", "negative", "zero", "positive"];
 const EMPTY_BANK_TOKEN = "__none__";
 const ALL_STATUSES_TOKEN = "*";

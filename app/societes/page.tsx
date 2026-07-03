@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { CreatedDateInput, parseFrDateToIsoOrNull } from "@/components/CreatedDateInput";
 import { Select } from "@/components/Select";
 import { canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
@@ -1148,9 +1149,19 @@ function SocietesPageContent() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [societesFilterPanel, setSocietesFilterPanel] = useState<
-    "hub" | "activite" | "fournisseur" | "departement" | "pays" | "status"
+    "hub" | "activite" | "fournisseur" | "departement" | "pays" | "status" | "created"
   >("hub");
   const [activiteFilterSearch, setActiviteFilterSearch] = useState("");
+  const [createdFromInput, setCreatedFromInput] = useState("");
+  const [createdToInput, setCreatedToInput] = useState("");
+  const createdFrom = useMemo(
+    () => parseFrDateToIsoOrNull(createdFromInput) ?? "",
+    [createdFromInput]
+  );
+  const createdTo = useMemo(
+    () => parseFrDateToIsoOrNull(createdToInput) ?? "",
+    [createdToInput]
+  );
   /** null = toutes ; "" = sans activité ; sinon libellé exact (trim). */
   const [selectedActiviteKey, setSelectedActiviteKey] = useState<string | null>(null);
   /** null = tous ; "" = sans source ni texte ; sinon `s:uuid` ou `l:` + encodeURIComponent */
@@ -1252,6 +1263,15 @@ function SocietesPageContent() {
           return selectedAccountStatusKeys.some((key) => statuses.has(key));
         });
       }
+      if (createdFrom || createdTo) {
+        list = list.filter((c) => {
+          const created = (c.created_at ?? "").slice(0, 10);
+          if (!created) return false;
+          if (createdFrom && created < createdFrom) return false;
+          if (createdTo && created > createdTo) return false;
+          return true;
+        });
+      }
       return list;
     },
     [
@@ -1262,6 +1282,8 @@ function SocietesPageContent() {
       selectedCountryCode,
       selectedAccountStatusKeys,
       companyAccountStatusKeys,
+      createdFrom,
+      createdTo,
     ]
   );
 
@@ -1498,7 +1520,9 @@ function SocietesPageContent() {
     selectedFournisseurKey !== null ||
     selectedDepartementKey !== null ||
     selectedCountryCode !== null ||
-    selectedAccountStatusKeys.length > 0;
+    selectedAccountStatusKeys.length > 0 ||
+    !!createdFromInput.trim() ||
+    !!createdToInput.trim();
 
   const resetSocietesFilters = useCallback(() => {
     setSelectedActiviteKey(null);
@@ -1509,6 +1533,8 @@ function SocietesPageContent() {
       ...DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS,
       NO_ACCOUNT_STATUS_FILTER_KEY,
     ]);
+    setCreatedFromInput("");
+    setCreatedToInput("");
     setSocietesFilterPanel("hub");
   }, []);
 
@@ -2159,6 +2185,26 @@ function SocietesPageContent() {
                       ))}
                     </select>
                   )}
+                  <div className="flex min-w-[16rem] flex-wrap items-end gap-2">
+                    <label className="flex min-w-[7.5rem] flex-1 flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                      <span>Créé du</span>
+                      <CreatedDateInput
+                        value={createdFromInput}
+                        onChange={setCreatedFromInput}
+                        ariaLabel="Filtrer par date de création (début)"
+                        inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      />
+                    </label>
+                    <label className="flex min-w-[7.5rem] flex-1 flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                      <span>au</span>
+                      <CreatedDateInput
+                        value={createdToInput}
+                        onChange={setCreatedToInput}
+                        ariaLabel="Filtrer par date de création (fin)"
+                        inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      />
+                    </label>
+                  </div>
                 </div>
               </>
             )}
@@ -2257,7 +2303,7 @@ function SocietesPageContent() {
           <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
             <h2 className="mb-1 text-sm font-semibold text-[var(--foreground)]">Filtres</h2>
             <p className="mb-3 text-xs text-[var(--muted-foreground)]">
-              Par activité, fournisseur (source), département, pays, ou statut du compte.
+              Par activité, fournisseur (source), département, pays, statut du compte ou date de création.
             </p>
             {hasActiveSocietesFilters && (
               <button
@@ -2344,6 +2390,23 @@ function SocietesPageContent() {
                 <span className="min-w-0 flex-1 font-medium whitespace-nowrap">
                   Statut compte
                 </span>
+                <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSocietesFilterPanel((p) => (p === "created" ? "hub" : "created"))
+                }
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  societesFilterPanel === "created"
+                    ? "bg-[var(--primary-muted)] font-medium text-[var(--primary)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
+                }`}
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center text-xs opacity-70">
+                  📅
+                </span>
+                <span className="min-w-0 flex-1 font-medium">Création</span>
                 <ChevronRightIcon className="h-4 w-4 shrink-0 rotate-180 opacity-50" />
               </button>
             </nav>
@@ -2564,6 +2627,45 @@ function SocietesPageContent() {
                       );
                     })}
                   </nav>
+                </>
+              )}
+              {societesFilterPanel === "created" && (
+                <>
+                  <h2 className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+                    Date de création
+                  </h2>
+                  <div className="space-y-3">
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                      <span>Du</span>
+                      <CreatedDateInput
+                        value={createdFromInput}
+                        onChange={setCreatedFromInput}
+                        ariaLabel="Date de création minimum"
+                        inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+                      <span>Au</span>
+                      <CreatedDateInput
+                        value={createdToInput}
+                        onChange={setCreatedToInput}
+                        ariaLabel="Date de création maximum"
+                        inputClassName="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      />
+                    </label>
+                    {(createdFromInput.trim() || createdToInput.trim()) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreatedFromInput("");
+                          setCreatedToInput("");
+                        }}
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-left text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                      >
+                        Effacer la période
+                      </button>
+                    )}
+                  </div>
                 </>
               )}
             </div>
