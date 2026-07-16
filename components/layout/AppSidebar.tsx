@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 import { canAccessTransactions, isReaderRole } from "@/lib/auth/permissions";
 import { getCachedSession, invalidateSessionCache } from "@/lib/auth/session-cache";
+import { useSidebar } from "@/lib/SidebarContext";
 import type { BankAccount, Company } from "@/lib/types";
 
 const navMainBase = [
@@ -90,9 +91,19 @@ function LogOutIcon({ className }: { className?: string }) {
   );
 }
 
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const sidebar = useSidebar();
   const [session, setSession] = useState<Awaited<ReturnType<typeof authClient.getSession>>["data"]>(null);
   const [isPending, setIsPending] = useState(true);
   const [appSuperAdmin, setAppSuperAdmin] = useState(false);
@@ -234,17 +245,33 @@ export function AppSidebar() {
     router.refresh();
   };
 
+  const handleMobileNavClose = () => {
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) return;
+    sidebar?.closeSidebar();
+  };
+
   const handleQuickSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (quickSearchResults.length === 0) return;
     const first = quickSearchResults[0];
     router.push(first.href);
     setQuickSearch("");
+    handleMobileNavClose();
   };
 
   return (
-    <aside className="sticky top-0 z-40 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] scrollbar-hide">
-      <nav className="flex flex-1 flex-col gap-1 p-3 pt-4">
+    <aside className="fixed inset-y-0 left-0 z-50 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] scrollbar-hide lg:relative lg:inset-auto lg:sticky lg:top-0 lg:z-40">
+      <div className="flex items-center justify-end p-2 lg:hidden">
+        <button
+          type="button"
+          onClick={sidebar?.closeSidebar}
+          className="rounded-lg p-2 text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+          aria-label="Fermer le menu"
+        >
+          <CloseIcon className="h-5 w-5" />
+        </button>
+      </div>
+      <nav className="flex flex-1 flex-col gap-1 p-3 pt-0 lg:pt-4">
         {navMain.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
           const Icon = item.icon as ComponentType<{ className?: string }>;
@@ -252,6 +279,7 @@ export function AppSidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={handleMobileNavClose}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 isActive
                   ? "bg-[var(--primary-muted)] text-[var(--primary)] border-l-2 border-[var(--primary)] -ml-0.5 pl-3.5"
@@ -277,6 +305,7 @@ export function AppSidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={handleMobileNavClose}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                     isActive
                       ? "bg-[var(--primary-muted)] text-[var(--primary)] border-l-2 border-[var(--primary)] -ml-0.5 pl-3.5"
@@ -310,7 +339,10 @@ export function AppSidebar() {
                     <Link
                       key={result.key}
                       href={result.href}
-                      onClick={() => setQuickSearch("")}
+                      onClick={() => {
+                        setQuickSearch("");
+                        handleMobileNavClose();
+                      }}
                       className="block rounded-md px-2 py-1.5 hover:bg-[var(--muted)]"
                     >
                       <p className="truncate text-sm text-[var(--foreground)]">{result.title}</p>

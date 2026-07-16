@@ -56,13 +56,22 @@ export function SheetFooter({
     saveStatus === "saving"
       ? "Enregistrement…"
       : saveStatus === "saved"
+        ? "Enregistré"
+        : saveStatus === "error"
+          ? saveMessage ?? "Erreur d'enregistrement"
+          : "Enregistré";
+
+  const statusTextLong =
+    saveStatus === "saving"
+      ? "Enregistrement…"
+      : saveStatus === "saved"
         ? "Toutes les modifications sont enregistrées"
         : saveStatus === "error"
           ? saveMessage ?? "Erreur d'enregistrement"
           : "Toutes les modifications sont enregistrées";
 
   return (
-    <footer className="relative z-10 flex min-h-12 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--header-bg)] px-4 text-xs text-[var(--muted-foreground)]">
+    <footer className="relative z-10 flex min-h-12 shrink-0 flex-col gap-2 border-t border-[var(--border)] bg-[var(--header-bg)] px-3 py-2 text-xs text-[var(--muted-foreground)] sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-0">
       <div className="flex flex-wrap items-center gap-3 min-w-0">
         <button
           type="button"
@@ -92,14 +101,15 @@ export function SheetFooter({
           </span>
         ) : null}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-2">
         <span
           className={`flex items-center gap-1.5 ${
             saveStatus === "error" ? "text-[var(--destructive)]" : saveStatus === "saving" ? "text-[var(--warning)]" : saveStatus === "saved" ? "text-[var(--success)]" : ""
           }`}
         >
-          <CloudIcon className="h-4 w-4" />
-          {statusText}
+          <CloudIcon className="h-4 w-4 shrink-0" />
+          <span className="sm:hidden">{statusText}</span>
+          <span className="hidden sm:inline">{statusTextLong}</span>
         </span>
         <span className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2 py-0.5">
           Zoom : {zoom} %

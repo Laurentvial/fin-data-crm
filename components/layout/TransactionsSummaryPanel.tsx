@@ -24,10 +24,10 @@ function StatBlock({
 }) {
   const valueCls =
     size === "lg"
-      ? "text-4xl font-semibold tabular-nums tracking-tight"
-      : "text-2xl font-semibold tabular-nums tracking-tight";
+      ? "text-xl font-semibold tabular-nums tracking-tight leading-tight break-words sm:text-2xl lg:text-3xl xl:text-4xl"
+      : "text-lg font-semibold tabular-nums tracking-tight leading-tight break-words sm:text-xl lg:text-2xl";
   return (
-    <div>
+    <div className="min-w-0">
       {!hideLabel && (
         <p className="mb-1 text-sm font-medium text-[var(--muted-foreground)]">{label}</p>
       )}
@@ -54,7 +54,7 @@ interface TransactionsSummaryPanelProps {
 const summaryRowClass =
   "flex flex-wrap items-baseline gap-x-8 gap-y-6 sm:gap-x-10 lg:gap-x-12";
 const alignedTotalsGridClass =
-  "grid grid-cols-1 gap-y-3 sm:grid-cols-3 sm:gap-x-10 lg:gap-x-12";
+  "grid min-w-0 grid-cols-1 gap-y-3 sm:grid-cols-2 sm:gap-x-6 xl:grid-cols-3 xl:gap-x-10";
 
 /** Indicateurs d’un bloc sur une ligne (wrap si besoin). À partir de `md`, vue actuelle et sélection sont côte à côte. */
 export function TransactionsSummaryPanel({
@@ -71,7 +71,7 @@ export function TransactionsSummaryPanel({
   return (
     <section
       data-keep-transaction-grid-selection
-      className="relative z-30 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-4 py-4 shadow-[0_6px_20px_rgba(13,148,136,0.08)] md:h-48 md:max-h-48 md:overflow-y-auto md:py-3"
+      className="relative z-30 min-w-0 shrink-0 border-b border-[var(--primary-muted-border)] bg-[var(--card)] px-3 py-4 shadow-[0_6px_20px_rgba(13,148,136,0.08)] sm:px-4 md:py-3"
       aria-label={
         filtersNarrowingView
           ? "Totaux sur les lignes filtrées et sélection"
@@ -81,8 +81,8 @@ export function TransactionsSummaryPanel({
       <div
         className={
           selectionStats !== null
-            ? "flex min-h-0 flex-col gap-6 md:h-full md:flex-row md:items-stretch md:gap-8 md:overflow-hidden lg:gap-10"
-            : "flex min-h-0 items-stretch md:h-full md:items-center"
+            ? "flex min-h-0 min-w-0 flex-col gap-6 md:flex-row md:items-stretch md:gap-8 lg:gap-10"
+            : "flex min-h-0 min-w-0 items-stretch md:items-center"
         }
       >
         <div
@@ -154,7 +154,7 @@ export function TransactionsSummaryPanel({
         </div>
 
         {selectionStats !== null && (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center border-t border-[var(--border)] pt-5 md:border-t-0 md:border-l md:pl-8 md:pt-0 md:overflow-y-auto lg:pl-10">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center border-t border-[var(--border)] pt-5 md:border-t-0 md:border-l md:pl-8 md:pt-0 lg:pl-10">
             <p className="mb-3 shrink-0 text-sm font-medium text-[var(--muted-foreground)]">Sélection dans le tableau</p>
             <div className={`${summaryRowClass} shrink-0`}>
               <StatBlock

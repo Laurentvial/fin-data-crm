@@ -1156,7 +1156,7 @@ function HomeContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen min-w-0 w-full flex-col">
       {setupSuccess && (
         <div className="mx-4 mt-4 rounded-xl border border-[var(--primary-muted-border)] bg-[var(--primary-muted)] px-4 py-3 text-sm text-[var(--primary)]">
           Compte créé. Pour créer d&apos;autres utilisateurs, assignez le rôle admin dans la Neon Console (Auth → Users → Make admin) puis allez dans Paramètres.
@@ -1200,7 +1200,7 @@ function HomeContent() {
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        <div className="flex min-h-full flex-1 flex-col px-4 py-4">
+        <div className="flex min-h-full flex-1 flex-col px-2 py-2 sm:px-4 sm:py-4">
           <div className="flex min-h-0 flex-1 flex-col">
             <TransactionsGrid
               transactions={filteredTransactions}

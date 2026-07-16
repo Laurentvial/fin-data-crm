@@ -109,13 +109,13 @@ export function SheetToolbar({
   return (
     <div
       data-keep-transaction-grid-selection
-      className="relative z-20 flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--header-bg)] px-4 shadow-sm"
+      className="relative z-20 flex min-h-11 min-w-0 shrink-0 flex-wrap items-center gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--header-bg)] px-3 py-1 shadow-sm scrollbar-hide sm:flex-nowrap sm:px-4"
     >
       {onAddClick && (
         <button
           type="button"
           onClick={onAddClick}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
+          className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
         >
           <PlusIcon className="h-4 w-4" />
           Ajouter
@@ -126,7 +126,7 @@ export function SheetToolbar({
           type="button"
           onClick={onImportStatementClick}
           title="Importer un relevé bancaire PDF (extraction automatique)"
-          className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors shadow-sm"
+          className="hidden shrink-0 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors shadow-sm md:flex"
         >
           <FileUpIcon className="h-4 w-4" />
           Importer relevé
@@ -202,7 +202,9 @@ export function SheetToolbar({
         <button
           type="button"
           onClick={onResetFiltersClick}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+          title="Réinitialiser filtres"
+          aria-label="Réinitialiser filtres"
+          className="hidden shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] md:flex"
         >
           <FilterIcon className="h-4 w-4" />
           Réinitialiser filtres
@@ -212,10 +214,12 @@ export function SheetToolbar({
         <button
           type="button"
           onClick={onExportClick}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--success-muted)] hover:text-[var(--success)]"
+          title="Exporter"
+          aria-label="Exporter"
+          className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--success-muted)] hover:text-[var(--success)]"
         >
           <DownloadIcon className="h-4 w-4" />
-          Exporter
+          <span className="hidden sm:inline">Exporter</span>
         </button>
       ) : null}
       {onScanAmountDuplicatesClick ? (
@@ -236,11 +240,11 @@ export function SheetToolbar({
           {companyDetailLink.label ?? "Fiche société"}
         </Link>
       ) : null}
-      <div className="ml-2 h-6 w-px bg-[var(--border)]" />
-      <button type="button" disabled className="rounded p-1.5 text-[var(--muted-foreground)] opacity-50" aria-label="Annuler">
+      <div className="ml-2 hidden h-6 w-px shrink-0 bg-[var(--border)] sm:block" />
+      <button type="button" disabled className="hidden rounded p-1.5 text-[var(--muted-foreground)] opacity-50 sm:inline-flex" aria-label="Annuler">
         <UndoIcon className="h-4 w-4" />
       </button>
-      <button type="button" disabled className="rounded p-1.5 text-[var(--muted-foreground)] opacity-50" aria-label="Rétablir">
+      <button type="button" disabled className="hidden rounded p-1.5 text-[var(--muted-foreground)] opacity-50 sm:inline-flex" aria-label="Rétablir">
         <RedoIcon className="h-4 w-4" />
       </button>
     </div>

@@ -113,7 +113,21 @@ function useResolvedTheme(): Partial<Theme> {
   return theme;
 }
 
-const AMOUNT_COL = 6; // Column index for amount (used for selection sum)
+const PHONE_MEDIA_QUERY = "(max-width: 767px)";
+/** Colonnes masquées sur téléphone pour libérer de l’espace horizontal. */
+const PHONE_HIDDEN_COLUMN_IDS = new Set(["rowNum", "id", "account_status_name"]);
+
+function usePhoneLayout(): boolean {
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_MEDIA_QUERY);
+    const sync = () => setIsPhone(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return isPhone;
+}
 
 const SORTABLE_FIELDS = new Set<string>([
   "id",
@@ -1333,6 +1347,14 @@ export function TransactionsGrid({
 
   const columnFiltersEnabled = Boolean(filterValues && onApplyFilters);
   const resolvedTheme = useResolvedTheme();
+  const isPhone = usePhoneLayout();
+
+  const visibleColFields = useMemo(
+    () => COL_FIELDS.filter((field) => !isPhone || !PHONE_HIDDEN_COLUMN_IDS.has(field)),
+    [isPhone]
+  );
+
+  const amountColIndex = useMemo(() => visibleColFields.indexOf("amount"), [visibleColFields]);
 
   const columns = useMemo<GridColumn[]>(() => {
     const filterActive = (id: string) =>
@@ -1464,10 +1486,11 @@ export function TransactionsGrid({
     if (onDelete) {
       cols.push({ title: "", width: Math.round(110 * scale), id: "delete" });
     }
-    return cols;
+    return cols.filter((c) => !isPhone || !PHONE_HIDDEN_COLUMN_IDS.has(c.id ?? ""));
   }, [
     scale,
     onDelete,
+    isPhone,
     columnFiltersEnabled,
     filterValues,
     sortState,
@@ -1499,7 +1522,7 @@ export function TransactionsGrid({
         return { kind: GridCellKind.Loading, allowOverlay: false };
       }
 
-      const field = COL_FIELDS[col];
+      const field = visibleColFields[col];
       if (field === "rowNum") {
         return {
           kind: GridCellKind.Text,
@@ -1741,13 +1764,13 @@ export function TransactionsGrid({
       }
       return { kind: GridCellKind.Text, data: "", displayData: "", allowOverlay: false, readonly: true };
     },
-    [transactions]
+    [transactions, visibleColFields]
   );
 
   const onCellEdited = useCallback(
     async (cell: Item, newValue: EditableGridCell) => {
       const [col, row] = cell;
-      const field = COL_FIELDS[col];
+      const field = visibleColFields[col];
       const txn = transactions[row];
       if (!txn?.id || !onCellValueChanged) return;
 
@@ -1876,7 +1899,7 @@ export function TransactionsGrid({
         // Page handles error display
       }
     },
-    [transactions, onCellValueChanged, onDelete]
+    [transactions, onCellValueChanged, onDelete, visibleColFields]
   );
 
   const updateSelectionAndStats = useCallback(
@@ -1915,7 +1938,7 @@ export function TransactionsGrid({
         rects: readonly { x: number; y: number; width: number; height: number }[]
       ) => {
         const rowSet = new Set<number>();
-        const numCols = COL_FIELDS.length;
+        const numCols = visibleColFields.length;
         for (const rect of rects) {
           const { x, y, width, height } = rect;
           for (let row = y; row < y + height; row++) {
@@ -1925,7 +1948,7 @@ export function TransactionsGrid({
             let rowTouchesAmount = false;
             for (let col = x; col < x + width; col++) {
               if (col < 0 || col >= numCols) continue;
-              if (col === AMOUNT_COL) {
+              if (amountColIndex >= 0 && col === amountColIndex) {
                 rowTouchesAmount = true;
                 break;
               }
@@ -1973,7 +1996,7 @@ export function TransactionsGrid({
         selectedTransactionIds,
       });
     },
-    [transactions, onSelectionStatsChange]
+    [transactions, onSelectionStatsChange, visibleColFields, amountColIndex]
   );
 
   const onGridSelectionChange = useCallback(
@@ -1996,6 +2019,24 @@ export function TransactionsGrid({
     };
     updateSelectionAndStats(empty);
   }, [selectionResetNonce, onSelectionStatsChange, updateSelectionAndStats]);
+
+  /** Réinitialiser la sélection quand les colonnes visibles changent (ex. rotation téléphone). */
+  const phoneLayoutPrevRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (phoneLayoutPrevRef.current === null) {
+      phoneLayoutPrevRef.current = isPhone;
+      return;
+    }
+    if (phoneLayoutPrevRef.current === isPhone) return;
+    phoneLayoutPrevRef.current = isPhone;
+    if (!onSelectionStatsChange) return;
+    const empty: GridSelection = {
+      columns: CompactSelection.empty(),
+      rows: CompactSelection.empty(),
+      current: undefined,
+    };
+    updateSelectionAndStats(empty);
+  }, [isPhone, onSelectionStatsChange, updateSelectionAndStats]);
 
   /** Clic en dehors du tableau (comme Google Sheets) : réinitialiser la sélection. */
   useEffect(() => {
@@ -2051,7 +2092,7 @@ export function TransactionsGrid({
   const onCellClicked = useCallback(
     async (cell: Item) => {
       const [col, row] = cell;
-      const field = COL_FIELDS[col];
+      const field = visibleColFields[col];
       const txn = transactions[row];
       if (field === "invoice" && txn) {
         if (txn.invoice_id) {
@@ -2069,7 +2110,7 @@ export function TransactionsGrid({
         }
       }
     },
-    [transactions, onDelete]
+    [transactions, onDelete, visibleColFields]
   );
 
   const rowHeight = Math.round(56 * scale);
