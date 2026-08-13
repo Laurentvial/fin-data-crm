@@ -33,14 +33,7 @@ export const COUNTRY_INVOICE_RULES: Record<string, CountryInvoiceRules> = {
   },
   CO: {
     countryCode: "CO",
-    vatLabel: "IVA",[mintSessionData] Upstream /get-session request failed: {
-      error: 'Failed to fetch session data: 429 Too Many Requests',
-      setCookieHeaderLength: 184
-    }
-    [mintSessionData] Upstream /get-session request failed: {
-      error: 'Failed to fetch session data: 429 Too Many Requests',
-      setCookieHeaderLength: 184
-    }
+    vatLabel: "IVA",
     defaultVatRate: 19,
     requiredMentions: [
       "NIT obligatoire selon la réglementation colombienne. IVA applicable. Devise COP.",
