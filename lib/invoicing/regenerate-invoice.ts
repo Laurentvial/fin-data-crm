@@ -8,6 +8,7 @@ import { uploadPdfToCloudinary } from "./cloudinary";
 import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
+import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -285,8 +286,7 @@ export async function regenerateInvoice(
     throw new Error("Impossible de régénérer: lignes de facture invalides");
   }
 
-  const allLinesZeroVat = lineItemsToUse.length > 0 && lineItemsToUse.every((li) => li.vat_rate === 0);
-  const invoiceVatRate = allLinesZeroVat ? 0 : defaultVatRatePct;
+  const invoiceVatRate = resolveInvoiceDisplayVatRate(lineItemsToUse, defaultVatRatePct);
   const { subtotal, taxAmount, total } = computeTotals(lineItemsToUse);
 
   const invoiceTemplateId = company.invoice_template_id as string | null | undefined;

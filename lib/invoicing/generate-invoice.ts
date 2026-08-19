@@ -8,6 +8,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
+import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -177,8 +178,7 @@ export async function generateInvoice(
     ) / 100;
   const taxAmount = Math.round((total - subtotal) * 100) / 100;
 
-  const allLinesZeroVat = lineItems.length > 0 && lineItems.every((li) => li.vat_rate === 0);
-  const invoiceVatRate = allLinesZeroVat ? 0 : defaultVatRatePct;
+  const invoiceVatRate = resolveInvoiceDisplayVatRate(lineItems, defaultVatRatePct);
 
   const invoicePrefix = (txn.invoice_prefix as string) ?? "FAC-";
   const year = new Date().getFullYear();

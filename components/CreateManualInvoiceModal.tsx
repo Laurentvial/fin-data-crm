@@ -4,7 +4,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Customer } from "@/lib/types";
 import type { InvoiceLineItemInput } from "@/lib/types";
 import { Select } from "@/components/Select";
-import { modalBackdropClose } from "@/lib/modal-backdrop-close";
+import {
+  InvoiceVatRateSelect,
+  isValidInvoiceVatRate,
+} from "@/components/invoice-vat-rate-select";
 
 interface LineItemRow {
   id: string;
@@ -115,11 +118,10 @@ export function CreateManualInvoiceModal({
               : undefined;
         setInvoiceNumberPreview(buildInvoiceNumberPreview(company?.invoice_prefix, nextNumber));
         setCompanyVatRates(rates);
+        // Apply company default on first load; keep 0% (hors taxes) lines as-is.
         setLineItems((prev) =>
           prev.map((row) =>
-            rates.includes(row.vat_rate) || row.vat_rate === 0
-              ? row
-              : { ...row, vat_rate: rates[0] ?? 20 }
+            row.vat_rate === 0 ? row : { ...row, vat_rate: rates[0] ?? 20 }
           )
         );
       })
@@ -201,7 +203,6 @@ export function CreateManualInvoiceModal({
   }, []);
 
   const defaultVatRate = horsTaxes ? 0 : companyVatRates[0] ?? 20;
-  const vatRateOptions = [...new Set([0, ...companyVatRates])].sort((a, b) => a - b);
 
   const updateLineItem = (id: string, field: keyof LineItemRow, value: string | number) => {
     setLineItems((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
@@ -235,6 +236,7 @@ export function CreateManualInvoiceModal({
     customerName.trim() &&
     issueDate &&
     getPayloadLineItems().length > 0 &&
+    getPayloadLineItems().every((li) => isValidInvoiceVatRate(Number(li.vat_rate))) &&
     !saving;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -257,6 +259,10 @@ export function CreateManualInvoiceModal({
     const payloadItems = getPayloadLineItems();
     if (payloadItems.length === 0) {
       setError("Ajoutez au moins une ligne avec description, quantité et prix.");
+      return;
+    }
+    if (payloadItems.some((li) => !isValidInvoiceVatRate(Number(li.vat_rate)))) {
+      setError("Chaque ligne doit avoir un taux de TVA valide entre 0 et 100.");
       return;
     }
 
@@ -296,11 +302,9 @@ export function CreateManualInvoiceModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onMouseDown={(e) => modalBackdropClose(e, onClose)}
     >
       <div
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
-        onMouseDown={(e) => e.stopPropagation()}
       >
         <h3 className="subsection-header mb-4 text-lg font-medium">Créer une facture</h3>
         <div className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--muted)]/50 p-3 text-sm">
@@ -496,7 +500,7 @@ export function CreateManualInvoiceModal({
                   <tr className="border-b border-[var(--border)] bg-[var(--muted)]/50">
                     <th className="px-3 py-2 text-left font-medium">Description</th>
                     <th className="w-20 px-3 py-2 text-right font-medium">Qté</th>
-                    {!horsTaxes && <th className="w-24 px-3 py-2 text-right font-medium">TVA %</th>}
+                    {!horsTaxes && <th className="w-28 px-3 py-2 text-right font-medium">TVA %</th>}
                     <th className="w-32 px-3 py-2 text-right font-medium">
                       Prix unit. {horsTaxes ? "HT" : "TTC"}
                     </th>
@@ -528,18 +532,12 @@ export function CreateManualInvoiceModal({
                         />
                       </td>
                       {!horsTaxes && (
-                        <td className="px-3 py-2">
-                          <Select
-                            value={String(row.vat_rate)}
-                            onChange={(e) => updateLineItem(row.id, "vat_rate", Number(e.target.value))}
-                            className="w-full py-1.5 text-sm"
-                          >
-                            {vatRateOptions.map((r) => (
-                              <option key={r} value={String(r)}>
-                                {r === 0 ? "0% (hors taxes)" : `${r}%`}
-                              </option>
-                            ))}
-                          </Select>
+                        <td className="px-3 py-2 align-top">
+                          <InvoiceVatRateSelect
+                            value={row.vat_rate}
+                            presetRates={companyVatRates}
+                            onChange={(rate) => updateLineItem(row.id, "vat_rate", rate)}
+                          />
                         </td>
                       )}
                       <td className="px-3 py-2 text-right">
