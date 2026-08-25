@@ -3,6 +3,27 @@ import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 
+/** Parse optional string fields: null/"" clears, string trims, missing key skips update. */
+function parseOptionalString(
+  value: unknown,
+  transform?: (value: string) => string
+): string | null | undefined {
+  if (value === null || value === "") return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const next = transform ? transform(trimmed) : trimmed;
+    return next || null;
+  }
+  return undefined;
+}
+
+/** Parse optional date fields sent as ISO string, null, or empty string. */
+function parseOptionalDate(value: unknown): string | null | undefined {
+  if (value === null || value === "") return null;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return undefined;
+}
+
 async function requireAuth() {
   const { data: session } = await auth.getSession();
   if (!session?.user) {
@@ -79,49 +100,38 @@ export async function PATCH(
         { status: 400 }
       );
     }
-    const address = typeof body?.address === "string" ? body.address.trim() || null : null;
-    const siret = typeof body?.siret === "string" ? body.siret.trim() || null : null;
-    const directeur = typeof body?.directeur === "string" ? body.directeur.trim() || null : null;
-    const website = typeof body?.website === "string" ? body.website.trim() || null : null;
-    const vps = typeof body?.vps === "string" ? body.vps.trim() || null : undefined;
-    const formeJuridique = typeof body?.forme_juridique === "string" ? body.forme_juridique.trim() || null : undefined;
-    const capitalSocial = typeof body?.capital_social === "string" ? body.capital_social.trim() || null : undefined;
-    const codePostal = typeof body?.code_postal === "string" ? body.code_postal.trim() || null : undefined;
-    const ville = typeof body?.ville === "string" ? body.ville.trim() || null : undefined;
-    const activite = typeof body?.activite === "string" ? body.activite.trim() || null : undefined;
-    const dateImmatriculation =
-      typeof body?.date_immatriculation === "string" && body.date_immatriculation.trim()
-        ? body.date_immatriculation.trim()
-        : body?.date_immatriculation === null || body?.date_immatriculation === ""
-          ? null
-          : undefined;
-    const sourceId = typeof body?.source_id === "string" ? body.source_id.trim() || null : body?.source_id === null || body?.source_id === "" ? null : undefined;
-    const gerantAdresse = typeof body?.gerant_adresse === "string" ? body.gerant_adresse.trim() || null : undefined;
-    const gerantCodePostal = typeof body?.gerant_code_postal === "string" ? body.gerant_code_postal.trim() || null : undefined;
-    const gerantVille = typeof body?.gerant_ville === "string" ? body.gerant_ville.trim() || null : undefined;
-    const gerantPays = typeof body?.gerant_pays === "string" ? body.gerant_pays.trim().slice(0, 2).toUpperCase() || null : undefined;
-    const gerantDateNaissance =
-      typeof body?.gerant_date_naissance === "string" && body.gerant_date_naissance.trim()
-        ? body.gerant_date_naissance.trim()
-        : body?.gerant_date_naissance === null || body?.gerant_date_naissance === "" ? null : undefined;
-    const gerantVilleNaissance = typeof body?.gerant_ville_naissance === "string" ? body.gerant_ville_naissance.trim() || null : undefined;
-    const gerantCodePostalNaissance = typeof body?.gerant_code_postal_naissance === "string" ? body.gerant_code_postal_naissance.trim() || null : undefined;
-    const gerantPaysNaissance = typeof body?.gerant_pays_naissance === "string" ? body.gerant_pays_naissance.trim().slice(0, 2).toUpperCase() || null : undefined;
-    const gerantNumeroFiscal = typeof body?.gerant_numero_fiscal === "string" ? body.gerant_numero_fiscal.trim() || null : undefined;
-    const gerantNumeroSecu = typeof body?.gerant_numero_secu === "string" ? body.gerant_numero_secu.trim() || null : undefined;
-    const gerantNumeroPieceIdentite = typeof body?.gerant_numero_piece_identite === "string" ? body.gerant_numero_piece_identite.trim() || null : undefined;
-    const countryCode =
-      typeof body?.country_code === "string" ? body.country_code.trim().slice(0, 2).toUpperCase() || null : undefined;
-    const vatNumber =
-      typeof body?.vat_number === "string" ? body.vat_number.trim() || null : undefined;
+    const address = parseOptionalString(body?.address) ?? null;
+    const siret = parseOptionalString(body?.siret) ?? null;
+    const directeur = parseOptionalString(body?.directeur) ?? null;
+    const website = parseOptionalString(body?.website) ?? null;
+    const vps = parseOptionalString(body?.vps);
+    const formeJuridique = parseOptionalString(body?.forme_juridique);
+    const capitalSocial = parseOptionalString(body?.capital_social);
+    const codePostal = parseOptionalString(body?.code_postal);
+    const ville = parseOptionalString(body?.ville);
+    const activite = parseOptionalString(body?.activite);
+    const dateImmatriculation = parseOptionalDate(body?.date_immatriculation);
+    const sourceId = parseOptionalString(body?.source_id);
+    const gerantAdresse = parseOptionalString(body?.gerant_adresse);
+    const gerantCodePostal = parseOptionalString(body?.gerant_code_postal);
+    const gerantVille = parseOptionalString(body?.gerant_ville);
+    const gerantPays = parseOptionalString(body?.gerant_pays, (s) => s.slice(0, 2).toUpperCase());
+    const gerantDateNaissance = parseOptionalDate(body?.gerant_date_naissance);
+    const gerantVilleNaissance = parseOptionalString(body?.gerant_ville_naissance);
+    const gerantCodePostalNaissance = parseOptionalString(body?.gerant_code_postal_naissance);
+    const gerantPaysNaissance = parseOptionalString(body?.gerant_pays_naissance, (s) => s.slice(0, 2).toUpperCase());
+    const gerantNumeroFiscal = parseOptionalString(body?.gerant_numero_fiscal);
+    const gerantNumeroSecu = parseOptionalString(body?.gerant_numero_secu);
+    const gerantNumeroPieceIdentite = parseOptionalString(body?.gerant_numero_piece_identite);
+    const countryCode = parseOptionalString(body?.country_code, (s) => s.slice(0, 2).toUpperCase());
+    const vatNumber = parseOptionalString(body?.vat_number);
     const vatRatesRaw = body?.vat_rates;
     const vatRates: number[] | undefined = Array.isArray(vatRatesRaw)
       ? vatRatesRaw
           .map((v: unknown) => (typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN))
           .filter((n: number) => !Number.isNaN(n) && n >= 0 && n <= 100)
       : undefined;
-    const invoicePrefix =
-      typeof body?.invoice_prefix === "string" ? body.invoice_prefix.trim() || null : undefined;
+    const invoicePrefix = parseOptionalString(body?.invoice_prefix);
     const invoiceNextNumber =
       typeof body?.invoice_next_number === "number" && body.invoice_next_number >= 1
         ? Math.floor(body.invoice_next_number)
@@ -131,20 +141,9 @@ export async function PATCH(
               return !Number.isNaN(n) && n >= 1 ? n : undefined;
             })()
           : undefined;
-    const currency =
-      typeof body?.currency === "string" ? body.currency.trim().slice(0, 3).toUpperCase() || null : undefined;
-    const invoiceTemplateId =
-      body?.invoice_template_id === null || body?.invoice_template_id === ""
-        ? null
-        : typeof body?.invoice_template_id === "string"
-          ? body.invoice_template_id.trim() || null
-          : undefined;
-    const blocNotes =
-      body?.bloc_notes === null || body?.bloc_notes === ""
-        ? null
-        : typeof body?.bloc_notes === "string"
-          ? body.bloc_notes.trim() || null
-          : undefined;
+    const currency = parseOptionalString(body?.currency, (s) => s.slice(0, 3).toUpperCase());
+    const invoiceTemplateId = parseOptionalString(body?.invoice_template_id);
+    const blocNotes = parseOptionalString(body?.bloc_notes);
 
     const updates: string[] = [
       "name = $1",

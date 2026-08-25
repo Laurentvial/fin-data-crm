@@ -535,18 +535,20 @@ function CompanyModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => modalBackdropClose(e, onClose)}
+    >
       <div
-        className="absolute inset-0 bg-black/50"
-        onClick={(e) => modalBackdropClose(e, onClose)}
-        aria-hidden="true"
-      />
-      <div
-        className="relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg"
         role="dialog"
         aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="subsection-header mb-4 text-lg font-medium">{title}</h3>
+        <div className="shrink-0 p-6 pb-4">
+          <h3 className="subsection-header text-lg font-medium">{title}</h3>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6">
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-3">
             <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Nom</label>
@@ -1077,22 +1079,25 @@ function CompanyModal({
             </>
           )}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-          >
-            Annuler
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving || !name.trim()}
-            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "Enregistrement…" : "Enregistrer"}
-          </button>
+        </div>
+        <div className="shrink-0 border-t border-[var(--border)] p-6 pt-4">
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving || !name.trim()}
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? "Enregistrement…" : "Enregistrer"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
