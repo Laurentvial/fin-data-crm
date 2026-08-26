@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { sql } from "@/lib/db";
 import { hasInvoiceBankAccountColumn } from "@/lib/invoicing/invoice-bank-account-column";
+import { hasInvoicePaymentByCardColumn } from "@/lib/invoicing/invoice-payment-by-card-column";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -25,54 +26,104 @@ export async function GET(
 
   try {
     const hasBankAccountColumn = await hasInvoiceBankAccountColumn();
+    const hasPaymentByCardColumn = await hasInvoicePaymentByCardColumn();
     const rows = hasBankAccountColumn
-      ? await sql`
-          SELECT
-            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
-            i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
-            i.created_at, i.updated_at,
-            c.name AS company_name,
-            COALESCE(
-              i.bank_account_id,
-              t.bank_account_id,
-              (
-                SELECT t2.bank_account_id
-                FROM invoice_transactions it
-                JOIN transactions t2 ON t2.id = it.transaction_id
-                WHERE it.invoice_id = i.id
-                ORDER BY t2.created_at DESC
-                LIMIT 1
-              )
-            ) AS bank_account_id
-          FROM invoices i
-          JOIN companies c ON c.id = i.company_id
-          LEFT JOIN transactions t ON t.id = i.transaction_id
-          WHERE i.id = ${id}::uuid
-        `
-      : await sql`
-          SELECT
-            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
-            i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
-            i.created_at, i.updated_at,
-            c.name AS company_name,
-            COALESCE(
-              t.bank_account_id,
-              (
-                SELECT t2.bank_account_id
-                FROM invoice_transactions it
-                JOIN transactions t2 ON t2.id = it.transaction_id
-                WHERE it.invoice_id = i.id
-                ORDER BY t2.created_at DESC
-                LIMIT 1
-              )
-            ) AS bank_account_id
-          FROM invoices i
-          JOIN companies c ON c.id = i.company_id
-          LEFT JOIN transactions t ON t.id = i.transaction_id
-          WHERE i.id = ${id}::uuid
-        `;
+      ? hasPaymentByCardColumn
+        ? await sql`
+            SELECT
+              i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+              i.created_at, i.updated_at,
+              c.name AS company_name,
+              COALESCE(
+                i.bank_account_id,
+                t.bank_account_id,
+                (
+                  SELECT t2.bank_account_id
+                  FROM invoice_transactions it
+                  JOIN transactions t2 ON t2.id = it.transaction_id
+                  WHERE it.invoice_id = i.id
+                  ORDER BY t2.created_at DESC
+                  LIMIT 1
+                )
+              ) AS bank_account_id
+            FROM invoices i
+            JOIN companies c ON c.id = i.company_id
+            LEFT JOIN transactions t ON t.id = i.transaction_id
+            WHERE i.id = ${id}::uuid
+          `
+        : await sql`
+            SELECT
+              i.id, i.company_id, i.transaction_id, i.payment_in_installments, false AS payment_by_card, i.invoice_number, i.issue_date, i.due_date,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+              i.created_at, i.updated_at,
+              c.name AS company_name,
+              COALESCE(
+                i.bank_account_id,
+                t.bank_account_id,
+                (
+                  SELECT t2.bank_account_id
+                  FROM invoice_transactions it
+                  JOIN transactions t2 ON t2.id = it.transaction_id
+                  WHERE it.invoice_id = i.id
+                  ORDER BY t2.created_at DESC
+                  LIMIT 1
+                )
+              ) AS bank_account_id
+            FROM invoices i
+            JOIN companies c ON c.id = i.company_id
+            LEFT JOIN transactions t ON t.id = i.transaction_id
+            WHERE i.id = ${id}::uuid
+          `
+      : hasPaymentByCardColumn
+        ? await sql`
+            SELECT
+              i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+              i.created_at, i.updated_at,
+              c.name AS company_name,
+              COALESCE(
+                t.bank_account_id,
+                (
+                  SELECT t2.bank_account_id
+                  FROM invoice_transactions it
+                  JOIN transactions t2 ON t2.id = it.transaction_id
+                  WHERE it.invoice_id = i.id
+                  ORDER BY t2.created_at DESC
+                  LIMIT 1
+                )
+              ) AS bank_account_id
+            FROM invoices i
+            JOIN companies c ON c.id = i.company_id
+            LEFT JOIN transactions t ON t.id = i.transaction_id
+            WHERE i.id = ${id}::uuid
+          `
+        : await sql`
+            SELECT
+              i.id, i.company_id, i.transaction_id, i.payment_in_installments, false AS payment_by_card, i.invoice_number, i.issue_date, i.due_date,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+              i.created_at, i.updated_at,
+              c.name AS company_name,
+              COALESCE(
+                t.bank_account_id,
+                (
+                  SELECT t2.bank_account_id
+                  FROM invoice_transactions it
+                  JOIN transactions t2 ON t2.id = it.transaction_id
+                  WHERE it.invoice_id = i.id
+                  ORDER BY t2.created_at DESC
+                  LIMIT 1
+                )
+              ) AS bank_account_id
+            FROM invoices i
+            JOIN companies c ON c.id = i.company_id
+            LEFT JOIN transactions t ON t.id = i.transaction_id
+            WHERE i.id = ${id}::uuid
+          `;
     const row = Array.isArray(rows) ? rows[0] : rows;
 
     if (!row) {

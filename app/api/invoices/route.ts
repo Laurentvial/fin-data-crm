@@ -4,6 +4,7 @@ import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { generateInvoice } from "@/lib/invoicing/generate-invoice";
 import { createManualInvoice } from "@/lib/invoicing/create-manual-invoice";
+import { hasInvoicePaymentByCardColumn } from "@/lib/invoicing/invoice-payment-by-card-column";
 
 async function requireAuth() {
   const { data: session } = await auth.getSession();
@@ -265,29 +266,55 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(Number(searchParams.get("limit")) || 100, 500);
     const offset = Number(searchParams.get("offset")) || 0;
 
-    const rows = await sql`
-      SELECT
-        i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-        i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
-        i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
-        i.created_at, i.updated_at,
-        c.name AS company_name
-      FROM invoices i
-      JOIN companies c ON c.id = i.company_id
-      WHERE
-        (${companyId}::uuid IS NULL OR i.company_id = ${companyId}::uuid)
-        AND (
-          ${transactionId}::uuid IS NULL
-          OR i.transaction_id = ${transactionId}::uuid
-          OR EXISTS (
-            SELECT 1 FROM invoice_transactions it
-            WHERE it.invoice_id = i.id AND it.transaction_id = ${transactionId}::uuid
-          )
-        )
-      ORDER BY i.issue_date DESC, i.created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
+    const hasPaymentByCardColumn = await hasInvoicePaymentByCardColumn();
+
+    const rows = hasPaymentByCardColumn
+      ? await sql`
+          SELECT
+            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
+            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+            i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+            i.created_at, i.updated_at,
+            c.name AS company_name
+          FROM invoices i
+          JOIN companies c ON c.id = i.company_id
+          WHERE
+            (${companyId}::uuid IS NULL OR i.company_id = ${companyId}::uuid)
+            AND (
+              ${transactionId}::uuid IS NULL
+              OR i.transaction_id = ${transactionId}::uuid
+              OR EXISTS (
+                SELECT 1 FROM invoice_transactions it
+                WHERE it.invoice_id = i.id AND it.transaction_id = ${transactionId}::uuid
+              )
+            )
+          ORDER BY i.issue_date DESC, i.created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `
+      : await sql`
+          SELECT
+            i.id, i.company_id, i.transaction_id, i.payment_in_installments, false AS payment_by_card, i.invoice_number, i.issue_date, i.due_date,
+            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+            i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
+            i.created_at, i.updated_at,
+            c.name AS company_name
+          FROM invoices i
+          JOIN companies c ON c.id = i.company_id
+          WHERE
+            (${companyId}::uuid IS NULL OR i.company_id = ${companyId}::uuid)
+            AND (
+              ${transactionId}::uuid IS NULL
+              OR i.transaction_id = ${transactionId}::uuid
+              OR EXISTS (
+                SELECT 1 FROM invoice_transactions it
+                WHERE it.invoice_id = i.id AND it.transaction_id = ${transactionId}::uuid
+              )
+            )
+          ORDER BY i.issue_date DESC, i.created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
 
     const invoices = (Array.isArray(rows) ? rows : [rows]).map((r) => ({
       id: r.id,

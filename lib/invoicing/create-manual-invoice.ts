@@ -5,6 +5,7 @@ import { htmlToPdfBuffer } from "./html-to-pdf";
 import { uploadPdfToCloudinary } from "./cloudinary";
 import { renderHandlebarsTemplate } from "./render-template";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
+import { hasInvoicePaymentByCardColumn } from "./invoice-payment-by-card-column";
 import { buildInvoicePayment } from "./build-invoice-payment";
 import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 import { readFileSync } from "fs";
@@ -258,6 +259,7 @@ export async function createManualInvoice(
   let invoiceId = "";
   let pdfBytes: Buffer | null = null;
   const canPersistInvoiceBankAccount = await hasInvoiceBankAccountColumn();
+  const canPersistPaymentByCard = await hasInvoicePaymentByCardColumn();
 
   const maxAttempts = customInvoiceNumber ? 1 : 12;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -319,49 +321,90 @@ export async function createManualInvoice(
 
     let insertRows: unknown;
     try {
-      insertRows = canPersistInvoiceBankAccount
-        ? await sql`
-            INSERT INTO invoices (
-              company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-              bank_account_id,
-              payment_in_installments,
-              payment_by_card,
-              customer_name, customer_address, customer_vat, customer_siret, line_items,
-              subtotal, tax_amount, total, currency, status
-            )
-            VALUES (
-              ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
-              ${issueDate}::date, ${dueDateSql}::date,
-              ${bankAccountIdNorm}::uuid,
-              ${paymentInInstallments},
-              ${paymentByCard},
-              ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
-              ${JSON.stringify(lineItems)}::jsonb,
-              ${subtotal}, ${taxAmount},
-              ${total}, ${currency}, 'issued'
-            )
-            RETURNING id
-          `
-        : await sql`
-            INSERT INTO invoices (
-              company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
-              payment_in_installments,
-              payment_by_card,
-              customer_name, customer_address, customer_vat, customer_siret, line_items,
-              subtotal, tax_amount, total, currency, status
-            )
-            VALUES (
-              ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
-              ${issueDate}::date, ${dueDateSql}::date,
-              ${paymentInInstallments},
-              ${paymentByCard},
-              ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
-              ${JSON.stringify(lineItems)}::jsonb,
-              ${subtotal}, ${taxAmount},
-              ${total}, ${currency}, 'issued'
-            )
-            RETURNING id
-          `;
+      insertRows =
+        canPersistInvoiceBankAccount && canPersistPaymentByCard
+          ? await sql`
+              INSERT INTO invoices (
+                company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+                bank_account_id,
+                payment_in_installments,
+                payment_by_card,
+                customer_name, customer_address, customer_vat, customer_siret, line_items,
+                subtotal, tax_amount, total, currency, status
+              )
+              VALUES (
+                ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
+                ${issueDate}::date, ${dueDateSql}::date,
+                ${bankAccountIdNorm}::uuid,
+                ${paymentInInstallments},
+                ${paymentByCard},
+                ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                ${JSON.stringify(lineItems)}::jsonb,
+                ${subtotal}, ${taxAmount},
+                ${total}, ${currency}, 'issued'
+              )
+              RETURNING id
+            `
+          : canPersistInvoiceBankAccount
+            ? await sql`
+                INSERT INTO invoices (
+                  company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+                  bank_account_id,
+                  payment_in_installments,
+                  customer_name, customer_address, customer_vat, customer_siret, line_items,
+                  subtotal, tax_amount, total, currency, status
+                )
+                VALUES (
+                  ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
+                  ${issueDate}::date, ${dueDateSql}::date,
+                  ${bankAccountIdNorm}::uuid,
+                  ${paymentInInstallments},
+                  ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                  ${JSON.stringify(lineItems)}::jsonb,
+                  ${subtotal}, ${taxAmount},
+                  ${total}, ${currency}, 'issued'
+                )
+                RETURNING id
+              `
+            : canPersistPaymentByCard
+              ? await sql`
+                  INSERT INTO invoices (
+                    company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+                    payment_in_installments,
+                    payment_by_card,
+                    customer_name, customer_address, customer_vat, customer_siret, line_items,
+                    subtotal, tax_amount, total, currency, status
+                  )
+                  VALUES (
+                    ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
+                    ${issueDate}::date, ${dueDateSql}::date,
+                    ${paymentInInstallments},
+                    ${paymentByCard},
+                    ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                    ${JSON.stringify(lineItems)}::jsonb,
+                    ${subtotal}, ${taxAmount},
+                    ${total}, ${currency}, 'issued'
+                  )
+                  RETURNING id
+                `
+              : await sql`
+                  INSERT INTO invoices (
+                    company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
+                    payment_in_installments,
+                    customer_name, customer_address, customer_vat, customer_siret, line_items,
+                    subtotal, tax_amount, total, currency, status
+                  )
+                  VALUES (
+                    ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
+                    ${issueDate}::date, ${dueDateSql}::date,
+                    ${paymentInInstallments},
+                    ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                    ${JSON.stringify(lineItems)}::jsonb,
+                    ${subtotal}, ${taxAmount},
+                    ${total}, ${currency}, 'issued'
+                  )
+                  RETURNING id
+                `;
     } catch (err) {
       const pg = err as { code?: string; message?: string; constraint?: string };
       const msg = String(pg?.message ?? err);

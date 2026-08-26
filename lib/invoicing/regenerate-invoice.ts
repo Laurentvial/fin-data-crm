@@ -7,6 +7,7 @@ import { renderHandlebarsTemplate } from "./render-template";
 import { uploadPdfToCloudinary } from "./cloudinary";
 import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
+import { hasInvoicePaymentByCardColumn } from "./invoice-payment-by-card-column";
 import { buildInvoicePayment } from "./build-invoice-payment";
 import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 
@@ -140,25 +141,47 @@ export async function regenerateInvoice(
   input: RegenerateInvoiceInput = {}
 ): Promise<RegenerateInvoiceResult> {
   const canPersistInvoiceBankAccount = await hasInvoiceBankAccountColumn();
-  const invoiceRowsReal = canPersistInvoiceBankAccount
-    ? await sql`
-        SELECT
-          id, company_id, transaction_id, bank_account_id, payment_in_installments, payment_by_card, invoice_number, issue_date, due_date,
-          customer_name, customer_address, customer_vat, customer_siret, line_items,
-          subtotal, tax_amount, total, currency
-        FROM invoices
-        WHERE id = ${invoiceId}::uuid
-        LIMIT 1
-      `
-    : await sql`
-        SELECT
-          id, company_id, transaction_id, NULL::uuid AS bank_account_id, payment_in_installments, payment_by_card, invoice_number, issue_date, due_date,
-          customer_name, customer_address, customer_vat, customer_siret, line_items,
-          subtotal, tax_amount, total, currency
-        FROM invoices
-        WHERE id = ${invoiceId}::uuid
-        LIMIT 1
-      `;
+  const canPersistPaymentByCard = await hasInvoicePaymentByCardColumn();
+  const invoiceRowsReal =
+    canPersistInvoiceBankAccount && canPersistPaymentByCard
+      ? await sql`
+          SELECT
+            id, company_id, transaction_id, bank_account_id, payment_in_installments, payment_by_card, invoice_number, issue_date, due_date,
+            customer_name, customer_address, customer_vat, customer_siret, line_items,
+            subtotal, tax_amount, total, currency
+          FROM invoices
+          WHERE id = ${invoiceId}::uuid
+          LIMIT 1
+        `
+      : canPersistInvoiceBankAccount
+        ? await sql`
+            SELECT
+              id, company_id, transaction_id, bank_account_id, payment_in_installments, false AS payment_by_card, invoice_number, issue_date, due_date,
+              customer_name, customer_address, customer_vat, customer_siret, line_items,
+              subtotal, tax_amount, total, currency
+            FROM invoices
+            WHERE id = ${invoiceId}::uuid
+            LIMIT 1
+          `
+        : canPersistPaymentByCard
+          ? await sql`
+              SELECT
+                id, company_id, transaction_id, NULL::uuid AS bank_account_id, payment_in_installments, payment_by_card, invoice_number, issue_date, due_date,
+                customer_name, customer_address, customer_vat, customer_siret, line_items,
+                subtotal, tax_amount, total, currency
+              FROM invoices
+              WHERE id = ${invoiceId}::uuid
+              LIMIT 1
+            `
+          : await sql`
+              SELECT
+                id, company_id, transaction_id, NULL::uuid AS bank_account_id, payment_in_installments, false AS payment_by_card, invoice_number, issue_date, due_date,
+                customer_name, customer_address, customer_vat, customer_siret, line_items,
+                subtotal, tax_amount, total, currency
+              FROM invoices
+              WHERE id = ${invoiceId}::uuid
+              LIMIT 1
+            `;
   const invoice = (Array.isArray(invoiceRowsReal) ? invoiceRowsReal[0] : invoiceRowsReal) as
     | InvoiceRow
     | undefined;
@@ -426,6 +449,51 @@ export async function regenerateInvoice(
   const pdfUrl = await uploadPdfToCloudinary(pdfBytes, invoice.company_id, invoice.id);
 
   if (canPersistInvoiceBankAccount) {
+    if (canPersistPaymentByCard) {
+      await sql`
+        UPDATE invoices
+        SET
+          issue_date = ${issueDate}::date,
+          due_date = ${dueDate || null}::date,
+          invoice_number = ${invoiceNumber},
+          customer_name = ${customerName},
+          customer_address = ${customerAddress || null},
+          customer_vat = ${customerVat || null},
+          customer_siret = ${customerSiret || null},
+          payment_in_installments = ${paymentInInstallments},
+          payment_by_card = ${paymentByCard},
+          bank_account_id = ${bankAccountIdToUse}::uuid,
+          line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
+          subtotal = ${subtotal},
+          tax_amount = ${taxAmount},
+          total = ${total},
+          pdf_url = ${pdfUrl},
+          updated_at = NOW()
+        WHERE id = ${invoice.id}::uuid
+      `;
+    } else {
+      await sql`
+        UPDATE invoices
+        SET
+          issue_date = ${issueDate}::date,
+          due_date = ${dueDate || null}::date,
+          invoice_number = ${invoiceNumber},
+          customer_name = ${customerName},
+          customer_address = ${customerAddress || null},
+          customer_vat = ${customerVat || null},
+          customer_siret = ${customerSiret || null},
+          payment_in_installments = ${paymentInInstallments},
+          bank_account_id = ${bankAccountIdToUse}::uuid,
+          line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
+          subtotal = ${subtotal},
+          tax_amount = ${taxAmount},
+          total = ${total},
+          pdf_url = ${pdfUrl},
+          updated_at = NOW()
+        WHERE id = ${invoice.id}::uuid
+      `;
+    }
+  } else if (canPersistPaymentByCard) {
     await sql`
       UPDATE invoices
       SET
@@ -438,7 +506,6 @@ export async function regenerateInvoice(
         customer_siret = ${customerSiret || null},
         payment_in_installments = ${paymentInInstallments},
         payment_by_card = ${paymentByCard},
-        bank_account_id = ${bankAccountIdToUse}::uuid,
         line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
         subtotal = ${subtotal},
         tax_amount = ${taxAmount},
@@ -459,7 +526,6 @@ export async function regenerateInvoice(
         customer_vat = ${customerVat || null},
         customer_siret = ${customerSiret || null},
         payment_in_installments = ${paymentInInstallments},
-        payment_by_card = ${paymentByCard},
         line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
         subtotal = ${subtotal},
         tax_amount = ${taxAmount},

@@ -174,6 +174,7 @@ export default function SocieteDetailPage() {
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [latestInvoices, setLatestInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [invoicesLoadError, setInvoicesLoadError] = useState<string | null>(null);
   const [invoiceToEdit, setInvoiceToEdit] = useState<Invoice | null>(null);
   const [invoiceInfoMessage, setInvoiceInfoMessage] = useState<string | null>(null);
 
@@ -319,6 +320,7 @@ export default function SocieteDetailPage() {
       }
 
       setLoadingInvoices(true);
+      setInvoicesLoadError(null);
       try {
         const resInv = await fetch(`/api/invoices?company_id=${id}&limit=5`);
         if (resInv.ok) {
@@ -326,6 +328,12 @@ export default function SocieteDetailPage() {
           setLatestInvoices(Array.isArray(invData) ? invData : []);
         } else {
           setLatestInvoices([]);
+          const errBody = await resInv.json().catch(() => ({}));
+          setInvoicesLoadError(
+            typeof errBody?.error === "string"
+              ? errBody.error
+              : "Échec du chargement des factures"
+          );
         }
       } finally {
         setLoadingInvoices(false);
@@ -1965,6 +1973,8 @@ export default function SocieteDetailPage() {
 
             {loadingInvoices ? (
               <p className="text-sm text-[var(--muted-foreground)]">Chargement…</p>
+            ) : invoicesLoadError ? (
+              <p className="text-sm text-red-600 dark:text-red-400">{invoicesLoadError}</p>
             ) : latestInvoices.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">Aucune facture pour cette société.</p>
             ) : (
