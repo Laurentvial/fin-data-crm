@@ -81,6 +81,7 @@ export function CreateManualInvoiceModal({
   );
   const [horsTaxes, setHorsTaxes] = useState(false);
   const [paymentInInstallments, setPaymentInInstallments] = useState(false);
+  const [paymentByCard, setPaymentByCard] = useState(false);
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
   const [saving, setSaving] = useState(false);
@@ -283,6 +284,7 @@ export function CreateManualInvoiceModal({
           customer_vat: customerVat.trim() || undefined,
           customer_siret: customerSiret.trim() || undefined,
           payment_in_installments: paymentInInstallments,
+          payment_by_card: paymentByCard,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : {}),
           line_items: payloadItems,
@@ -480,11 +482,20 @@ export function CreateManualInvoiceModal({
           <label className="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
+              checked={paymentByCard}
+              onChange={(e) => setPaymentByCard(e.target.checked)}
+              className="rounded border-[var(--border)]"
+            />
+            <span className="text-sm font-medium">Paiement en CB</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
               checked={paymentInInstallments}
               onChange={(e) => setPaymentInInstallments(e.target.checked)}
               className="rounded border-[var(--border)]"
             />
-            <span className="text-sm font-medium">PAIEMENT EN PLUSIEURS FOIS</span>
+            <span className="text-sm font-medium">Paiement en plusieurs fois</span>
           </label>
 
           <div>

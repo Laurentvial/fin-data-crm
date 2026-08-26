@@ -456,10 +456,14 @@
       </div>
 
       <div class="info-box">
-        <h4 class="info-title">Informations bancaires</h4>
+        <h4 class="info-title">{{#if payment.cardPaymentEnabled}}Paiement{{else}}Informations bancaires{{/if}}</h4>
+        {{#if payment.cardPaymentEnabled}}
+        <p>{{payment.cardPaymentMention}}</p>
+        {{else}}
         {{#if payment.iban}}<p>IBAN : {{payment.iban}}</p>{{/if}}
         {{#if payment.bic}}<p>BIC : {{payment.bic}}</p>{{/if}}
         {{#if payment.installmentsEnabled}}<p>{{payment.installmentsMention}}</p>{{/if}}
+        {{/if}}
       </div>
     </div>
 

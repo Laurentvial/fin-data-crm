@@ -5,10 +5,10 @@ import { htmlToPdfBuffer } from "./html-to-pdf";
 import { uploadPdfToCloudinary } from "./cloudinary";
 import { renderHandlebarsTemplate } from "./render-template";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
+import { buildInvoicePayment } from "./build-invoice-payment";
+import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
-import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -20,6 +20,7 @@ export interface CreateManualInvoiceInput {
   /** Optional bank account used for payment (IBAN/BIC) display in PDF. */
   bankAccountId?: string;
   paymentInInstallments?: boolean;
+  paymentByCard?: boolean;
   /** Optional custom invoice number. */
   invoiceNumber?: string;
   customerName: string;
@@ -85,6 +86,7 @@ export async function createManualInvoice(
     companyId,
     bankAccountId,
     paymentInInstallments = false,
+    paymentByCard = false,
     invoiceNumber: invoiceNumberInput,
     customerName,
     customerAddress,
@@ -176,14 +178,6 @@ export async function createManualInvoice(
   }
 
   // Payment info: pick first available IBAN of any account of the company.
-  let payment:
-    | {
-        iban?: string;
-        bic?: string;
-        installmentsEnabled?: boolean;
-        installmentsMention?: string;
-      }
-    | undefined;
   const bankAccountIdNorm =
     typeof bankAccountId === "string" && bankAccountId.trim()
       ? bankAccountId.trim()
@@ -225,15 +219,12 @@ export async function createManualInvoice(
         LIMIT 1
       `;
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
-  if (ibanRow?.iban) {
-    const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
-    payment = {
-      iban,
-      bic: (ibanRow.bic as string) || undefined,
-      installmentsEnabled: paymentInInstallments,
-      installmentsMention: PAYMENT_INSTALLMENTS_MENTION,
-    };
-  }
+  const payment = buildInvoicePayment({
+    paymentByCard,
+    paymentInInstallments,
+    iban: ibanRow?.iban as string | undefined,
+    bic: ibanRow?.bic as string | undefined,
+  });
 
   const nameNorm = customerName.trim().toLowerCase();
   const existingCustomerRows = await sql`
@@ -334,6 +325,7 @@ export async function createManualInvoice(
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
               bank_account_id,
               payment_in_installments,
+              payment_by_card,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
@@ -342,6 +334,7 @@ export async function createManualInvoice(
               ${issueDate}::date, ${dueDateSql}::date,
               ${bankAccountIdNorm}::uuid,
               ${paymentInInstallments},
+              ${paymentByCard},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},
@@ -353,6 +346,7 @@ export async function createManualInvoice(
             INSERT INTO invoices (
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
               payment_in_installments,
+              payment_by_card,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
@@ -360,6 +354,7 @@ export async function createManualInvoice(
               ${companyId}::uuid, NULL, ${customerId}::uuid, ${invoiceNumber},
               ${issueDate}::date, ${dueDateSql}::date,
               ${paymentInInstallments},
+              ${paymentByCard},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},

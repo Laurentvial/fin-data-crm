@@ -28,6 +28,7 @@ interface InvoiceDetailsResponse {
   id: string;
   bank_account_id?: string | null;
   payment_in_installments?: boolean | null;
+  payment_by_card?: boolean | null;
   invoice_number: string;
   issue_date: string;
   due_date?: string | null;
@@ -88,6 +89,7 @@ export function EditInvoiceModal({
   const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
   const [horsTaxes, setHorsTaxes] = useState(false);
   const [paymentInInstallments, setPaymentInInstallments] = useState(false);
+  const [paymentByCard, setPaymentByCard] = useState(false);
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
   const [loadingInitial, setLoadingInitial] = useState(true);
@@ -138,6 +140,7 @@ export function EditInvoiceModal({
           typeof invoice.bank_account_id === "string" ? invoice.bank_account_id : ""
         );
         setPaymentInInstallments(Boolean(invoice.payment_in_installments));
+        setPaymentByCard(Boolean(invoice.payment_by_card));
 
         const mappedRows =
           Array.isArray(invoice.line_items) && invoice.line_items.length > 0
@@ -337,6 +340,7 @@ export function EditInvoiceModal({
           customer_vat: customerVat.trim(),
           customer_siret: customerSiret.trim(),
           payment_in_installments: paymentInInstallments,
+          payment_by_card: paymentByCard,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : { due_date: "" }),
           line_items: payloadItems,
@@ -538,11 +542,20 @@ export function EditInvoiceModal({
             <label className="flex cursor-pointer items-center gap-2">
               <input
                 type="checkbox"
+                checked={paymentByCard}
+                onChange={(e) => setPaymentByCard(e.target.checked)}
+                className="rounded border-[var(--border)]"
+              />
+              <span className="text-sm font-medium">Paiement en CB</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
                 checked={paymentInInstallments}
                 onChange={(e) => setPaymentInInstallments(e.target.checked)}
                 className="rounded border-[var(--border)]"
               />
-              <span className="text-sm font-medium">PAIEMENT EN PLUSIEURS FOIS</span>
+              <span className="text-sm font-medium">Paiement en plusieurs fois</span>
             </label>
 
             <div>

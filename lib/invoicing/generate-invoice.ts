@@ -7,7 +7,7 @@ import type { InvoiceLineItem, InvoiceLineItemInput } from "@/lib/types";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
-import { PAYMENT_INSTALLMENTS_MENTION } from "./payment-installments";
+import { buildInvoicePayment } from "./build-invoice-payment";
 import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
 
 const DEFAULT_TEMPLATE = readFileSync(
@@ -19,6 +19,7 @@ export interface GenerateInvoiceInput {
   /** One or more transactions covered by this invoice (same company). */
   transactionIds: string[];
   paymentInInstallments?: boolean;
+  paymentByCard?: boolean;
   customerName: string;
   customerAddress?: string;
   customerVat?: string;
@@ -80,6 +81,7 @@ export async function generateInvoice(
     customerVat,
     customerSiret,
     paymentInInstallments = false,
+    paymentByCard = false,
     lineItems: lineItemsInput,
   } =
     input;
@@ -221,14 +223,6 @@ export async function generateInvoice(
   }
 
   const bankAccountId = txn.bank_account_id as string;
-  let payment:
-    | {
-        iban?: string;
-        bic?: string;
-        installmentsEnabled?: boolean;
-        installmentsMention?: string;
-      }
-    | undefined;
   const ibanRows = await sql`
     SELECT iban, bic FROM bank_account_ibans
     WHERE bank_account_id = ${bankAccountId}::uuid
@@ -236,15 +230,12 @@ export async function generateInvoice(
     LIMIT 1
   `;
   const ibanRow = Array.isArray(ibanRows) ? ibanRows[0] : ibanRows;
-  if (ibanRow?.iban) {
-    const iban = (ibanRow.iban as string).replace(/(.{4})/g, "$1 ").trim();
-    payment = {
-      iban,
-      bic: (ibanRow.bic as string) || undefined,
-      installmentsEnabled: paymentInInstallments,
-      installmentsMention: PAYMENT_INSTALLMENTS_MENTION,
-    };
-  }
+  const payment = buildInvoicePayment({
+    paymentByCard,
+    paymentInInstallments,
+    iban: ibanRow?.iban as string | undefined,
+    bic: ibanRow?.bic as string | undefined,
+  });
 
   const nameNorm = customerName.trim().toLowerCase();
   const existingCustomerRows = await sql`
@@ -343,6 +334,7 @@ export async function generateInvoice(
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
               bank_account_id,
               payment_in_installments,
+              payment_by_card,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
@@ -351,6 +343,7 @@ export async function generateInvoice(
               ${issueDate}::date, ${dueDateStr}::date,
               ${bankAccountId}::uuid,
               ${paymentInInstallments},
+              ${paymentByCard},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},
@@ -362,6 +355,7 @@ export async function generateInvoice(
             INSERT INTO invoices (
               company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
               payment_in_installments,
+              payment_by_card,
               customer_name, customer_address, customer_vat, customer_siret, line_items,
               subtotal, tax_amount, total, currency, status
             )
@@ -369,6 +363,7 @@ export async function generateInvoice(
               ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
               ${issueDate}::date, ${dueDateStr}::date,
               ${paymentInInstallments},
+              ${paymentByCard},
               ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
               ${JSON.stringify(lineItems)}::jsonb,
               ${subtotal}, ${taxAmount},

@@ -35,6 +35,7 @@ export async function POST(
       body,
       "payment_in_installments"
     );
+    const hasPaymentByCardField = Object.prototype.hasOwnProperty.call(body, "payment_by_card");
     const customerName =
       typeof body.customer_name === "string" ? body.customer_name.trim() || undefined : undefined;
     const customerAddress = hasCustomerAddressField
@@ -84,6 +85,11 @@ export async function POST(
         ? body.payment_in_installments
         : undefined
       : undefined;
+    const paymentByCard = hasPaymentByCardField
+      ? typeof body.payment_by_card === "boolean"
+        ? body.payment_by_card
+        : undefined
+      : undefined;
     const lineItems =
       Array.isArray(body.line_items) ? (body.line_items as InvoiceLineItemInput[]) : undefined;
 
@@ -97,6 +103,7 @@ export async function POST(
       dueDate,
       bankAccountId,
       paymentInInstallments,
+      paymentByCard,
       lineItems,
     });
     return NextResponse.json(result);

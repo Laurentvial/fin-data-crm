@@ -1,2 +1,1 @@
-export const PAYMENT_INSTALLMENTS_MENTION =
-  "PAIEMENT EN PLUSIEURS FOIS";
+export const PAYMENT_INSTALLMENTS_MENTION = "Paiement en plusieurs fois";

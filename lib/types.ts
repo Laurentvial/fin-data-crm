@@ -85,6 +85,7 @@ export interface Invoice {
   transaction_id?: string | null;
   bank_account_id?: string | null;
   payment_in_installments?: boolean;
+  payment_by_card?: boolean;
   invoice_number: string;
   issue_date: string;
   due_date?: string | null;

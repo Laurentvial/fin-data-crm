@@ -54,6 +54,7 @@ export function GenerateInvoiceModal({
   const [companyVatRates, setCompanyVatRates] = useState<number[]>([20]);
   const [horsTaxes, setHorsTaxes] = useState(false);
   const [paymentInInstallments, setPaymentInInstallments] = useState(false);
+  const [paymentByCard, setPaymentByCard] = useState(false);
   const customerListRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -228,6 +229,7 @@ export function GenerateInvoiceModal({
           customer_vat: customerVat.trim() || undefined,
           customer_siret: customerSiret.trim() || undefined,
           payment_in_installments: paymentInInstallments,
+          payment_by_card: paymentByCard,
           line_items: payloadItems,
         }),
       });
@@ -414,11 +416,20 @@ export function GenerateInvoiceModal({
           <label className="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
+              checked={paymentByCard}
+              onChange={(e) => setPaymentByCard(e.target.checked)}
+              className="rounded border-[var(--border)]"
+            />
+            <span className="text-sm font-medium">Paiement en CB</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
               checked={paymentInInstallments}
               onChange={(e) => setPaymentInInstallments(e.target.checked)}
               className="rounded border-[var(--border)]"
             />
-            <span className="text-sm font-medium">PAIEMENT EN PLUSIEURS FOIS</span>
+            <span className="text-sm font-medium">Paiement en plusieurs fois</span>
           </label>
 
           <div>

@@ -3261,6 +3261,11 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
       </div>
     </div>
 
+    {{#if payment.cardPaymentEnabled}}
+    <div class="payment-box">
+      <p>{{payment.cardPaymentMention}}</p>
+    </div>
+    {{else}}
     {{#if payment.iban}}
     <div class="payment-box">
       <strong>Coordonnées bancaires (RIB)</strong>
@@ -3268,6 +3273,7 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
       {{#if payment.bic}}<div>BIC : {{payment.bic}}</div>{{/if}}
       {{#if payment.installmentsEnabled}}<div>{{payment.installmentsMention}}</div>{{/if}}
     </div>
+    {{/if}}
     {{/if}}
 
     {{#if countryRules.requiredMentions}}

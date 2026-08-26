@@ -28,7 +28,7 @@ export async function GET(
     const rows = hasBankAccountColumn
       ? await sql`
           SELECT
-            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.invoice_number, i.issue_date, i.due_date,
+            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
             i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
             i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
             i.created_at, i.updated_at,
@@ -52,7 +52,7 @@ export async function GET(
         `
       : await sql`
           SELECT
-            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.invoice_number, i.issue_date, i.due_date,
+            i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
             i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
             i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
             i.created_at, i.updated_at,
@@ -86,6 +86,7 @@ export async function GET(
       transaction_id: row.transaction_id,
       bank_account_id: row.bank_account_id ?? null,
       payment_in_installments: Boolean(row.payment_in_installments),
+      payment_by_card: Boolean(row.payment_by_card),
       invoice_number: row.invoice_number,
       issue_date: row.issue_date,
       due_date: row.due_date,
