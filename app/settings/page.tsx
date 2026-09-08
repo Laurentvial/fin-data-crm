@@ -18,6 +18,7 @@ const EMOJI_OPTIONS = [
   { value: "🚫", label: "Stop" },
   { value: "⚠️", label: "Danger" },
   { value: "🛑", label: "Hexagone rouge" },
+  { value: "💀", label: "Tête de mort" },
 ] as const;
 import { authClient } from "@/lib/auth/client";
 import { getCachedSession } from "@/lib/auth/session-cache";
