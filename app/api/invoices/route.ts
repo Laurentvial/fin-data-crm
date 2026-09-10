@@ -77,6 +77,10 @@ export async function POST(request: NextRequest) {
       typeof (body as { customer_siret?: unknown })?.customer_siret === "string"
         ? (body as { customer_siret: string }).customer_siret.trim() || undefined
         : undefined;
+    const commentaires =
+      typeof (body as { commentaires?: unknown })?.commentaires === "string"
+        ? (body as { commentaires: string }).commentaires.trim() || null
+        : null;
     const invoiceNumber =
       typeof (body as { invoice_number?: unknown })?.invoice_number === "string"
         ? (body as { invoice_number: string }).invoice_number.trim() || undefined
@@ -198,6 +202,7 @@ export async function POST(request: NextRequest) {
           dueDate: dueDate || undefined,
           paymentInInstallments,
           paymentByCard,
+          commentaires,
           lineItems,
         })
       : await generateInvoice({
@@ -208,6 +213,7 @@ export async function POST(request: NextRequest) {
           customerSiret,
           paymentInInstallments,
           paymentByCard,
+          commentaires,
           lineItems,
         });
 
@@ -272,7 +278,7 @@ export async function GET(request: NextRequest) {
       ? await sql`
           SELECT
             i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.commentaires, i.line_items,
             i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
             i.created_at, i.updated_at,
             c.name AS company_name
@@ -295,7 +301,7 @@ export async function GET(request: NextRequest) {
       : await sql`
           SELECT
             i.id, i.company_id, i.transaction_id, i.payment_in_installments, false AS payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+            i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.commentaires, i.line_items,
             i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
             i.created_at, i.updated_at,
             c.name AS company_name
@@ -330,6 +336,7 @@ export async function GET(request: NextRequest) {
       customer_address: r.customer_address,
       customer_vat: r.customer_vat,
       customer_siret: r.customer_siret ?? null,
+      commentaires: typeof r.commentaires === "string" ? r.commentaires : r.commentaires ?? null,
       line_items: r.line_items,
       subtotal: Number(r.subtotal),
       tax_amount: Number(r.tax_amount),

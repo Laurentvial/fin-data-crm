@@ -93,6 +93,7 @@ export interface Invoice {
   customer_address?: string | null;
   customer_vat?: string | null;
   customer_siret?: string | null;
+  commentaires?: string | null;
   line_items: InvoiceLineItem[];
   subtotal: number;
   tax_amount: number;

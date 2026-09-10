@@ -234,6 +234,21 @@
       margin: 0 0 3px 0;
     }
     {{/if}}
+    .invoice-commentaires {
+      margin: 24px 0 16px 0;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #333;
+    }
+    .invoice-commentaires strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #2c3e50;
+    }
+    .invoice-commentaires p {
+      margin: 0;
+      white-space: pre-line;
+    }
   </style>
 </head>
 <body>
@@ -339,6 +354,13 @@
         {{#if payment.installmentsEnabled}}<p>{{payment.installmentsMention}}</p>{{/if}}
         {{/if}}
       </div>
+    </div>
+    {{/if}}
+
+    {{#if invoice.commentaires}}
+    <div class="invoice-commentaires">
+      <strong>Commentaires</strong>
+      <p>{{invoice.commentaires}}</p>
     </div>
     {{/if}}
 

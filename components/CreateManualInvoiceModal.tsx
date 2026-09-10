@@ -82,6 +82,7 @@ export function CreateManualInvoiceModal({
   const [horsTaxes, setHorsTaxes] = useState(false);
   const [paymentInInstallments, setPaymentInInstallments] = useState(false);
   const [paymentByCard, setPaymentByCard] = useState(false);
+  const [commentaires, setCommentaires] = useState("");
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
   const [saving, setSaving] = useState(false);
@@ -285,6 +286,7 @@ export function CreateManualInvoiceModal({
           customer_siret: customerSiret.trim() || undefined,
           payment_in_installments: paymentInInstallments,
           payment_by_card: paymentByCard,
+          commentaires: commentaires.trim() || null,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : {}),
           line_items: payloadItems,
@@ -497,6 +499,17 @@ export function CreateManualInvoiceModal({
             />
             <span className="text-sm font-medium">Paiement en plusieurs fois</span>
           </label>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Commentaires</label>
+            <textarea
+              value={commentaires}
+              onChange={(e) => setCommentaires(e.target.value)}
+              placeholder="Commentaires (optionnel)"
+              rows={3}
+              className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between">

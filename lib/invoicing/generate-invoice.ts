@@ -10,6 +10,7 @@ import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 import { hasInvoicePaymentByCardColumn } from "./invoice-payment-by-card-column";
 import { buildInvoicePayment } from "./build-invoice-payment";
 import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
+import { ensureCommentairesInTemplate } from "./ensure-commentaires-in-template";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -25,6 +26,7 @@ export interface GenerateInvoiceInput {
   customerAddress?: string;
   customerVat?: string;
   customerSiret?: string;
+  commentaires?: string | null;
   lineItems: InvoiceLineItemInput[];
 }
 
@@ -81,11 +83,15 @@ export async function generateInvoice(
     customerAddress,
     customerVat,
     customerSiret,
+    commentaires: commentairesInput,
     paymentInInstallments = false,
     paymentByCard = false,
     lineItems: lineItemsInput,
   } =
     input;
+
+  const commentaires =
+    typeof commentairesInput === "string" ? commentairesInput.trim() || null : null;
 
   const transactionIds = [
     ...new Set(
@@ -206,7 +212,9 @@ export async function generateInvoice(
         LIMIT 1
       `;
   const templateRow = Array.isArray(templateRows) ? templateRows[0] : templateRows;
-  const templateContent = templateRow?.template_content ?? DEFAULT_TEMPLATE;
+  const templateContent = ensureCommentairesInTemplate(
+    templateRow?.template_content ?? DEFAULT_TEMPLATE
+  );
 
   const countryRules = getCountryRules(countryCode);
 
@@ -316,6 +324,7 @@ export async function generateInvoice(
         currency,
         vatRate: invoiceVatRate,
         isEur: currency === "EUR",
+        commentaires: commentaires ?? "",
       },
       lineItems,
       payment,
@@ -338,7 +347,7 @@ export async function generateInvoice(
                 bank_account_id,
                 payment_in_installments,
                 payment_by_card,
-                customer_name, customer_address, customer_vat, customer_siret, line_items,
+                customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
                 subtotal, tax_amount, total, currency, status
               )
               VALUES (
@@ -347,7 +356,7 @@ export async function generateInvoice(
                 ${bankAccountId}::uuid,
                 ${paymentInInstallments},
                 ${paymentByCard},
-                ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null}, ${commentaires},
                 ${JSON.stringify(lineItems)}::jsonb,
                 ${subtotal}, ${taxAmount},
                 ${total}, ${currency}, 'issued'
@@ -360,7 +369,7 @@ export async function generateInvoice(
                   company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
                   bank_account_id,
                   payment_in_installments,
-                  customer_name, customer_address, customer_vat, customer_siret, line_items,
+                  customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
                   subtotal, tax_amount, total, currency, status
                 )
                 VALUES (
@@ -368,7 +377,7 @@ export async function generateInvoice(
                   ${issueDate}::date, ${dueDateStr}::date,
                   ${bankAccountId}::uuid,
                   ${paymentInInstallments},
-                  ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                  ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null}, ${commentaires},
                   ${JSON.stringify(lineItems)}::jsonb,
                   ${subtotal}, ${taxAmount},
                   ${total}, ${currency}, 'issued'
@@ -381,7 +390,7 @@ export async function generateInvoice(
                     company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
                     payment_in_installments,
                     payment_by_card,
-                    customer_name, customer_address, customer_vat, customer_siret, line_items,
+                    customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
                     subtotal, tax_amount, total, currency, status
                   )
                   VALUES (
@@ -389,7 +398,7 @@ export async function generateInvoice(
                     ${issueDate}::date, ${dueDateStr}::date,
                     ${paymentInInstallments},
                     ${paymentByCard},
-                    ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                    ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null}, ${commentaires},
                     ${JSON.stringify(lineItems)}::jsonb,
                     ${subtotal}, ${taxAmount},
                     ${total}, ${currency}, 'issued'
@@ -400,14 +409,14 @@ export async function generateInvoice(
                   INSERT INTO invoices (
                     company_id, transaction_id, customer_id, invoice_number, issue_date, due_date,
                     payment_in_installments,
-                    customer_name, customer_address, customer_vat, customer_siret, line_items,
+                    customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
                     subtotal, tax_amount, total, currency, status
                   )
                   VALUES (
                     ${companyId}::uuid, ${anchorTransactionId}::uuid, ${customerId}::uuid, ${invoiceNumber},
                     ${issueDate}::date, ${dueDateStr}::date,
                     ${paymentInInstallments},
-                    ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null},
+                    ${customerName}, ${customerAddress ?? null}, ${customerVat ?? null}, ${customerSiret ?? null}, ${commentaires},
                     ${JSON.stringify(lineItems)}::jsonb,
                     ${subtotal}, ${taxAmount},
                     ${total}, ${currency}, 'issued'

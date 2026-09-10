@@ -10,6 +10,7 @@ import { hasInvoiceBankAccountColumn } from "./invoice-bank-account-column";
 import { hasInvoicePaymentByCardColumn } from "./invoice-payment-by-card-column";
 import { buildInvoicePayment } from "./build-invoice-payment";
 import { resolveInvoiceDisplayVatRate } from "./resolve-invoice-vat-rate";
+import { ensureCommentairesInTemplate } from "./ensure-commentaires-in-template";
 
 const DEFAULT_TEMPLATE = readFileSync(
   join(process.cwd(), "lib/invoicing/default-template.html"),
@@ -33,6 +34,7 @@ interface RegenerateInvoiceInput {
   issueDate?: string;
   dueDate?: string;
   bankAccountId?: string;
+  commentaires?: string;
   lineItems?: InvoiceLineItemInput[];
 }
 
@@ -50,6 +52,7 @@ type InvoiceRow = {
   customer_address: unknown;
   customer_vat: unknown;
   customer_siret: unknown;
+  commentaires: unknown;
   line_items: unknown;
   subtotal: unknown;
   tax_amount: unknown;
@@ -147,7 +150,7 @@ export async function regenerateInvoice(
       ? await sql`
           SELECT
             id, company_id, transaction_id, bank_account_id, payment_in_installments, payment_by_card, invoice_number, issue_date, due_date,
-            customer_name, customer_address, customer_vat, customer_siret, line_items,
+            customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
             subtotal, tax_amount, total, currency
           FROM invoices
           WHERE id = ${invoiceId}::uuid
@@ -157,7 +160,7 @@ export async function regenerateInvoice(
         ? await sql`
             SELECT
               id, company_id, transaction_id, bank_account_id, payment_in_installments, false AS payment_by_card, invoice_number, issue_date, due_date,
-              customer_name, customer_address, customer_vat, customer_siret, line_items,
+              customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
               subtotal, tax_amount, total, currency
             FROM invoices
             WHERE id = ${invoiceId}::uuid
@@ -167,7 +170,7 @@ export async function regenerateInvoice(
           ? await sql`
               SELECT
                 id, company_id, transaction_id, NULL::uuid AS bank_account_id, payment_in_installments, payment_by_card, invoice_number, issue_date, due_date,
-                customer_name, customer_address, customer_vat, customer_siret, line_items,
+                customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
                 subtotal, tax_amount, total, currency
               FROM invoices
               WHERE id = ${invoiceId}::uuid
@@ -176,7 +179,7 @@ export async function regenerateInvoice(
           : await sql`
               SELECT
                 id, company_id, transaction_id, NULL::uuid AS bank_account_id, payment_in_installments, false AS payment_by_card, invoice_number, issue_date, due_date,
-                customer_name, customer_address, customer_vat, customer_siret, line_items,
+                customer_name, customer_address, customer_vat, customer_siret, commentaires, line_items,
                 subtotal, tax_amount, total, currency
               FROM invoices
               WHERE id = ${invoiceId}::uuid
@@ -280,6 +283,12 @@ export async function regenerateInvoice(
       : typeof invoice.customer_siret === "string"
         ? invoice.customer_siret
         : "";
+  const commentaires =
+    input.commentaires !== undefined
+      ? input.commentaires.trim()
+      : typeof invoice.commentaires === "string"
+        ? invoice.commentaires
+        : "";
   const paymentInInstallments =
     typeof input.paymentInInstallments === "boolean"
       ? input.paymentInInstallments
@@ -334,7 +343,9 @@ export async function regenerateInvoice(
         LIMIT 1
       `;
   const templateRow = Array.isArray(templateRows) ? templateRows[0] : templateRows;
-  const templateContent = templateRow?.template_content ?? DEFAULT_TEMPLATE;
+  const templateContent = ensureCommentairesInTemplate(
+    templateRow?.template_content ?? DEFAULT_TEMPLATE
+  );
   const countryRules = getCountryRules(countryCode);
 
   let logoUrl: string | undefined;
@@ -435,6 +446,7 @@ export async function regenerateInvoice(
       currency,
       vatRate: invoiceVatRate,
       isEur: currency === "EUR",
+      commentaires: commentaires ?? "",
     },
     lineItems: lineItemsToUse,
     payment,
@@ -460,6 +472,7 @@ export async function regenerateInvoice(
           customer_address = ${customerAddress || null},
           customer_vat = ${customerVat || null},
           customer_siret = ${customerSiret || null},
+          commentaires = ${commentaires || null},
           payment_in_installments = ${paymentInInstallments},
           payment_by_card = ${paymentByCard},
           bank_account_id = ${bankAccountIdToUse}::uuid,
@@ -482,6 +495,7 @@ export async function regenerateInvoice(
           customer_address = ${customerAddress || null},
           customer_vat = ${customerVat || null},
           customer_siret = ${customerSiret || null},
+          commentaires = ${commentaires || null},
           payment_in_installments = ${paymentInInstallments},
           bank_account_id = ${bankAccountIdToUse}::uuid,
           line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
@@ -504,6 +518,7 @@ export async function regenerateInvoice(
         customer_address = ${customerAddress || null},
         customer_vat = ${customerVat || null},
         customer_siret = ${customerSiret || null},
+        commentaires = ${commentaires || null},
         payment_in_installments = ${paymentInInstallments},
         payment_by_card = ${paymentByCard},
         line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
@@ -525,6 +540,7 @@ export async function regenerateInvoice(
         customer_address = ${customerAddress || null},
         customer_vat = ${customerVat || null},
         customer_siret = ${customerSiret || null},
+        commentaires = ${commentaires || null},
         payment_in_installments = ${paymentInInstallments},
         line_items = ${JSON.stringify(lineItemsToUse)}::jsonb,
         subtotal = ${subtotal},

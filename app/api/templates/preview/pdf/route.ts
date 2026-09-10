@@ -47,6 +47,7 @@ const SAMPLE_DATA = {
     currency: "EUR",
     vatRate: 10,
     isEur: true,
+    commentaires: "Commentaire exemple",
   },
   lineItems: [
     { description: "Prestation de service exemple", quantity: 1, unit_price: 300, vat_rate: 10, amount: 330 },

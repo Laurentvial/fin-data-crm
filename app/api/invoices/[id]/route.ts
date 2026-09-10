@@ -32,7 +32,7 @@ export async function GET(
         ? await sql`
             SELECT
               i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.commentaires, i.line_items,
               i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
               i.created_at, i.updated_at,
               c.name AS company_name,
@@ -56,7 +56,7 @@ export async function GET(
         : await sql`
             SELECT
               i.id, i.company_id, i.transaction_id, i.payment_in_installments, false AS payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.commentaires, i.line_items,
               i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
               i.created_at, i.updated_at,
               c.name AS company_name,
@@ -81,7 +81,7 @@ export async function GET(
         ? await sql`
             SELECT
               i.id, i.company_id, i.transaction_id, i.payment_in_installments, i.payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.commentaires, i.line_items,
               i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
               i.created_at, i.updated_at,
               c.name AS company_name,
@@ -104,7 +104,7 @@ export async function GET(
         : await sql`
             SELECT
               i.id, i.company_id, i.transaction_id, i.payment_in_installments, false AS payment_by_card, i.invoice_number, i.issue_date, i.due_date,
-              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.line_items,
+              i.customer_name, i.customer_address, i.customer_vat, i.customer_siret, i.commentaires, i.line_items,
               i.subtotal, i.tax_amount, i.total, i.currency, i.status, i.pdf_url,
               i.created_at, i.updated_at,
               c.name AS company_name,
@@ -145,6 +145,7 @@ export async function GET(
       customer_address: row.customer_address,
       customer_vat: row.customer_vat,
       customer_siret: row.customer_siret ?? null,
+      commentaires: typeof row.commentaires === "string" ? row.commentaires : row.commentaires ?? null,
       line_items: row.line_items,
       subtotal: Number(row.subtotal),
       tax_amount: Number(row.tax_amount),

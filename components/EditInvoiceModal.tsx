@@ -36,6 +36,7 @@ interface InvoiceDetailsResponse {
   customer_address?: string | null;
   customer_vat?: string | null;
   customer_siret?: string | null;
+  commentaires?: string | null;
   line_items: Array<{
     description: string;
     quantity: number;
@@ -90,6 +91,7 @@ export function EditInvoiceModal({
   const [horsTaxes, setHorsTaxes] = useState(false);
   const [paymentInInstallments, setPaymentInInstallments] = useState(false);
   const [paymentByCard, setPaymentByCard] = useState(false);
+  const [commentaires, setCommentaires] = useState("");
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [createEmptyRow(20)]);
 
   const [loadingInitial, setLoadingInitial] = useState(true);
@@ -141,6 +143,7 @@ export function EditInvoiceModal({
         );
         setPaymentInInstallments(Boolean(invoice.payment_in_installments));
         setPaymentByCard(Boolean(invoice.payment_by_card));
+        setCommentaires(typeof invoice.commentaires === "string" ? invoice.commentaires : "");
 
         const mappedRows =
           Array.isArray(invoice.line_items) && invoice.line_items.length > 0
@@ -341,6 +344,7 @@ export function EditInvoiceModal({
           customer_siret: customerSiret.trim(),
           payment_in_installments: paymentInInstallments,
           payment_by_card: paymentByCard,
+          commentaires,
           issue_date: issueDate,
           ...(dueDate.trim() ? { due_date: dueDate.trim() } : { due_date: "" }),
           line_items: payloadItems,
@@ -557,6 +561,17 @@ export function EditInvoiceModal({
               />
               <span className="text-sm font-medium">Paiement en plusieurs fois</span>
             </label>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[var(--foreground)]">Commentaires</label>
+              <textarea
+                value={commentaires}
+                onChange={(e) => setCommentaires(e.target.value)}
+                placeholder="Commentaires (optionnel)"
+                rows={3}
+                className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+            </div>
 
             <div>
               <div className="mb-2 flex items-center justify-between">

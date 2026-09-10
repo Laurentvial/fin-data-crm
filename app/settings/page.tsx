@@ -3176,6 +3176,21 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
       margin-bottom: 4px;
       color: #2c3e50;
     }
+    .invoice-commentaires {
+      margin: 24px 0 16px 0;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #333;
+    }
+    .invoice-commentaires strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #2c3e50;
+    }
+    .invoice-commentaires p {
+      margin: 0;
+      white-space: pre-line;
+    }
   </style>
 </head>
 <body>
@@ -3275,6 +3290,13 @@ const DEFAULT_TEMPLATE_CONTENT = `<!DOCTYPE html>
       {{#if payment.installmentsEnabled}}<div>{{payment.installmentsMention}}</div>{{/if}}
     </div>
     {{/if}}
+    {{/if}}
+
+    {{#if invoice.commentaires}}
+    <div class="invoice-commentaires">
+      <strong>Commentaires</strong>
+      <p>{{invoice.commentaires}}</p>
+    </div>
     {{/if}}
 
     {{#if countryRules.requiredMentions}}

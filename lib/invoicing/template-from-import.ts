@@ -24,7 +24,7 @@ Règles strictes de sortie:
 - Utilise les objets disponibles:
   - company (name, address, siret, vat_number, website, logo_url)
   - customer (name, address, siret, vat)
-  - invoice (number, issueDate, dueDate, subtotal, taxAmount, total, currency, vatRate, isEur)
+  - invoice (number, issueDate, dueDate, subtotal, taxAmount, total, currency, vatRate, isEur, commentaires)
   - lineItems[] (description, quantity, unit_price, vat_rate, amount)
 - payment (iban, bic, installmentsEnabled, installmentsMention)
   - countryRules (requiredMentions, vatLabel)

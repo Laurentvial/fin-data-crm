@@ -334,6 +334,21 @@
     .footer-mentions p {
       margin: 0 0 2px;
     }
+    .invoice-commentaires {
+      margin: 24px 0 16px 0;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #333;
+    }
+    .invoice-commentaires strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #2c3e50;
+    }
+    .invoice-commentaires p {
+      margin: 0;
+      white-space: pre-line;
+    }
   </style>
 </head>
 <body>
@@ -486,6 +501,13 @@
         <p class="quality-item-text">Respect des delais et des normes</p>
       </div>
     </div>
+
+    {{#if invoice.commentaires}}
+    <div class="invoice-commentaires">
+      <strong>Commentaires</strong>
+      <p>{{invoice.commentaires}}</p>
+    </div>
+    {{/if}}
 
     {{#if countryRules.requiredMentions}}
     <div class="footer-mentions">
