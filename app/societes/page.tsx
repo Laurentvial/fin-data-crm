@@ -10,7 +10,6 @@ import { canMutate } from "@/lib/auth/permissions";
 import { getCachedSession } from "@/lib/auth/session-cache";
 import type { Bank, BankAccount, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
-import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import { COUNTRY_LABELS_FR, PAYS_NAISSANCE_OPTIONS } from "@/lib/countries-fr";
 
 const DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS = [
@@ -535,18 +534,22 @@ function CompanyModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={(e) => modalBackdropClose(e, onClose)}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div
         className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg"
         role="dialog"
         aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
       >
-        <div className="shrink-0 p-6 pb-4">
+        <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
           <h3 className="subsection-header text-lg font-medium">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-2 py-0.5 text-xl leading-none text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+            aria-label="Fermer"
+          >
+            ×
+          </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6">
         <div className="grid grid-cols-3 gap-4">
