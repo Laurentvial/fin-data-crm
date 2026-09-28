@@ -110,11 +110,20 @@ export async function POST(
   } catch (error) {
     console.error("POST /api/accounts/[id]/emails error:", error);
     const message = error instanceof Error ? error.message : "";
-    if (message.startsWith("ENCRYPTION_KEY")) {
+    if (message.startsWith("ENCRYPTION_KEY is not set")) {
       return NextResponse.json(
         {
           error:
-            "Configuration de chiffrement invalide. ENCRYPTION_KEY doit faire 32 octets (openssl rand -base64 32).",
+            "ENCRYPTION_KEY n'est pas définie. Générez-la avec : openssl rand -base64 32.",
+        },
+        { status: 500 }
+      );
+    }
+    if (message.startsWith("ENCRYPTION_KEY must be 32 bytes")) {
+      return NextResponse.json(
+        {
+          error:
+            "ENCRYPTION_KEY est invalide : elle doit faire 32 octets une fois décodée en base64 (openssl rand -base64 32).",
         },
         { status: 500 }
       );
