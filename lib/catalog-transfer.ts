@@ -160,7 +160,7 @@ async function exportClients(): Promise<ClientItem[]> {
   return (Array.isArray(rows) ? rows : [rows]).filter(Boolean).map((r) => ({
     id: String(r.id),
     name: String(r.name ?? ""),
-    sort_order: Number(r.sort_order) || 0,
+    sort_order: asSortOrder(r.sort_order),
     emoji: typeof r.emoji === "string" && r.emoji ? r.emoji : null,
   }));
 }
@@ -174,7 +174,7 @@ async function exportSources(): Promise<SourceItem[]> {
   return (Array.isArray(rows) ? rows : [rows]).filter(Boolean).map((r) => ({
     id: String(r.id),
     name: String(r.name ?? ""),
-    sort_order: Number(r.sort_order) || 0,
+    sort_order: asSortOrder(r.sort_order),
   }));
 }
 
