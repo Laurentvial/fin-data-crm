@@ -24,6 +24,7 @@ import { authClient } from "@/lib/auth/client";
 import { getCachedSession } from "@/lib/auth/session-cache";
 import { canMutate, type AppRole } from "@/lib/auth/permissions";
 import type { AccountStatus, AccountType, Bank, Fournisseur, InvoiceTemplate, Source } from "@/lib/types";
+import { CatalogTransferSection } from "@/components/CatalogTransferSection";
 
 type User = { id: string; email: string; name: string; role?: string; telegram_id?: number; telegram_username?: string };
 
@@ -3791,6 +3792,7 @@ export default function SettingsPage() {
     myTelegram: false,
     banks: false,
     backups: false,
+    catalogTransfer: false,
     clients: false,
     statuses: false,
     sources: false,
@@ -4304,6 +4306,25 @@ export default function SettingsPage() {
             {openSections.backups && (
               <div className="settings-accordion-content border-t border-[var(--border)] p-4">
                 <DatabaseBackupSection />
+              </div>
+            )}
+          </section>
+        )}
+
+        {!usersLoading && isAdmin && (
+          <section className="mb-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+            <button
+              type="button"
+              onClick={() => toggleSection("catalogTransfer")}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--muted)]/40"
+              aria-expanded={Boolean(openSections.catalogTransfer)}
+            >
+              <h2 className="section-header text-lg font-medium">Export / Import</h2>
+              <ChevronDownIcon className={`transition-transform ${openSections.catalogTransfer ? "rotate-180" : ""}`} />
+            </button>
+            {openSections.catalogTransfer && (
+              <div className="settings-accordion-content border-t border-[var(--border)] p-4">
+                <CatalogTransferSection />
               </div>
             )}
           </section>
