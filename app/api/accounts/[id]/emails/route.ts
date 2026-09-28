@@ -109,6 +109,16 @@ export async function POST(
     return NextResponse.json(row);
   } catch (error) {
     console.error("POST /api/accounts/[id]/emails error:", error);
+    const message = error instanceof Error ? error.message : "";
+    if (message.startsWith("ENCRYPTION_KEY")) {
+      return NextResponse.json(
+        {
+          error:
+            "Configuration de chiffrement invalide. ENCRYPTION_KEY doit faire 32 octets (openssl rand -base64 32).",
+        },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(
       { error: "Échec de l'ajout de l'email." },
       { status: 500 }
