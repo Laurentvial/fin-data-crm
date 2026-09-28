@@ -3,7 +3,14 @@ import { sql } from "@/lib/db";
 export const CATALOG_KIND = "bigboss-catalog-export" as const;
 export const CATALOG_FORMAT_VERSION = 1 as const;
 
-export const CATALOG_ENTITIES = ["templates", "clients", "sources", "banks"] as const;
+export const CATALOG_ENTITIES = [
+  "templates",
+  "clients",
+  "statuses",
+  "sources",
+  "fournisseurs",
+  "banks",
+] as const;
 export type CatalogEntity = (typeof CATALOG_ENTITIES)[number];
 
 const UUID_RE =
@@ -64,7 +71,23 @@ type ClientItem = {
   emoji: string | null;
 };
 
+type StatusItem = {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_default: boolean;
+  background_color: string | null;
+  background_opacity: number | null;
+  emoji: string | null;
+};
+
 type SourceItem = {
+  id: string;
+  name: string;
+  sort_order: number;
+};
+
+type FournisseurItem = {
   id: string;
   name: string;
   sort_order: number;
@@ -91,6 +114,25 @@ function asSortOrder(value: unknown): number {
     return Math.trunc(Number(value));
   }
   return 0;
+}
+
+function parseBackgroundColor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const s = value.trim();
+  if (!s || !/^#[0-9A-Fa-f]{6}$/.test(s)) return null;
+  return s;
+}
+
+function parseBackgroundOpacity(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : parseFloat(String(value));
+  if (!Number.isFinite(n) || n < 0 || n > 1) return null;
+  return n;
+}
+
+function parseEmoji(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value.trim().slice(0, 20);
 }
 
 function parseLogo(value: unknown): BankLogo | null {
@@ -128,8 +170,12 @@ async function loadExportItems(entity: CatalogEntity): Promise<unknown[]> {
       return exportTemplates();
     case "clients":
       return exportClients();
+    case "statuses":
+      return exportStatuses();
     case "sources":
       return exportSources();
+    case "fournisseurs":
+      return exportFournisseurs();
     case "banks":
       return exportBanks();
   }
@@ -161,7 +207,24 @@ async function exportClients(): Promise<ClientItem[]> {
     id: String(r.id),
     name: String(r.name ?? ""),
     sort_order: asSortOrder(r.sort_order),
-    emoji: typeof r.emoji === "string" && r.emoji ? r.emoji : null,
+    emoji: parseEmoji(r.emoji),
+  }));
+}
+
+async function exportStatuses(): Promise<StatusItem[]> {
+  const rows = await sql`
+    SELECT id, name, sort_order, is_default, background_color, background_opacity, emoji
+    FROM account_statuses
+    ORDER BY sort_order, name
+  `;
+  return (Array.isArray(rows) ? rows : [rows]).filter(Boolean).map((r) => ({
+    id: String(r.id),
+    name: String(r.name ?? ""),
+    sort_order: asSortOrder(r.sort_order),
+    is_default: Boolean(r.is_default),
+    background_color: parseBackgroundColor(r.background_color),
+    background_opacity: parseBackgroundOpacity(r.background_opacity),
+    emoji: parseEmoji(r.emoji),
   }));
 }
 
@@ -169,6 +232,19 @@ async function exportSources(): Promise<SourceItem[]> {
   const rows = await sql`
     SELECT id, name, sort_order
     FROM sources
+    ORDER BY sort_order, name
+  `;
+  return (Array.isArray(rows) ? rows : [rows]).filter(Boolean).map((r) => ({
+    id: String(r.id),
+    name: String(r.name ?? ""),
+    sort_order: asSortOrder(r.sort_order),
+  }));
+}
+
+async function exportFournisseurs(): Promise<FournisseurItem[]> {
+  const rows = await sql`
+    SELECT id, name, sort_order
+    FROM fournisseurs
     ORDER BY sort_order, name
   `;
   return (Array.isArray(rows) ? rows : [rows]).filter(Boolean).map((r) => ({
@@ -246,8 +322,12 @@ export async function importCatalog(body: unknown): Promise<CatalogImportResult>
       return importTemplates(payload.items);
     case "clients":
       return importClients(payload.items);
+    case "statuses":
+      return importStatuses(payload.items);
     case "sources":
       return importSources(payload.items);
+    case "fournisseurs":
+      return importFournisseurs(payload.items);
     case "banks":
       return importBanks(payload.items);
   }
@@ -363,10 +443,7 @@ async function importClients(items: unknown[]): Promise<CatalogImportResult> {
     }
 
     const sortOrder = asSortOrder(item.sort_order);
-    const emoji =
-      typeof item.emoji === "string" && item.emoji.trim()
-        ? item.emoji.trim().slice(0, 20)
-        : null;
+    const emoji = parseEmoji(item.emoji);
 
     await sql`
       INSERT INTO account_types (id, name, sort_order, emoji)
@@ -378,6 +455,68 @@ async function importClients(items: unknown[]): Promise<CatalogImportResult> {
   }
 
   return { entity: "clients", inserted, skipped };
+}
+
+async function importStatuses(items: unknown[]): Promise<CatalogImportResult> {
+  const existingRows = await sql`
+    SELECT id, name, is_default
+    FROM account_statuses
+  `;
+  const existing = (Array.isArray(existingRows) ? existingRows : [existingRows]).filter(Boolean);
+  const existingIds = new Set(existing.map((r) => String(r.id)));
+  const existingNames = new Set(
+    existing.map((r) => String(r.name ?? "").trim().toLowerCase()).filter(Boolean)
+  );
+  let hasDefault = existing.some((r) => Boolean(r.is_default));
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") {
+      skipped += 1;
+      continue;
+    }
+    const item = raw as Record<string, unknown>;
+    if (!isUuid(item.id)) {
+      skipped += 1;
+      continue;
+    }
+    const name = trimName(item.name, 255);
+    if (!name) {
+      skipped += 1;
+      continue;
+    }
+    if (shouldSkip(item.id, name, existingIds, existingNames)) {
+      skipped += 1;
+      continue;
+    }
+
+    const sortOrder = asSortOrder(item.sort_order);
+    const wantDefault = Boolean(item.is_default) && !hasDefault;
+    const backgroundColor = parseBackgroundColor(item.background_color);
+    const backgroundOpacity = parseBackgroundOpacity(item.background_opacity);
+    const emoji = parseEmoji(item.emoji);
+
+    await sql`
+      INSERT INTO account_statuses (id, name, sort_order, is_default, background_color, background_opacity, emoji)
+      VALUES (
+        ${item.id}::uuid,
+        ${name},
+        ${sortOrder},
+        ${wantDefault},
+        ${backgroundColor},
+        ${backgroundOpacity},
+        ${emoji}
+      )
+    `;
+
+    markInserted(item.id, name, existingIds, existingNames);
+    if (wantDefault) hasDefault = true;
+    inserted += 1;
+  }
+
+  return { entity: "statuses", inserted, skipped };
 }
 
 async function importSources(items: unknown[]): Promise<CatalogImportResult> {
@@ -423,6 +562,51 @@ async function importSources(items: unknown[]): Promise<CatalogImportResult> {
   }
 
   return { entity: "sources", inserted, skipped };
+}
+
+async function importFournisseurs(items: unknown[]): Promise<CatalogImportResult> {
+  const existingRows = await sql`SELECT id, name FROM fournisseurs`;
+  const existing = (Array.isArray(existingRows) ? existingRows : [existingRows]).filter(Boolean);
+  const existingIds = new Set(existing.map((r) => String(r.id)));
+  const existingNames = new Set(
+    existing.map((r) => String(r.name ?? "").trim().toLowerCase()).filter(Boolean)
+  );
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") {
+      skipped += 1;
+      continue;
+    }
+    const item = raw as Record<string, unknown>;
+    if (!isUuid(item.id)) {
+      skipped += 1;
+      continue;
+    }
+    const name = trimName(item.name, 255);
+    if (!name) {
+      skipped += 1;
+      continue;
+    }
+    if (shouldSkip(item.id, name, existingIds, existingNames)) {
+      skipped += 1;
+      continue;
+    }
+
+    const sortOrder = asSortOrder(item.sort_order);
+
+    await sql`
+      INSERT INTO fournisseurs (id, name, sort_order)
+      VALUES (${item.id}::uuid, ${name}, ${sortOrder})
+    `;
+
+    markInserted(item.id, name, existingIds, existingNames);
+    inserted += 1;
+  }
+
+  return { entity: "fournisseurs", inserted, skipped };
 }
 
 async function importBanks(items: unknown[]): Promise<CatalogImportResult> {

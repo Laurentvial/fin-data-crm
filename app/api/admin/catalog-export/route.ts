@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const entity = request.nextUrl.searchParams.get("entity");
   if (!isCatalogEntity(entity)) {
     return NextResponse.json(
-      { error: "Paramètre entity invalide. Utilisez templates, clients, sources ou banks." },
+      { error: "Paramètre entity invalide. Utilisez templates, clients, statuses, sources, fournisseurs ou banks." },
       { status: 400 }
     );
   }

@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from "react";
 
-type CatalogEntity = "templates" | "clients" | "sources" | "banks";
+type CatalogEntity = "templates" | "clients" | "statuses" | "sources" | "fournisseurs" | "banks";
 
 const CATALOG_ROWS: Array<{
   entity: CatalogEntity;
@@ -20,9 +20,19 @@ const CATALOG_ROWS: Array<{
     hint: "Types de comptes (nom, emoji, ordre).",
   },
   {
+    entity: "statuses",
+    label: "Statuts de comptes",
+    hint: "Statuts, couleurs de cartes, emoji et statut par défaut.",
+  },
+  {
     entity: "sources",
     label: "Sources",
     hint: "Catalogue des sources.",
+  },
+  {
+    entity: "fournisseurs",
+    label: "Fournisseurs",
+    hint: "Catalogue des fournisseurs.",
   },
   {
     entity: "banks",
