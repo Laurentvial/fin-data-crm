@@ -92,6 +92,20 @@ TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session").strip()
 
 
+def _code_delivery_message(delivery: str) -> str:
+    if delivery == "SentCodeTypeApp":
+        return "Code envoyé dans l'application Telegram, conversation officielle « Telegram ». Pas par SMS."
+    if delivery in ("SentCodeTypeSms", "SentCodeTypeFirebaseSms", "SentCodeTypeSmsWord", "SentCodeTypeSmsPhrase"):
+        return "Code envoyé par SMS sur ce numéro."
+    if delivery == "SentCodeTypeFragmentSms":
+        return "Code envoyé par SMS Fragment sur ce numéro."
+    if delivery in ("SentCodeTypeCall", "SentCodeTypeFlashCall", "SentCodeTypeMissedCall"):
+        return "Telegram va appeler ce numéro. Le code est le numéro qui appelle."
+    if delivery in ("SentCodeTypeEmailCode", "SentCodeTypeSetUpEmailRequired"):
+        return "Code envoyé par e-mail sur l'adresse liée au compte Telegram."
+    return "Code demandé. Vérifiez l'application Telegram, les SMS et l'e-mail du compte."
+
+
 def ensure_session_directory() -> None:
     """SQLite does not create missing parent folders (unable to open database file)."""
     parent = Path(TELEGRAM_SESSION_PATH).expanduser().resolve().parent
@@ -351,9 +365,18 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
             },
         }
     try:
-        await auth_client.send_code_request(phone)
+        sent = await auth_client.send_code_request(phone)
+        delivery = type(sent.type).__name__
+        logger.info("Telegram code delivery for %s: %s", phone, delivery)
+        if delivery == "SentCodeTypeApp":
+            try:
+                sent = await auth_client.resend_code(phone, sent.phone_code_hash)
+                delivery = type(sent.type).__name__
+                logger.info("Telegram code resent for %s: %s", phone, delivery)
+            except Exception as resend_error:
+                logger.warning("Telegram resend_code failed: %s", resend_error)
         _auth_pending[phone] = (auth_client, time.time())
-        return {"success": True, "message": "Code envoyé sur Telegram"}
+        return {"success": True, "message": _code_delivery_message(delivery), "delivery": delivery}
     except Exception as e:
         await auth_client.disconnect()
         raise HTTPException(status_code=400, detail=str(e))

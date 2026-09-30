@@ -443,6 +443,7 @@ function TelegramConnectionSection() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<"phone" | "code" | "password">("phone");
+  const [codeHint, setCodeHint] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -487,6 +488,7 @@ function TelegramConnectionSection() {
         setStatus({ authorized: true, user: data.user });
         setStep("phone");
       } else if (res.ok) {
+        setCodeHint(typeof data.message === "string" ? data.message : null);
         setStep("code");
       } else {
         setError(data.error ?? "Erreur lors de l'envoi du code");
@@ -651,7 +653,7 @@ function TelegramConnectionSection() {
           {step === "code" && (
             <div className="space-y-2">
               <p className="text-sm text-[var(--muted-foreground)]">
-                Code reçu sur Telegram pour {phone}
+                {codeHint ?? `Code envoyé pour ${phone}. Vérifiez l'application Telegram, les SMS et l'e-mail du compte.`}
               </p>
               <div className="flex flex-wrap gap-2">
                 <input
