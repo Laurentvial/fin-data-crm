@@ -22,6 +22,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from telethon import TelegramClient
+from telethon.tl.functions.auth import ResendCodeRequest
 from telethon.errors import (
     FileReferenceInvalidError,
     FloodWaitError,
@@ -369,14 +370,16 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
         delivery = type(sent.type).__name__
         resend_error_text = ""
         logger.info("Telegram code delivery for %s: %s", phone, delivery)
-        if delivery == "SentCodeTypeApp":
+        if delivery == "SentCodeTypeApp" and getattr(sent, "next_type", None) is not None:
             try:
-                sent = await auth_client.resend_code(phone, sent.phone_code_hash)
+                sent = await auth_client(ResendCodeRequest(phone, sent.phone_code_hash))
                 delivery = type(sent.type).__name__
                 logger.info("Telegram code resent for %s: %s", phone, delivery)
             except Exception as resend_error:
                 resend_error_text = str(resend_error)
                 logger.warning("Telegram resend_code failed: %s", resend_error)
+        elif delivery == "SentCodeTypeApp":
+            resend_error_text = "Telegram n'a proposé aucun autre canal que l'application."
         _auth_pending[phone] = (auth_client, time.time())
         message = _code_delivery_message(delivery)
         if delivery == "SentCodeTypeApp":
