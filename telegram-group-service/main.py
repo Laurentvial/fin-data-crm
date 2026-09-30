@@ -8,6 +8,7 @@ Requires a user account session (not a bot).
 import asyncio
 import base64
 import gc
+import io
 import logging
 import os
 import tempfile
@@ -193,6 +194,16 @@ def _unlink_quiet(path: str | None) -> None:
 # Pending auth: phone -> (client, timestamp). Cleaned up after 10 min.
 _auth_pending: dict[str, tuple[TelegramClient, float]] = {}
 _AUTH_TIMEOUT_SEC = 600
+_qr_task: asyncio.Task | None = None
+_qr_client: TelegramClient | None = None
+_qr_password: asyncio.Future | None = None
+_qr_state: dict = {
+    "status": "idle",
+    "url": "",
+    "image": "",
+    "user": None,
+    "error": "",
+}
 
 
 async def get_client() -> TelegramClient:
@@ -447,9 +458,160 @@ async def auth_confirm(request: Request, x_api_key: str | None = Header(None)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _telegram_user_payload(me) -> dict:
+    return {
+        "id": me.id,
+        "first_name": me.first_name or "",
+        "username": me.username or "",
+        "phone": me.phone or "",
+    }
+
+
+def _qr_png(url: str) -> str:
+    import qrcode
+
+    buf = io.BytesIO()
+    qrcode.make(url).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+async def _stop_qr_login() -> None:
+    global _qr_task, _qr_client, _qr_password
+    task = _qr_task
+    _qr_task = None
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    if _qr_password and not _qr_password.done():
+        _qr_password.cancel()
+    _qr_password = None
+    if _qr_client:
+        try:
+            await _qr_client.disconnect()
+        except Exception:
+            pass
+        _qr_client = None
+    _qr_state.update(status="idle", url="", image="", user=None, error="")
+
+
+async def _qr_worker() -> None:
+    global client, _qr_client, _qr_password
+    auth_client = TelegramClient(
+        TELEGRAM_SESSION_PATH,
+        TELEGRAM_API_ID,
+        TELEGRAM_API_HASH,
+    )
+    _qr_client = auth_client
+    try:
+        await auth_client.connect()
+        if await auth_client.is_user_authorized():
+            me = await auth_client.get_me()
+            _qr_state["status"] = "authorized"
+            _qr_state["user"] = _telegram_user_payload(me)
+            if client and client is not auth_client:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+            client = auth_client
+            _qr_client = None
+            return
+
+        qr = await auth_client.qr_login()
+        while True:
+            _qr_state["url"] = qr.url
+            _qr_state["image"] = _qr_png(qr.url)
+            _qr_state["status"] = "pending"
+            _qr_state["error"] = ""
+            try:
+                await qr.wait(timeout=25)
+                break
+            except SessionPasswordNeededError:
+                _qr_state["status"] = "password"
+                loop = asyncio.get_running_loop()
+                _qr_password = loop.create_future()
+                password = await asyncio.wait_for(_qr_password, timeout=180)
+                await auth_client.sign_in(password=password)
+                break
+            except asyncio.TimeoutError:
+                await qr.recreate()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if "Expired" in type(e).__name__ or "Token" in type(e).__name__:
+                    await qr.recreate()
+                    continue
+                raise
+
+        me = await auth_client.get_me()
+        _qr_state["status"] = "authorized"
+        _qr_state["user"] = _telegram_user_payload(me)
+        _qr_state["url"] = ""
+        _qr_state["image"] = ""
+        if client and client is not auth_client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+        client = auth_client
+        _qr_client = None
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.exception("QR login failed")
+        _qr_state["status"] = "error"
+        _qr_state["error"] = str(e)
+        if _qr_client is auth_client:
+            try:
+                await auth_client.disconnect()
+            except Exception:
+                pass
+            _qr_client = None
+
+
+@app.post("/auth/qr/start")
+async def auth_qr_start(x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+        raise HTTPException(status_code=503, detail="TELEGRAM_API_ID/TELEGRAM_API_HASH non configurés")
+    ensure_session_directory()
+    global _qr_task
+    await _stop_qr_login()
+    _qr_state["status"] = "starting"
+    _qr_task = asyncio.create_task(_qr_worker())
+    for _ in range(50):
+        if _qr_state["status"] in ("pending", "authorized", "password", "error"):
+            break
+        await asyncio.sleep(0.1)
+    return dict(_qr_state)
+
+
+@app.get("/auth/qr/status")
+async def auth_qr_status(x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    return dict(_qr_state)
+
+
+@app.post("/auth/qr/password")
+async def auth_qr_password(request: Request, x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    body = await request.json()
+    password = (body.get("password") or "").strip()
+    if not password:
+        raise HTTPException(status_code=400, detail="Mot de passe requis")
+    if _qr_state["status"] != "password" or not _qr_password or _qr_password.done():
+        raise HTTPException(status_code=400, detail="Aucun QR en attente de mot de passe")
+    _qr_password.set_result(password)
+    return {"success": True}
+
+
 @app.post("/auth/logout")
 async def auth_logout(x_api_key: str | None = Header(None)):
     verify_api_key(x_api_key)
+    await _stop_qr_login()
     global client
     for _, (pending_client, _) in list(_auth_pending.items()):
         try:

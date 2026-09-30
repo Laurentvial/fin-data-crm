@@ -446,6 +446,11 @@ function TelegramConnectionSection() {
   const [codeHint, setCodeHint] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [qr, setQr] = useState<{
+    status: string;
+    image?: string;
+    error?: string;
+  } | null>(null);
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -468,6 +473,74 @@ function TelegramConnectionSection() {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    if (!qr || qr.status === "authorized" || qr.status === "error" || qr.status === "idle") return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch("/api/telegram-auth/qr");
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "Service Telegram inaccessible");
+          return;
+        }
+        setQr({ status: data.status, image: data.image, error: data.error });
+        if (data.status === "authorized" && data.user) {
+          setStatus({ authorized: true, user: data.user });
+          setQr(null);
+        } else if (data.status === "error") {
+          setError(data.error ?? "Connexion QR refusée");
+        }
+      } catch {
+        setError("Service Telegram inaccessible");
+      }
+    }, 2000);
+    return () => clearInterval(id);
+  }, [qr?.status]);
+
+  const startQr = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/telegram-auth/qr", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Impossible d'afficher le QR");
+        return;
+      }
+      setQr({ status: data.status, image: data.image, error: data.error });
+      if (data.status === "authorized" && data.user) {
+        setStatus({ authorized: true, user: data.user });
+        setQr(null);
+      } else if (data.status === "error") {
+        setError(data.error ?? "Connexion QR refusée");
+      }
+    } catch {
+      setError("Service Telegram inaccessible");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const submitQrPassword = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/telegram-auth/qr/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Mot de passe refusé");
+      }
+    } catch {
+      setError("Service Telegram inaccessible");
+    } finally {
+      setPending(false);
+    }
+  };
 
   const handleRequestCode = async () => {
     const p = phone.trim();
@@ -626,6 +699,46 @@ function TelegramConnectionSection() {
               {error}
             </div>
           )}
+
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Sur le téléphone déjà connecté à ce compte : Paramètres → Appareils → Connecter un appareil, puis scannez le QR. Aucun code n&apos;est envoyé.
+            </p>
+            <button
+              type="button"
+              onClick={startQr}
+              disabled={pending}
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+            >
+              {pending ? "Préparation…" : "Afficher le QR"}
+            </button>
+            {qr?.image && qr.status !== "authorized" && (
+              <img
+                src={`data:image/png;base64,${qr.image}`}
+                alt="QR de connexion Telegram"
+                className="h-56 w-56 rounded-lg bg-white p-2"
+              />
+            )}
+            {qr?.status === "password" && (
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Mot de passe cloud Telegram"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={submitQrPassword}
+                  disabled={pending}
+                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                >
+                  Valider
+                </button>
+              </div>
+            )}
+          </div>
 
           {step === "phone" && (
             <div className="flex flex-wrap gap-2">
