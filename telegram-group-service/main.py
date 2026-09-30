@@ -367,6 +367,7 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
     try:
         sent = await auth_client.send_code_request(phone)
         delivery = type(sent.type).__name__
+        resend_error_text = ""
         logger.info("Telegram code delivery for %s: %s", phone, delivery)
         if delivery == "SentCodeTypeApp":
             try:
@@ -374,9 +375,22 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
                 delivery = type(sent.type).__name__
                 logger.info("Telegram code resent for %s: %s", phone, delivery)
             except Exception as resend_error:
+                resend_error_text = str(resend_error)
                 logger.warning("Telegram resend_code failed: %s", resend_error)
         _auth_pending[phone] = (auth_client, time.time())
-        return {"success": True, "message": _code_delivery_message(delivery), "delivery": delivery}
+        message = _code_delivery_message(delivery)
+        if delivery == "SentCodeTypeApp":
+            message += (
+                " Telegram refuse le SMS depuis ce serveur, et le message dans l'application "
+                "n'arrive souvent pas non plus. Connectez le compte une fois depuis votre PC."
+            )
+            if resend_error_text:
+                message += f" Détail: {resend_error_text}"
+        return {
+            "success": True,
+            "message": message,
+            "delivery": delivery,
+        }
     except Exception as e:
         await auth_client.disconnect()
         raise HTTPException(status_code=400, detail=str(e))
