@@ -89,7 +89,20 @@ logger = logging.getLogger(__name__)
 API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "").strip()
 TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
-TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session")
+TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session").strip()
+
+
+def ensure_session_directory() -> None:
+    """SQLite does not create missing parent folders (unable to open database file)."""
+    parent = Path(TELEGRAM_SESSION_PATH).expanduser().resolve().parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise OSError(
+            f"Dossier de session inaccessible ({parent}). "
+            "Sur Render, ajoutez un disque monté sur /opt/data et "
+            "TELEGRAM_SESSION_PATH=/opt/data/telegram_session."
+        ) from e
 
 client: TelegramClient | None = None
 
@@ -172,6 +185,7 @@ async def get_client() -> TelegramClient:
     if client is None:
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
             raise RuntimeError("TELEGRAM_API_ID and TELEGRAM_API_HASH must be set")
+        ensure_session_directory()
         c = TelegramClient(
             TELEGRAM_SESSION_PATH,
             TELEGRAM_API_ID,
@@ -214,6 +228,10 @@ async def _cleanup_expired_auth() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        ensure_session_directory()
+    except OSError as e:
+        logger.error("Session directory not ready: %s", e)
     try:
         Path(_temp_dir()).mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -313,6 +331,7 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
             await old_c.disconnect()
         except Exception:
             pass
+    ensure_session_directory()
     auth_client = TelegramClient(
         TELEGRAM_SESSION_PATH,
         TELEGRAM_API_ID,
