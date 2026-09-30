@@ -86,7 +86,7 @@ def _is_telegram_create_channel_blocked(exc: BaseException) -> bool:
 
 logger = logging.getLogger(__name__)
 
-API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "").strip()
 TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session")
@@ -274,7 +274,7 @@ async def auth_status(x_api_key: str | None = Header(None)):
     if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
         return {"authorized": False, "error": "TELEGRAM_API_ID/TELEGRAM_API_HASH non configurés"}
     try:
-        tg = await get_client()
+        tg = await asyncio.wait_for(get_client(), timeout=20)
         me = await tg.get_me()
         return {
             "authorized": True,
@@ -287,6 +287,14 @@ async def auth_status(x_api_key: str | None = Header(None)):
         }
     except RuntimeError:
         return {"authorized": False}
+    except asyncio.TimeoutError:
+        return {
+            "authorized": False,
+            "error": "Le service met trop longtemps à joindre Telegram.",
+        }
+    except Exception as e:
+        logger.exception("auth/status failed")
+        return {"authorized": False, "error": f"Connexion Telegram impossible: {e}"}
 
 
 @app.post("/auth/request-code")
