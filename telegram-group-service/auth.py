@@ -1,17 +1,17 @@
 """
-One-time Telegram authentication script.
+One-time Telegram login by QR code.
 
-Run this to log in with your Telegram user account (phone + code).
-The session file will be reused by the main service.
+No SMS and no in-app login code. On the phone already logged into the
+account: Settings, Devices, Link desktop device, then scan the QR.
 """
 
 import asyncio
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError, SessionPasswordNeededError
-from telethon.tl.functions.auth import ResendCodeRequest
+from telethon.errors import SessionPasswordNeededError
 
 load_dotenv()
 load_dotenv("env")
@@ -19,22 +19,36 @@ load_dotenv("env")
 TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session").strip()
+QR_PNG = Path(__file__).resolve().parent / "telegram-login-qr.png"
 
 
-def describe(sent) -> str:
-    delivery = type(sent.type).__name__
-    nxt = type(sent.next_type).__name__ if getattr(sent, "next_type", None) else "aucun"
-    timeout = getattr(sent, "timeout", None)
-    return f"{delivery} (prochain moyen: {nxt}, attente avant renvoi: {timeout}s)"
+def show_qr(url: str) -> None:
+    try:
+        import qrcode
+    except ImportError:
+        print("Installez le générateur : python -m pip install qrcode")
+        print(url)
+        return
+
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url)
+    qr.make(fit=True)
+    qr.print_ascii(invert=True)
+    try:
+        img = qr.make_image(fill_color="black", back_color="white")
+        img.save(QR_PNG)
+        print(f"Image : {QR_PNG}")
+        if os.name == "nt":
+            os.startfile(QR_PNG)  # noqa: S606
+    except Exception as e:
+        print(f"QR en image indisponible ({e}). Utilisez le QR affiché ci-dessus.")
 
 
 async def main():
     if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
-        print("Set TELEGRAM_API_ID and TELEGRAM_API_HASH environment variables.")
-        print("Get them from https://my.telegram.org/app")
+        print("TELEGRAM_API_ID et TELEGRAM_API_HASH manquent dans .env")
         return
 
-    phone = input("Numéro avec indicatif (ex. +972...): ").strip()
     client = TelegramClient(
         TELEGRAM_SESSION_PATH,
         TELEGRAM_API_ID,
@@ -47,44 +61,36 @@ async def main():
         await client.disconnect()
         return
 
-    try:
-        sent = await client.send_code_request(phone)
-    except FloodWaitError as e:
-        print(f"Telegram bloque les nouveaux codes pendant {e.seconds} secondes.")
-        await client.disconnect()
-        return
-    except Exception as e:
-        print(f"Échec de la demande de code: {e}")
-        await client.disconnect()
-        return
+    print("Sur le téléphone : Paramètres → Appareils → Connecter un appareil, puis scannez ce QR.")
+    qr_login = await client.qr_login()
+    show_qr(qr_login.url)
 
-    print(f"Telegram a choisi: {describe(sent)}")
-    if type(sent.type).__name__ == "SentCodeTypeApp" and getattr(sent, "next_type", None) is None:
-        print(
-            "Pas de SMS pour ce numéro. Le code part uniquement vers un appareil "
-            "où +ce compte Telegram est déjà ouvert (conversation « Telegram »)."
-        )
-    elif type(sent.type).__name__ == "SentCodeTypeApp":
+    while True:
         try:
-            sent = await client(ResendCodeRequest(phone, sent.phone_code_hash))
-            print(f"Renvoi: {describe(sent)}")
+            await qr_login.wait(timeout=30)
+            break
+        except SessionPasswordNeededError:
+            password = input("Mot de passe cloud Telegram : ")
+            await client.sign_in(password=password)
+            break
+        except asyncio.TimeoutError:
+            print("QR expiré. Nouveau QR, scannez celui-ci.")
+            await qr_login.recreate()
+            show_qr(qr_login.url)
         except Exception as e:
-            print(f"Renvoi SMS refusé: {e}")
-
-    code = input("Code reçu (rien d'autre): ").strip()
-    try:
-        await client.sign_in(phone, code)
-    except SessionPasswordNeededError:
-        password = input("Mot de passe cloud Telegram: ")
-        await client.sign_in(password=password)
-    except Exception as e:
-        print(f"Connexion refusée: {e}")
-        await client.disconnect()
-        return
+            name = type(e).__name__
+            if "Expired" in name or "Token" in name:
+                print("QR expiré. Nouveau QR, scannez celui-ci.")
+                await qr_login.recreate()
+                show_qr(qr_login.url)
+                continue
+            print(f"Connexion QR refusée : {e}")
+            await client.disconnect()
+            return
 
     me = await client.get_me()
     print(f"Connecté : {me.first_name} (@{me.username or 'sans pseudo'})")
-    print(f"Fichier de session: {TELEGRAM_SESSION_PATH}.session")
+    print(f"Fichier de session : {TELEGRAM_SESSION_PATH}.session")
     await client.disconnect()
 
 
