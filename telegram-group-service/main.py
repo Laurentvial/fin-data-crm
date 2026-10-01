@@ -8,6 +8,7 @@ Requires a user account session (not a bot).
 import asyncio
 import base64
 import gc
+import io
 import logging
 import os
 import tempfile
@@ -22,6 +23,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from telethon import TelegramClient
+from telethon.tl.functions.auth import ResendCodeRequest
 from telethon.errors import (
     FileReferenceInvalidError,
     FloodWaitError,
@@ -86,10 +88,37 @@ def _is_telegram_create_channel_blocked(exc: BaseException) -> bool:
 
 logger = logging.getLogger(__name__)
 
-API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "").strip()
 TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
-TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session")
+TELEGRAM_SESSION_PATH = os.environ.get("TELEGRAM_SESSION_PATH", "telegram_session").strip()
+
+
+def _code_delivery_message(delivery: str) -> str:
+    if delivery == "SentCodeTypeApp":
+        return "Code envoyé dans l'application Telegram, conversation officielle « Telegram ». Pas par SMS."
+    if delivery in ("SentCodeTypeSms", "SentCodeTypeFirebaseSms", "SentCodeTypeSmsWord", "SentCodeTypeSmsPhrase"):
+        return "Code envoyé par SMS sur ce numéro."
+    if delivery == "SentCodeTypeFragmentSms":
+        return "Code envoyé par SMS Fragment sur ce numéro."
+    if delivery in ("SentCodeTypeCall", "SentCodeTypeFlashCall", "SentCodeTypeMissedCall"):
+        return "Telegram va appeler ce numéro. Le code est le numéro qui appelle."
+    if delivery in ("SentCodeTypeEmailCode", "SentCodeTypeSetUpEmailRequired"):
+        return "Code envoyé par e-mail sur l'adresse liée au compte Telegram."
+    return "Code demandé. Vérifiez l'application Telegram, les SMS et l'e-mail du compte."
+
+
+def ensure_session_directory() -> None:
+    """SQLite does not create missing parent folders (unable to open database file)."""
+    parent = Path(TELEGRAM_SESSION_PATH).expanduser().resolve().parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise OSError(
+            f"Dossier de session inaccessible ({parent}). "
+            "Sur Render, ajoutez un disque monté sur /opt/data et "
+            "TELEGRAM_SESSION_PATH=/opt/data/telegram_session."
+        ) from e
 
 client: TelegramClient | None = None
 
@@ -165,6 +194,16 @@ def _unlink_quiet(path: str | None) -> None:
 # Pending auth: phone -> (client, timestamp). Cleaned up after 10 min.
 _auth_pending: dict[str, tuple[TelegramClient, float]] = {}
 _AUTH_TIMEOUT_SEC = 600
+_qr_task: asyncio.Task | None = None
+_qr_client: TelegramClient | None = None
+_qr_password: asyncio.Future | None = None
+_qr_state: dict = {
+    "status": "idle",
+    "url": "",
+    "image": "",
+    "user": None,
+    "error": "",
+}
 
 
 async def get_client() -> TelegramClient:
@@ -172,6 +211,7 @@ async def get_client() -> TelegramClient:
     if client is None:
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
             raise RuntimeError("TELEGRAM_API_ID and TELEGRAM_API_HASH must be set")
+        ensure_session_directory()
         c = TelegramClient(
             TELEGRAM_SESSION_PATH,
             TELEGRAM_API_ID,
@@ -214,6 +254,10 @@ async def _cleanup_expired_auth() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        ensure_session_directory()
+    except OSError as e:
+        logger.error("Session directory not ready: %s", e)
     try:
         Path(_temp_dir()).mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -274,7 +318,7 @@ async def auth_status(x_api_key: str | None = Header(None)):
     if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
         return {"authorized": False, "error": "TELEGRAM_API_ID/TELEGRAM_API_HASH non configurés"}
     try:
-        tg = await get_client()
+        tg = await asyncio.wait_for(get_client(), timeout=20)
         me = await tg.get_me()
         return {
             "authorized": True,
@@ -287,6 +331,14 @@ async def auth_status(x_api_key: str | None = Header(None)):
         }
     except RuntimeError:
         return {"authorized": False}
+    except asyncio.TimeoutError:
+        return {
+            "authorized": False,
+            "error": "Le service met trop longtemps à joindre Telegram.",
+        }
+    except Exception as e:
+        logger.exception("auth/status failed")
+        return {"authorized": False, "error": f"Connexion Telegram impossible: {e}"}
 
 
 @app.post("/auth/request-code")
@@ -305,6 +357,7 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
             await old_c.disconnect()
         except Exception:
             pass
+    ensure_session_directory()
     auth_client = TelegramClient(
         TELEGRAM_SESSION_PATH,
         TELEGRAM_API_ID,
@@ -324,9 +377,34 @@ async def auth_request_code(request: Request, x_api_key: str | None = Header(Non
             },
         }
     try:
-        await auth_client.send_code_request(phone)
+        sent = await auth_client.send_code_request(phone)
+        delivery = type(sent.type).__name__
+        resend_error_text = ""
+        logger.info("Telegram code delivery for %s: %s", phone, delivery)
+        if delivery == "SentCodeTypeApp" and getattr(sent, "next_type", None) is not None:
+            try:
+                sent = await auth_client(ResendCodeRequest(phone, sent.phone_code_hash))
+                delivery = type(sent.type).__name__
+                logger.info("Telegram code resent for %s: %s", phone, delivery)
+            except Exception as resend_error:
+                resend_error_text = str(resend_error)
+                logger.warning("Telegram resend_code failed: %s", resend_error)
+        elif delivery == "SentCodeTypeApp":
+            resend_error_text = "Telegram n'a proposé aucun autre canal que l'application."
         _auth_pending[phone] = (auth_client, time.time())
-        return {"success": True, "message": "Code envoyé sur Telegram"}
+        message = _code_delivery_message(delivery)
+        if delivery == "SentCodeTypeApp":
+            message += (
+                " Telegram refuse le SMS depuis ce serveur, et le message dans l'application "
+                "n'arrive souvent pas non plus. Connectez le compte une fois depuis votre PC."
+            )
+            if resend_error_text:
+                message += f" Détail: {resend_error_text}"
+        return {
+            "success": True,
+            "message": message,
+            "delivery": delivery,
+        }
     except Exception as e:
         await auth_client.disconnect()
         raise HTTPException(status_code=400, detail=str(e))
@@ -380,9 +458,160 @@ async def auth_confirm(request: Request, x_api_key: str | None = Header(None)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _telegram_user_payload(me) -> dict:
+    return {
+        "id": me.id,
+        "first_name": me.first_name or "",
+        "username": me.username or "",
+        "phone": me.phone or "",
+    }
+
+
+def _qr_png(url: str) -> str:
+    import qrcode
+
+    buf = io.BytesIO()
+    qrcode.make(url).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+async def _stop_qr_login() -> None:
+    global _qr_task, _qr_client, _qr_password
+    task = _qr_task
+    _qr_task = None
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    if _qr_password and not _qr_password.done():
+        _qr_password.cancel()
+    _qr_password = None
+    if _qr_client:
+        try:
+            await _qr_client.disconnect()
+        except Exception:
+            pass
+        _qr_client = None
+    _qr_state.update(status="idle", url="", image="", user=None, error="")
+
+
+async def _qr_worker() -> None:
+    global client, _qr_client, _qr_password
+    auth_client = TelegramClient(
+        TELEGRAM_SESSION_PATH,
+        TELEGRAM_API_ID,
+        TELEGRAM_API_HASH,
+    )
+    _qr_client = auth_client
+    try:
+        await auth_client.connect()
+        if await auth_client.is_user_authorized():
+            me = await auth_client.get_me()
+            _qr_state["status"] = "authorized"
+            _qr_state["user"] = _telegram_user_payload(me)
+            if client and client is not auth_client:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+            client = auth_client
+            _qr_client = None
+            return
+
+        qr = await auth_client.qr_login()
+        while True:
+            _qr_state["url"] = qr.url
+            _qr_state["image"] = _qr_png(qr.url)
+            _qr_state["status"] = "pending"
+            _qr_state["error"] = ""
+            try:
+                await qr.wait(timeout=25)
+                break
+            except SessionPasswordNeededError:
+                _qr_state["status"] = "password"
+                loop = asyncio.get_running_loop()
+                _qr_password = loop.create_future()
+                password = await asyncio.wait_for(_qr_password, timeout=180)
+                await auth_client.sign_in(password=password)
+                break
+            except asyncio.TimeoutError:
+                await qr.recreate()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if "Expired" in type(e).__name__ or "Token" in type(e).__name__:
+                    await qr.recreate()
+                    continue
+                raise
+
+        me = await auth_client.get_me()
+        _qr_state["status"] = "authorized"
+        _qr_state["user"] = _telegram_user_payload(me)
+        _qr_state["url"] = ""
+        _qr_state["image"] = ""
+        if client and client is not auth_client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+        client = auth_client
+        _qr_client = None
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.exception("QR login failed")
+        _qr_state["status"] = "error"
+        _qr_state["error"] = str(e)
+        if _qr_client is auth_client:
+            try:
+                await auth_client.disconnect()
+            except Exception:
+                pass
+            _qr_client = None
+
+
+@app.post("/auth/qr/start")
+async def auth_qr_start(x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+        raise HTTPException(status_code=503, detail="TELEGRAM_API_ID/TELEGRAM_API_HASH non configurés")
+    ensure_session_directory()
+    global _qr_task
+    await _stop_qr_login()
+    _qr_state["status"] = "starting"
+    _qr_task = asyncio.create_task(_qr_worker())
+    for _ in range(50):
+        if _qr_state["status"] in ("pending", "authorized", "password", "error"):
+            break
+        await asyncio.sleep(0.1)
+    return dict(_qr_state)
+
+
+@app.get("/auth/qr/status")
+async def auth_qr_status(x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    return dict(_qr_state)
+
+
+@app.post("/auth/qr/password")
+async def auth_qr_password(request: Request, x_api_key: str | None = Header(None)):
+    verify_api_key(x_api_key)
+    body = await request.json()
+    password = (body.get("password") or "").strip()
+    if not password:
+        raise HTTPException(status_code=400, detail="Mot de passe requis")
+    if _qr_state["status"] != "password" or not _qr_password or _qr_password.done():
+        raise HTTPException(status_code=400, detail="Aucun QR en attente de mot de passe")
+    _qr_password.set_result(password)
+    return {"success": True}
+
+
 @app.post("/auth/logout")
 async def auth_logout(x_api_key: str | None = Header(None)):
     verify_api_key(x_api_key)
+    await _stop_qr_login()
     global client
     for _, (pending_client, _) in list(_auth_pending.items()):
         try:

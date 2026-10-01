@@ -19,16 +19,18 @@ async function requireAdmin() {
   return null;
 }
 
-export async function GET() {
+export async function POST(request: Request) {
   const authError = await requireAdmin();
   if (authError) return authError;
 
-  const result = await callTelegramGroupService("/auth/status");
+  const body = await request.json().catch(() => null);
+  const password = (body?.password ?? "").toString();
+  const result = await callTelegramGroupService("/auth/qr/password", {
+    method: "POST",
+    body: { password },
+  });
   if (!result.ok) {
-    return NextResponse.json(
-      { authorized: false, error: result.error },
-      { status: result.status }
-    );
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
   return NextResponse.json(result.data);
 }
