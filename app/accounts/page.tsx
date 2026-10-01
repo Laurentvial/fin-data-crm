@@ -12,6 +12,7 @@ import { TelegramBankAccountRattrapage } from "@/components/TelegramBankAccountR
 import { IbanCopyRows } from "@/components/IbanCopyRows";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { CreatedDateInput, parseFrDateToIsoOrNull } from "@/components/CreatedDateInput";
+import { EntityTransferButtons } from "@/components/EntityTransferButtons";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
 import {
   buildAccountDetailHref,
@@ -2515,6 +2516,14 @@ function AccountsPageContent() {
             )}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
+            {canEditData && (
+              <EntityTransferButtons
+                entity="bank_accounts"
+                ids={sortedBankAccounts.map((ba) => ba.id)}
+                labels={{ singular: "compte", plural: "comptes" }}
+                onImported={() => void fetchBankAccounts()}
+              />
+            )}
             {canEditData && companies.length > 0 && (
               <button
                 type="button"

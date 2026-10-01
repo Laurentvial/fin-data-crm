@@ -11,6 +11,7 @@ import { getCachedSession } from "@/lib/auth/session-cache";
 import type { Bank, BankAccount, Company, Source } from "@/lib/types";
 import { getDefaultVatRateForCountry, getVatRatesForCountry } from "@/lib/vat-rates";
 import { COUNTRY_LABELS_FR, PAYS_NAISSANCE_OPTIONS } from "@/lib/countries-fr";
+import { EntityTransferButtons } from "@/components/EntityTransferButtons";
 
 const DEFAULT_VISIBLE_ACCOUNT_STATUS_IDS = [
   "ccaa0782-386a-4326-81f9-aea94007d6ff",
@@ -2219,13 +2220,21 @@ function SocietesPageContent() {
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3 lg:self-start">
             {canEditData && (
-              <button
-                type="button"
-                onClick={openAdd}
-                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
-              >
-                + Créer une société
-              </button>
+              <>
+                <EntityTransferButtons
+                  entity="companies"
+                  ids={filteredCompanies.map((c) => c.id)}
+                  labels={{ singular: "société", plural: "sociétés" }}
+                  onImported={() => void fetchCompanies()}
+                />
+                <button
+                  type="button"
+                  onClick={openAdd}
+                  className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
+                >
+                  + Créer une société
+                </button>
+              </>
             )}
           </div>
         </div>
