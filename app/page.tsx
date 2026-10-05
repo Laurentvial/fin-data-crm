@@ -50,8 +50,18 @@ const TRANSACTION_PAGE_SIZE = 500;
 const FILTER_OPTIONS_PAGE_SIZE = 1000;
 
 interface DuplicateAmountGroup {
+  name: string;
   amountCents: number;
   rows: Transaction[];
+}
+
+/** Référence d'opération (FACEBK *SJW3A7AQW4), sinon le libellé complet. Carte **4352 est ignorée. */
+function transactionDuplicateName(description: string | null | undefined): string {
+  const trimmed = (description ?? "").trim().replace(/\s+/g, " ");
+  if (!trimmed) return "";
+  const ref = trimmed.match(/([A-Za-z0-9]+\s*\*[A-Za-z0-9]+)/);
+  if (!ref) return trimmed;
+  return ref[1]!.replace(/\s*\*\s*/, " *").toUpperCase();
 }
 
 const TransactionsGrid = dynamic(
@@ -1039,31 +1049,35 @@ function HomeContent() {
       }
 
       const scopedRows = applyClientTransactionFilters(allRows, filterValues);
-      const rowsByAmount = new Map<number, Transaction[]>();
+      const rowsByNameAndAmount = new Map<string, Transaction[]>();
       for (const t of scopedRows) {
         const amount = Number(t.amount);
         if (!Number.isFinite(amount)) continue;
+        const name = transactionDuplicateName(t.description);
+        if (!name) continue;
         const cents = Math.round(amount * 100);
-        const bucket = rowsByAmount.get(cents);
+        const key = `${name}\u0000${cents}`;
+        const bucket = rowsByNameAndAmount.get(key);
         if (bucket) bucket.push(t);
-        else rowsByAmount.set(cents, [t]);
+        else rowsByNameAndAmount.set(key, [t]);
       }
 
-      const duplicateGroups = [...rowsByAmount.entries()]
-        .filter(([, rows]) => rows.length > 1)
-        .map(([amountCents, rows]) => ({
-          amountCents,
+      const duplicateGroups = [...rowsByNameAndAmount.values()]
+        .filter((rows) => rows.length > 1)
+        .map((rows) => ({
+          name: transactionDuplicateName(rows[0]?.description),
+          amountCents: Math.round(Number(rows[0]?.amount) * 100),
           rows: rows.sort((a, b) => {
             const ad = new Date(a.transaction_date ?? a.created_at ?? 0).getTime();
             const bd = new Date(b.transaction_date ?? b.created_at ?? 0).getTime();
             return bd - ad;
           }),
         }))
-        .sort((a, b) => b.rows.length - a.rows.length);
+        .sort((a, b) => b.rows.length - a.rows.length || a.name.localeCompare(b.name, "fr"));
 
       if (duplicateGroups.length === 0) {
         setDuplicateScanSummary(
-          `Scan doublons terminé: aucun doublon potentiel par montant sur ${scopedRows.length} lignes.`
+          `Scan doublons terminé: aucun doublon (même nom et même montant) sur ${scopedRows.length} lignes.`
         );
         setDuplicateScanModalOpen(false);
         return;
@@ -1072,12 +1086,12 @@ function HomeContent() {
       const topExamples = duplicateGroups
         .slice(0, 5)
         .map((g) => {
-          return `${formatAmountCentsFR(g.amountCents)} (${g.rows.length})`;
+          return `${g.name} · ${formatAmountCentsFR(g.amountCents)} (${g.rows.length})`;
         })
         .join(" ; ");
 
       setDuplicateScanSummary(
-        `Scan doublons terminé: ${duplicateGroups.length} montants potentiellement dupliqués (analyse sur ${scopedRows.length} lignes). Exemples: ${topExamples}.`
+        `Scan doublons terminé: ${duplicateGroups.length} groupes avec le même nom et le même montant (analyse sur ${scopedRows.length} lignes). Exemples: ${topExamples}.`
       );
       setDuplicateAmountGroups(duplicateGroups);
       setDuplicateScanModalOpen(true);
@@ -1283,10 +1297,10 @@ function HomeContent() {
             <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
               <div>
                 <h2 className="text-base font-semibold text-[var(--foreground)]">
-                  Doublons potentiels (montant)
+                  Doublons potentiels
                 </h2>
                 <p className="text-xs text-[var(--muted-foreground)]">
-                  {duplicateAmountGroups.length} montant{duplicateAmountGroups.length > 1 ? "s" : ""} dupliqué{duplicateAmountGroups.length > 1 ? "s" : ""} · {duplicateTotalRows} ligne{duplicateTotalRows > 1 ? "s" : ""}
+                  Même nom d&apos;opération et même montant. {duplicateAmountGroups.length} groupe{duplicateAmountGroups.length > 1 ? "s" : ""} · {duplicateTotalRows} ligne{duplicateTotalRows > 1 ? "s" : ""}
                 </p>
               </div>
               <button
@@ -1331,12 +1345,15 @@ function HomeContent() {
               <div className="space-y-4">
                 {duplicateAmountGroups.map((group) => (
                   <section
-                    key={`dup-${group.amountCents}`}
+                    key={`dup-${group.name}-${group.amountCents}`}
                     className="rounded-lg border border-[var(--border)]"
                   >
-                    <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2">
-                      <h3 className="text-sm font-medium text-[var(--foreground)]">
-                        Montant {formatAmountCentsFR(group.amountCents)}
+                    <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2">
+                      <h3 className="min-w-0 break-words text-sm font-medium text-[var(--foreground)]">
+                        {group.name}
+                        <span className="ml-2 tabular-nums text-[var(--muted-foreground)]">
+                          {formatAmountCentsFR(group.amountCents)} €
+                        </span>
                       </h3>
                       <span className="text-xs text-[var(--muted-foreground)]">
                         {group.rows.length} lignes

@@ -230,7 +230,7 @@ export function SheetToolbar({
           disabled={scanAmountDuplicatesBusy}
           className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {scanAmountDuplicatesBusy ? "Scan doublons…" : "Scanner doublons montant"}
+          {scanAmountDuplicatesBusy ? "Scan doublons…" : "Scanner doublons"}
         </button>
       ) : null}
       {companyDetailLink ? (
