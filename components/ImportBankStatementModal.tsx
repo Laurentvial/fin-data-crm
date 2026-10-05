@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { modalBackdropClose, suppressNextModalBackdropClose } from "@/lib/modal-backdrop-close";
 import type { BankAccount } from "@/lib/types";
 
@@ -47,6 +47,25 @@ function formatEur(n: number): string {
   }).format(n);
 }
 
+/** Lignes du relevé qui partagent exactement le même libellé (les libellés vides sont ignorés). */
+function groupByExactDescription(rows: ReviewRow[]): { description: string; rows: ReviewRow[] }[] {
+  const byDescription = new Map<string, ReviewRow[]>();
+  for (const row of rows) {
+    const description = row.description.trim();
+    if (!description) continue;
+    const list = byDescription.get(description);
+    if (list) list.push(row);
+    else byDescription.set(description, [row]);
+  }
+  return [...byDescription.entries()]
+    .filter(([, list]) => list.length > 1)
+    .map(([description, grouped]) => ({ description, rows: grouped }))
+    .sort(
+      (a, b) =>
+        b.rows.length - a.rows.length || a.description.localeCompare(b.description, "fr")
+    );
+}
+
 interface ImportBankStatementModalProps {
   bankAccounts: BankAccount[];
   defaultBankAccountId?: string;
@@ -79,6 +98,7 @@ export function ImportBankStatementModal({
     credit: "",
     type: "",
   });
+  const [sameDescriptionOpen, setSameDescriptionOpen] = useState(false);
 
   const normalizeHeader = (input: string): string =>
     input
@@ -146,6 +166,7 @@ export function ImportBankStatementModal({
     setStep("upload");
     setReviewRows(null);
     setPreviewMeta(null);
+    setSameDescriptionOpen(false);
     setError(null);
     setFile(null);
     setCsvColumns([]);
@@ -284,8 +305,14 @@ export function ImportBankStatementModal({
 
   const importCount = reviewRows?.filter((r) => r.import).length ?? 0;
   const duplicateCount = reviewRows?.filter((r) => r.match_status === "possible_duplicate").length ?? 0;
+  const sameDescriptionGroups = useMemo(
+    () => groupByExactDescription(reviewRows ?? []),
+    [reviewRows]
+  );
+  const sameDescriptionLineCount = sameDescriptionGroups.reduce((sum, group) => sum + group.rows.length, 0);
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={(e) => modalBackdropClose(e, onClose)}
@@ -432,6 +459,13 @@ export function ImportBankStatementModal({
                   même date, montant, type et libellé qu&apos;une opération déjà en base (information seule). Toutes
                   les lignes sont cochées par défaut ; décochez celles à ne pas importer.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setSameDescriptionOpen(true)}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
+                >
+                  Libellés identiques ({sameDescriptionGroups.length})
+                </button>
                 <div className="rounded-lg border border-[var(--border)] overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="bg-[var(--muted)]/40">
@@ -566,6 +600,106 @@ export function ImportBankStatementModal({
         </div>
       </div>
     </div>
+    {sameDescriptionOpen && reviewRows && (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+        onClick={(e) => modalBackdropClose(e, () => setSameDescriptionOpen(false))}
+      >
+        <div
+          className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl border border-[var(--primary-muted-border)] bg-[var(--card)] shadow-lg flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="shrink-0 border-b border-[var(--border)] px-6 py-4">
+            <h3 className="subsection-header text-lg font-medium">Libellés identiques</h3>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              Lignes du relevé qui partagent exactement le même libellé. Les libellés vides sont ignorés.
+            </p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {sameDescriptionGroups.length === 0 ? (
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Aucune ligne ne partage exactement le même libellé.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  {sameDescriptionGroups.length} libellé(s) · {sameDescriptionLineCount} ligne(s)
+                </p>
+                {sameDescriptionGroups.map((group) => (
+                  <section
+                    key={group.description}
+                    className="overflow-hidden rounded-lg border border-[var(--border)]"
+                  >
+                    <header className="flex items-start justify-between gap-3 bg-[var(--muted)]/40 px-3 py-2">
+                      <p className="text-sm font-medium break-words">{group.description}</p>
+                      <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                        {group.rows.length} lignes
+                      </span>
+                    </header>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[520px] text-left text-sm">
+                        <thead>
+                          <tr className="text-xs text-[var(--muted-foreground)]">
+                            <th className="px-2 py-2 w-10">
+                              <span className="sr-only">Importer</span>
+                            </th>
+                            <th className="px-2 py-2 font-medium">Date</th>
+                            <th className="px-2 py-2 font-medium">Type</th>
+                            <th className="px-2 py-2 font-medium text-right">Montant</th>
+                            <th className="px-2 py-2 font-medium">Statut</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((r) => (
+                            <tr key={r.index} className="border-t border-[var(--border)]">
+                              <td className="px-2 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={r.import}
+                                  onChange={(e) => handleToggleImport(r.index, e.target.checked)}
+                                  aria-label={`Importer la ligne du ${r.transaction_date}`}
+                                  className="rounded border-[var(--border)]"
+                                />
+                              </td>
+                              <td className="px-2 py-2 tabular-nums whitespace-nowrap">{r.transaction_date}</td>
+                              <td className="px-2 py-2 whitespace-nowrap">
+                                {r.type === "DEBIT" ? "Débit" : "Crédit"}
+                              </td>
+                              <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
+                                {formatEur(r.amount)} €
+                              </td>
+                              <td className="px-2 py-2 text-xs">
+                                {r.match_status === "possible_duplicate" ? (
+                                  <span className="font-medium text-amber-700 dark:text-amber-400">
+                                    Doublon possible
+                                  </span>
+                                ) : (
+                                  <span className="text-[var(--muted-foreground)]">Nouveau</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 flex justify-end border-t border-[var(--border)] px-6 py-4">
+            <button
+              type="button"
+              onClick={() => setSameDescriptionOpen(false)}
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

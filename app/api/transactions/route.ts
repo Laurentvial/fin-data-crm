@@ -4,7 +4,7 @@ import { canMutate } from "@/lib/auth/permissions";
 import { sql } from "@/lib/db";
 import { isDebitTransactionStatus } from "@/lib/debit-status";
 import { isCreditTransactionStatus } from "@/lib/credit-status";
-import { isSpendingCategory } from "@/lib/spending-category";
+import { isSpendingCategory, SPENDING_CATEGORY_VALUES } from "@/lib/spending-category";
 import type { TransactionType } from "@/lib/types";
 
 const TRANSACTION_TYPES: TransactionType[] = ["DEBIT", "CREDIT"];
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "spending_category invalide (META, Ads setup, Domain, Dev, Autre ou vide)",
+              `spending_category invalide (${SPENDING_CATEGORY_VALUES.join(", ")} ou vide)`,
           },
           { status: 400 }
         );

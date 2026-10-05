@@ -3,6 +3,8 @@ export const SPENDING_CATEGORY_VALUES = [
   "Ads setup",
   "Domain",
   "Dev",
+  "Google",
+  "Frais",
   "Autre",
 ] as const;
 

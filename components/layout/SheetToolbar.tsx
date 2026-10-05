@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SPENDING_CATEGORY_VALUES } from "@/lib/spending-category";
 
 export interface InvoiceToolbarAction {
   count: number;
@@ -182,11 +183,11 @@ export function SheetToolbar({
             aria-label="Categorie bulk edit"
           >
             <option value="">— Effacer —</option>
-            <option value="META">META</option>
-            <option value="Ads setup">Ads setup</option>
-            <option value="Domain">Domain</option>
-            <option value="Dev">Dev</option>
-            <option value="Autre">Autre</option>
+            {SPENDING_CATEGORY_VALUES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
           </select>
           <button
             type="button"
