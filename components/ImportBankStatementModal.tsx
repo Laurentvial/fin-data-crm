@@ -47,26 +47,40 @@ function formatEur(n: number): string {
   }).format(n);
 }
 
-/** Lignes du relevé qui partagent exactement le même libellé et le même montant (libellés vides ignorés). */
+/**
+ * Nom comparé pour le scan : la référence d'opération (ex. « FACEBK *PCS7S8AQW4 »)
+ * quand le libellé en contient une, sinon le libellé complet.
+ * « Carte **4352 » n'est pas une référence : il faut des caractères alphanumériques après l'étoile.
+ */
+function transactionNameKey(description: string): string {
+  const trimmed = description.trim().replace(/\s+/g, " ");
+  const ref = trimmed.match(/([A-Za-z0-9]+\s*\*[A-Za-z0-9]+)/);
+  if (!ref) return trimmed;
+  return ref[1]!.replace(/\s*\*\s*/, " *").toUpperCase();
+}
+
+/** Lignes du relevé qui partagent le même nom d'opération et le même montant. */
 function groupByExactDescriptionAndAmount(
   rows: ReviewRow[]
-): { description: string; amount: number; rows: ReviewRow[] }[] {
-  const byKey = new Map<string, { description: string; amount: number; rows: ReviewRow[] }>();
+): { name: string; amount: number; rows: ReviewRow[] }[] {
+  const byKey = new Map<string, { name: string; amount: number; rows: ReviewRow[] }>();
   for (const row of rows) {
     const description = row.description.trim();
     if (!description) continue;
+    const name = transactionNameKey(description);
+    if (!name) continue;
     const amount = Math.round(row.amount * 100) / 100;
-    const key = `${description}\u0000${amount.toFixed(2)}`;
+    const key = `${name}\u0000${amount.toFixed(2)}`;
     const existing = byKey.get(key);
     if (existing) existing.rows.push(row);
-    else byKey.set(key, { description, amount, rows: [row] });
+    else byKey.set(key, { name, amount, rows: [row] });
   }
   return [...byKey.values()]
     .filter((group) => group.rows.length > 1)
     .sort(
       (a, b) =>
         b.rows.length - a.rows.length ||
-        a.description.localeCompare(b.description, "fr") ||
+        a.name.localeCompare(b.name, "fr") ||
         a.amount - b.amount
     );
 }
@@ -617,13 +631,14 @@ export function ImportBankStatementModal({
           <div className="shrink-0 border-b border-[var(--border)] px-6 py-4">
             <h3 className="subsection-header text-lg font-medium">Même libellé et montant</h3>
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-              Lignes du relevé qui partagent exactement le même libellé et le même montant. Les libellés vides sont ignorés.
+              Une ligne n&apos;apparaît que s&apos;il en existe une autre avec le même nom d&apos;opération et le même montant.
+              Le nom est la référence du libellé (ex. FACEBK *PCS7S8AQW4), pas le texte de change ou de carte qui suit.
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
             {sameDescriptionGroups.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">
-                Aucune ligne ne partage exactement le même libellé et le même montant.
+                Aucune ligne ne partage le même nom d&apos;opération et le même montant.
               </p>
             ) : (
               <div className="space-y-4">
@@ -632,12 +647,12 @@ export function ImportBankStatementModal({
                 </p>
                 {sameDescriptionGroups.map((group) => (
                   <section
-                    key={`${group.description}\u0000${group.amount.toFixed(2)}`}
+                    key={`${group.name}\u0000${group.amount.toFixed(2)}`}
                     className="overflow-hidden rounded-lg border border-[var(--border)]"
                   >
                     <header className="flex items-start justify-between gap-3 bg-[var(--muted)]/40 px-3 py-2">
                       <p className="text-sm font-medium break-words">
-                        {group.description}
+                        {group.name}
                         <span className="ml-2 tabular-nums text-[var(--muted-foreground)]">
                           {formatEur(group.amount)} €
                         </span>
@@ -656,6 +671,7 @@ export function ImportBankStatementModal({
                             <th className="px-2 py-2 font-medium">Date</th>
                             <th className="px-2 py-2 font-medium">Type</th>
                             <th className="px-2 py-2 font-medium text-right">Montant</th>
+                            <th className="px-2 py-2 font-medium">Libellé</th>
                             <th className="px-2 py-2 font-medium">Statut</th>
                           </tr>
                         </thead>
@@ -678,6 +694,7 @@ export function ImportBankStatementModal({
                               <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
                                 {formatEur(r.amount)} €
                               </td>
+                              <td className="px-2 py-2 max-w-[280px] break-words">{r.description}</td>
                               <td className="px-2 py-2 text-xs">
                                 {r.match_status === "possible_duplicate" ? (
                                   <span className="font-medium text-amber-700 dark:text-amber-400">
