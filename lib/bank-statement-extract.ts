@@ -58,7 +58,13 @@ const LINE_ITEM_SCHEMA: ObjectSchema = {
   properties: {
     transaction_date: {
       type: SchemaType.STRING,
-      description: "Date in YYYY-MM-DD",
+      description:
+        "Date d'opération en ISO YYYY-MM-DD. Relevés français : le premier nombre est le jour. 09/07/2026 et « 09 juil. 2026 » = 2026-07-09 (9 juillet), jamais 2026-09-07.",
+    },
+    date_as_printed: {
+      type: SchemaType.STRING,
+      description:
+        "Date copiée telle qu'imprimée sur la ligne, sans convertir ni réordonner les chiffres (ex. 09/07/2026, 09.07.2026, 09 juil. 2026).",
     },
     amount: {
       type: SchemaType.NUMBER,
@@ -71,7 +77,7 @@ const LINE_ITEM_SCHEMA: ObjectSchema = {
       enum: ["DEBIT", "CREDIT"],
     },
   },
-  required: ["transaction_date", "amount", "description", "type"],
+  required: ["transaction_date", "date_as_printed", "amount", "description", "type"],
 };
 
 const RESPONSE_SCHEMA: ObjectSchema = {
@@ -86,7 +92,13 @@ const RESPONSE_SCHEMA: ObjectSchema = {
 };
 
 function isValidISODate(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T12:00:00Z`));
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return dt.getUTCFullYear() === year && dt.getUTCMonth() === month - 1 && dt.getUTCDate() === day;
 }
 
 export function assertPdfBuffer(buf: Buffer): void {
@@ -220,33 +232,73 @@ function parseAmount(raw: string): number | null {
   return Math.round(signed * 100) / 100;
 }
 
+function toIsoDate(year: number, month: number, day: number): string | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  const iso = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return isValidISODate(iso) ? iso : null;
+}
+
+/** Mois français (nom ou abréviation), sans accent ni point final. */
+const FRENCH_MONTHS: Readonly<Record<string, number>> = {
+  janvier: 1,
+  janv: 1,
+  jan: 1,
+  fevrier: 2,
+  fevr: 2,
+  fev: 2,
+  mars: 3,
+  avril: 4,
+  avr: 4,
+  mai: 5,
+  juin: 6,
+  juillet: 7,
+  juill: 7,
+  juil: 7,
+  aout: 8,
+  septembre: 9,
+  sept: 9,
+  sep: 9,
+  octobre: 10,
+  oct: 10,
+  novembre: 11,
+  nov: 11,
+  decembre: 12,
+  dec: 12,
+};
+
+function frenchMonthNumber(token: string): number | null {
+  const key = token
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\./g, "");
+  return FRENCH_MONTHS[key] ?? null;
+}
+
+/**
+ * Dates de relevés français : le premier nombre est le jour.
+ * Accepte ISO, JJ/MM/AAAA, JJ-MM-AAAA, JJ.MM.AAAA, et « 09 juil. 2026 ».
+ */
 function parseDateToIso(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
-  const dateOnly = value
-    .replace("T", " ")
-    .split(" ")[0]
-    ?.trim();
+
+  const french = /^(\d{1,2})\s+(\p{L}+\.?)\s+(\d{4})\b/u.exec(value);
+  if (french) {
+    const month = frenchMonthNumber(french[2]!);
+    if (month != null) {
+      return toIsoDate(Number(french[3]), month, Number(french[1]));
+    }
+  }
+
+  const dateOnly = value.replace("T", " ").split(" ")[0]?.trim();
   if (!dateOnly) return null;
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return isValidISODate(dateOnly) ? dateOnly : null;
 
-  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(dateOnly);
-  if (slash) {
-    const d = Number(slash[1]);
-    const m = Number(slash[2]);
-    const y = Number(slash[3]);
-    const iso = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    return isValidISODate(iso) ? iso : null;
-  }
-
-  const dash = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(dateOnly);
-  if (dash) {
-    const d = Number(dash[1]);
-    const m = Number(dash[2]);
-    const y = Number(dash[3]);
-    const iso = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    return isValidISODate(iso) ? iso : null;
+  const numeric = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(dateOnly);
+  if (numeric) {
+    return toIsoDate(Number(numeric[3]), Number(numeric[2]), Number(numeric[1]));
   }
 
   return null;
@@ -414,11 +466,14 @@ function normalizeLines(raw: unknown[]): NormalizedExtractedLine[] {
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const r = item as Record<string, unknown>;
-    const date = typeof r.transaction_date === "string" ? r.transaction_date.trim() : "";
+    const printed =
+      typeof r.date_as_printed === "string" ? parseDateToIso(r.date_as_printed) : null;
+    const modelDate = typeof r.transaction_date === "string" ? r.transaction_date.trim() : "";
+    const date = printed ?? (isValidISODate(modelDate) ? modelDate : null);
     const desc = typeof r.description === "string" ? r.description.trim() : "";
     const typ = r.type === "CREDIT" || r.type === "DEBIT" ? r.type : null;
     const amt = typeof r.amount === "number" ? r.amount : Number(r.amount);
-    if (!typ || !isValidISODate(date) || !Number.isFinite(amt) || amt <= 0) continue;
+    if (!typ || !date || !Number.isFinite(amt) || amt <= 0) continue;
     out.push({
       transaction_date: date,
       amount: Math.round(amt * 100) / 100,
@@ -436,7 +491,9 @@ Règles:
 - amount: nombre strictement positif dans la devise du compte; si le relevé indique un débit entre parenthèses ou signe négatif, c'est DEBIT avec amount positif.
 - DEBIT: sortie d'argent / débit. CREDIT: entrée d'argent / crédit interne banque.
 - Formats de montants français (virgule décimale, espaces) : convertis en nombre.
-- transaction_date au format ISO YYYY-MM-DD (date d'opération ou de valeur selon le libellé du relevé; si une seule date par ligne, l'utiliser).
+- Les relevés français écrivent les dates en jour/mois (JJ/MM/AAAA, JJ.MM.AAAA, ou « 09 juil. 2026 »). Le premier nombre est toujours le jour, jamais le mois.
+- transaction_date au format ISO YYYY-MM-DD (date d'opération ou de valeur selon le libellé du relevé; si une seule date par ligne, l'utiliser). Exemple : 09/07/2026 et « 09 juil. 2026 » → 2026-07-09 (9 juillet), jamais 2026-09-07.
+- date_as_printed : recopier la date exactement comme elle figure sur la ligne, sans convertir ni inverser jour et mois.
 - description: libellé brut de la ligne, sans inventer d'informations.`;
 
 /** Trim, strip UTF-8 BOM, remove wrapping quotes (common .env mistakes). */
