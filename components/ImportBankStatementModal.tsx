@@ -47,22 +47,27 @@ function formatEur(n: number): string {
   }).format(n);
 }
 
-/** Lignes du relevé qui partagent exactement le même libellé (les libellés vides sont ignorés). */
-function groupByExactDescription(rows: ReviewRow[]): { description: string; rows: ReviewRow[] }[] {
-  const byDescription = new Map<string, ReviewRow[]>();
+/** Lignes du relevé qui partagent exactement le même libellé et le même montant (libellés vides ignorés). */
+function groupByExactDescriptionAndAmount(
+  rows: ReviewRow[]
+): { description: string; amount: number; rows: ReviewRow[] }[] {
+  const byKey = new Map<string, { description: string; amount: number; rows: ReviewRow[] }>();
   for (const row of rows) {
     const description = row.description.trim();
     if (!description) continue;
-    const list = byDescription.get(description);
-    if (list) list.push(row);
-    else byDescription.set(description, [row]);
+    const amount = Math.round(row.amount * 100) / 100;
+    const key = `${description}\u0000${amount.toFixed(2)}`;
+    const existing = byKey.get(key);
+    if (existing) existing.rows.push(row);
+    else byKey.set(key, { description, amount, rows: [row] });
   }
-  return [...byDescription.entries()]
-    .filter(([, list]) => list.length > 1)
-    .map(([description, grouped]) => ({ description, rows: grouped }))
+  return [...byKey.values()]
+    .filter((group) => group.rows.length > 1)
     .sort(
       (a, b) =>
-        b.rows.length - a.rows.length || a.description.localeCompare(b.description, "fr")
+        b.rows.length - a.rows.length ||
+        a.description.localeCompare(b.description, "fr") ||
+        a.amount - b.amount
     );
 }
 
@@ -306,7 +311,7 @@ export function ImportBankStatementModal({
   const importCount = reviewRows?.filter((r) => r.import).length ?? 0;
   const duplicateCount = reviewRows?.filter((r) => r.match_status === "possible_duplicate").length ?? 0;
   const sameDescriptionGroups = useMemo(
-    () => groupByExactDescription(reviewRows ?? []),
+    () => groupByExactDescriptionAndAmount(reviewRows ?? []),
     [reviewRows]
   );
   const sameDescriptionLineCount = sameDescriptionGroups.reduce((sum, group) => sum + group.rows.length, 0);
@@ -464,7 +469,7 @@ export function ImportBankStatementModal({
                   onClick={() => setSameDescriptionOpen(true)}
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]"
                 >
-                  Libellés identiques ({sameDescriptionGroups.length})
+                  Même libellé et montant ({sameDescriptionGroups.length})
                 </button>
                 <div className="rounded-lg border border-[var(--border)] overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
@@ -610,28 +615,33 @@ export function ImportBankStatementModal({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="shrink-0 border-b border-[var(--border)] px-6 py-4">
-            <h3 className="subsection-header text-lg font-medium">Libellés identiques</h3>
+            <h3 className="subsection-header text-lg font-medium">Même libellé et montant</h3>
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-              Lignes du relevé qui partagent exactement le même libellé. Les libellés vides sont ignorés.
+              Lignes du relevé qui partagent exactement le même libellé et le même montant. Les libellés vides sont ignorés.
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
             {sameDescriptionGroups.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">
-                Aucune ligne ne partage exactement le même libellé.
+                Aucune ligne ne partage exactement le même libellé et le même montant.
               </p>
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-[var(--muted-foreground)]">
-                  {sameDescriptionGroups.length} libellé(s) · {sameDescriptionLineCount} ligne(s)
+                  {sameDescriptionGroups.length} groupe(s) · {sameDescriptionLineCount} ligne(s)
                 </p>
                 {sameDescriptionGroups.map((group) => (
                   <section
-                    key={group.description}
+                    key={`${group.description}\u0000${group.amount.toFixed(2)}`}
                     className="overflow-hidden rounded-lg border border-[var(--border)]"
                   >
                     <header className="flex items-start justify-between gap-3 bg-[var(--muted)]/40 px-3 py-2">
-                      <p className="text-sm font-medium break-words">{group.description}</p>
+                      <p className="text-sm font-medium break-words">
+                        {group.description}
+                        <span className="ml-2 tabular-nums text-[var(--muted-foreground)]">
+                          {formatEur(group.amount)} €
+                        </span>
+                      </p>
                       <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
                         {group.rows.length} lignes
                       </span>
