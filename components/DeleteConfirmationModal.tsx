@@ -3,6 +3,22 @@
 import { useState, useEffect } from "react";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 
+/**
+ * Aligne un collage sur le texte affiché.
+ * Les noms de comptes contiennent souvent un emoji (flocons, etc.) avec le
+ * sélecteur de variante U+FE0F, et parfois des espaces doubles. Au copier-coller,
+ * le navigateur retire ce sélecteur ou compacte les espaces : l'égalité stricte
+ * échoue alors que le texte visible est le même.
+ */
+export function normalizeConfirmationText(value: string): string {
+  return value
+    .normalize("NFC")
+    .replace(/[\uFE0E\uFE0F]/g, "")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export interface DeleteConfirmationModalProps {
   /** Texte exact que l'utilisateur doit taper pour confirmer */
   expectedText: string;
@@ -24,7 +40,8 @@ export function DeleteConfirmationModal({
   deleting = false,
 }: DeleteConfirmationModalProps) {
   const [inputValue, setInputValue] = useState("");
-  const isMatch = inputValue.trim() === expectedText;
+  const isMatch =
+    normalizeConfirmationText(inputValue) === normalizeConfirmationText(expectedText);
 
   useEffect(() => {
     setInputValue("");
@@ -56,12 +73,15 @@ export function DeleteConfirmationModal({
         <p className="mb-2 text-sm font-medium text-[var(--foreground)]">
           Pour confirmer, tapez exactement : <strong className="text-[var(--destructive)]">{expectedText}</strong>
         </p>
-        <input
-          type="text"
+        <textarea
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={expectedText}
-          className="mb-6 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
+          rows={3}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          className="mb-6 w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)]"
           autoFocus
           aria-label="Confirmer la suppression"
         />
