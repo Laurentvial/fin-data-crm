@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facture {{invoice.number}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    @media print {
+      body { margin: 0; padding: 0; }
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #273242;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8px;
+      line-height: 1.35;
+    }
+    .page {
+      width: 100%;
+      min-height: 268mm;
+      display: flex;
+      flex-direction: column;
+    }
+    .top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+    .brand {
+      flex: 1;
+      padding-top: 8px;
+    }
+    .brand img {
+      display: block;
+      max-width: 220px;
+      max-height: 58px;
+      object-fit: contain;
+      object-position: left center;
+    }
+    .wordmark {
+      font-family: "Times New Roman", Times, serif;
+      display: inline-block;
+      margin: 0;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #b89b5e;
+      color: #0b2a5b;
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .invoice-head {
+      width: 230px;
+      flex-shrink: 0;
+    }
+    .invoice-title {
+      margin: 0 0 10px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #b89b5e;
+      color: #0b2a5b;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      line-height: 1;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      padding: 5px 0 4px;
+      font-size: 8px;
+      font-weight: 700;
+    }
+    .meta-row.ruled {
+      border-bottom: 1px solid #e0e3e8;
+    }
+    .meta-label {
+      color: #4f5e72;
+      letter-spacing: 0.2px;
+    }
+    .meta-value {
+      color: #1d2737;
+      text-align: right;
+    }
+    .parties {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .party {
+      border: 1px solid #d8dde5;
+      min-height: 118px;
+    }
+    .party-header {
+      margin: 0;
+      padding: 6px 10px;
+      color: #fff;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .party-header.emitter { background: #0b2a5b; }
+    .party-header.client { background: #b89b5e; }
+    .party-body {
+      padding: 10px 10px 12px;
+      color: #2d3746;
+      font-size: 8px;
+    }
+    .party-name {
+      margin: 0 0 8px;
+      color: #1f2c3f;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.15;
+      text-transform: uppercase;
+    }
+    .party-body p {
+      margin: 0 0 3px;
+      white-space: pre-line;
+    }
+    table.lines {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 0;
+      table-layout: fixed;
+    }
+    table.lines th {
+      background: #0b2a5b;
+      color: #fff;
+      font-size: 7.5px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-align: left;
+      padding: 7px 6px;
+      border: 0;
+    }
+    table.lines th.qty,
+    table.lines td.qty,
+    table.lines th.unit,
+    table.lines td.unit {
+      text-align: center;
+    }
+    table.lines th.num,
+    table.lines td.num {
+      text-align: right;
+    }
+    table.lines td {
+      border: 1px solid #d8dde5;
+      padding: 7px 6px;
+      vertical-align: middle;
+      color: #273242;
+      font-size: 7.5px;
+      line-height: 1.35;
+    }
+    table.lines td.desc {
+      text-align: left;
+    }
+    table.lines .description {
+      white-space: pre-line;
+    }
+    col.desc { width: 52%; }
+    col.qty { width: 7%; }
+    col.unit { width: 9%; }
+    col.pu { width: 12%; }
+    col.vat { width: 8%; }
+    col.total { width: 12%; }
+    .totals {
+      width: 42%;
+      margin-left: auto;
+      border: 1px solid #d8dde5;
+      border-top: 0;
+      margin-bottom: 22px;
+    }
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      min-height: 22px;
+      padding: 6px 10px;
+      border-top: 1px solid #d8dde5;
+      color: #253346;
+      font-size: 8px;
+      font-weight: 700;
+    }
+    .totals-row span:last-child {
+      font-size: 8px;
+      white-space: nowrap;
+    }
+    .totals-row.ttc {
+      background: #0b2a5b;
+      border-top-color: #0b2a5b;
+      color: #fff;
+      min-height: 32px;
+      font-size: 14px;
+    }
+    .totals-row.ttc span:last-child {
+      font-size: 14px;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .info-box {
+      border: 1px solid #d8dde5;
+      min-height: 68px;
+      padding: 10px 12px 12px;
+    }
+    .info-title {
+      margin: 0 0 8px;
+      color: #b89b5e;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .info-box p {
+      margin: 0 0 3px;
+      color: #2d3847;
+      font-size: 7.5px;
+    }
+    .invoice-commentaires {
+      margin-top: 16px;
+      font-size: 8px;
+      line-height: 1.45;
+      color: #2d3847;
+    }
+    .invoice-commentaires strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #0b2a5b;
+    }
+    .invoice-commentaires p {
+      margin: 0;
+      white-space: pre-line;
+    }
+    .footer-mentions {
+      margin-top: 12px;
+      font-size: 7px;
+      color: #6b7482;
+      line-height: 1.4;
+    }
+    .footer-mentions p { margin: 0 0 2px; }
+    .footer-line {
+      margin-top: auto;
+      padding-top: 18px;
+      border-bottom: 2px solid #0b2a5b;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top-header">
+      <div class="brand">
+        {{#if company.logo_url}}
+        <img src="{{company.logo_url}}" alt="{{company.name}}">
+        {{else}}
+        <div class="wordmark">{{company.name}}</div>
+        {{/if}}
+      </div>
+      <div class="invoice-head">
+        <h1 class="invoice-title">FACTURE</h1>
+        <div class="meta-row ruled">
+          <span class="meta-label">NO FACTURE</span>
+          <span class="meta-value">{{invoice.number}}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">DATE D'EMISSION</span>
+          <span class="meta-value">{{formatDate invoice.issueDate}}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <section class="party">
+        <h2 class="party-header emitter">EMETTEUR</h2>
+        <div class="party-body">
+          <p class="party-name">{{company.name}}</p>
+          {{#if company.siret}}<p>SIRET : {{company.siret}}</p>{{/if}}
+          {{#if company.vat_number}}<p>N TVA : {{company.vat_number}}</p>{{/if}}
+          {{#if company.address}}<p>{{company.address}}</p>{{/if}}
+          {{#if company.code_postal}}
+          <p>{{company.code_postal}}{{#if company.ville}} {{company.ville}}{{/if}}</p>
+          {{else}}
+          {{#if company.ville}}<p>{{company.ville}}</p>{{/if}}
+          {{/if}}
+        </div>
+      </section>
+      <section class="party">
+        <h2 class="party-header client">CLIENT</h2>
+        <div class="party-body">
+          <p class="party-name">{{customer.name}}</p>
+          {{#if customer.address}}<p>{{customer.address}}</p>{{/if}}
+          {{#if customer.siret}}<p>SIRET : {{customer.siret}}</p>{{/if}}
+          {{#if customer.vat}}<p>N TVA : {{customer.vat}}</p>{{/if}}
+        </div>
+      </section>
+    </div>
+
+    <table class="lines">
+      <colgroup>
+        <col class="desc">
+        <col class="qty">
+        <col class="unit">
+        <col class="pu">
+        <col class="vat">
+        <col class="total">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>DESCRIPTION</th>
+          <th class="qty">QTE</th>
+          <th class="unit">UNITE</th>
+          <th class="num">P.U. HT</th>
+          <th class="num">TVA</th>
+          <th class="num">TOTAL HT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each lineItems}}
+        <tr>
+          <td class="desc"><div class="description">{{this.description}}</div></td>
+          <td class="qty">{{this.quantity}}</td>
+          <td class="unit">{{this.unit}}</td>
+          <td class="num">{{formatNumber this.unit_price}} {{#if ../invoice.isEur}}€{{else}}{{../invoice.currency}}{{/if}}</td>
+          <td class="num">{{this.vat_rate}} %</td>
+          <td class="num">{{#if this.line_total_ht}}{{formatNumber this.line_total_ht}}{{else}}{{formatNumber this.amount}}{{/if}} {{#if ../invoice.isEur}}€{{else}}{{../invoice.currency}}{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-row">
+        <span>TOTAL HT</span>
+        <span>{{formatNumber invoice.subtotal}} {{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}}</span>
+      </div>
+      <div class="totals-row">
+        <span>TVA ({{invoice.vatRate}} %)</span>
+        <span>{{formatNumber invoice.taxAmount}} {{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}}</span>
+      </div>
+      <div class="totals-row ttc">
+        <span>TOTAL TTC</span>
+        <span>{{formatNumber invoice.total}} {{#if invoice.isEur}}€{{else}}{{invoice.currency}}{{/if}}</span>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <section class="info-box">
+        <h3 class="info-title">CONDITIONS DE PAIEMENT</h3>
+        <p>Paiement a reception</p>
+      </section>
+      <section class="info-box">
+        <h3 class="info-title">INFORMATIONS BANCAIRES</h3>
+        {{#if payment.cardPaymentEnabled}}
+        <p>{{payment.cardPaymentMention}}</p>
+        {{else}}
+        {{#if payment.iban}}<p>IBAN : {{payment.iban}}</p>{{/if}}
+        {{#if payment.bic}}<p>BIC : {{payment.bic}}</p>{{/if}}
+        {{#if payment.installmentsEnabled}}<p>{{payment.installmentsMention}}</p>{{/if}}
+        {{/if}}
+      </section>
+    </div>
+
+    {{#if invoice.commentaires}}
+    <div class="invoice-commentaires">
+      <strong>Commentaires</strong>
+      <p>{{invoice.commentaires}}</p>
+    </div>
+    {{/if}}
+
+    {{#if countryRules.requiredMentions}}
+    <div class="footer-mentions">
+      {{#each countryRules.requiredMentions}}
+      <p>{{this}}</p>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    <div class="footer-line"></div>
+  </div>
+</body>
+</html>

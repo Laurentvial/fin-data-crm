@@ -48,9 +48,9 @@ const SAMPLE_DATA = {
     commentaires: "Commentaire exemple",
   },
   lineItems: [
-    { description: "Prestation de service exemple", quantity: 1, unit_price: 300, vat_rate: 10, amount: 330 },
-    { description: "Fourniture et pose", quantity: 1, unit_price: 2450, vat_rate: 10, amount: 2695 },
-    { description: "Option supplémentaire", quantity: 1, unit_price: 795.45, vat_rate: 10, amount: 875 },
+    { description: "Prestation de service exemple", quantity: 1, unit_price: 300, vat_rate: 10, amount: 330, line_total_ht: 300 },
+    { description: "Fourniture et pose", quantity: 1, unit_price: 2450, vat_rate: 10, amount: 2695, line_total_ht: 2450 },
+    { description: "Option supplémentaire", quantity: 1, unit_price: 795.45, vat_rate: 10, amount: 875, line_total_ht: 795.45 },
   ],
   payment: {
     iban: "FR76 1234 5678 9012 3456 7890 123",

@@ -58,6 +58,8 @@ export interface InvoiceLineItem {
   unit_price: number;
   vat_rate: number;
   amount: number;
+  /** Quantité × prix unitaire HT. */
+  line_total_ht?: number;
 }
 
 export interface InvoiceLineItemInput {

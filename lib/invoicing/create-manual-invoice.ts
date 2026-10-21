@@ -72,12 +72,14 @@ function computeLineItems(
     const amount = Math.round(li.quantity * li.unit_price_ttc * 100) / 100;
     const unitPriceHt =
       vatRate >= 0 ? amount / (1 + vatRate) / li.quantity : amount / li.quantity;
+    const unitPrice = Math.round(unitPriceHt * 100) / 100;
     return {
       description: li.description,
       quantity: li.quantity,
-      unit_price: Math.round(unitPriceHt * 100) / 100,
+      unit_price: unitPrice,
       vat_rate: vatRatePct,
       amount,
+      line_total_ht: Math.round(li.quantity * unitPrice * 100) / 100,
     };
   });
 }
