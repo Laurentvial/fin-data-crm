@@ -84,26 +84,33 @@ function toDateStr(value: unknown): string {
 
 function normalizeLineItems(raw: unknown): InvoiceLineItem[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((li) => {
-      const description = typeof li?.description === "string" ? li.description.trim() : "";
-      const quantity = Number(li?.quantity);
-      const unitPrice = Number(li?.unit_price);
-      const vatRate = Number(li?.vat_rate);
-      const amount = Number(li?.amount);
-      if (!description || quantity <= 0 || Number.isNaN(unitPrice) || Number.isNaN(vatRate) || Number.isNaN(amount)) {
-        return null;
-      }
-      return {
-        description,
-        quantity,
-        unit_price: unitPrice,
-        vat_rate: vatRate,
-        amount,
-        line_total_ht: Math.round(quantity * unitPrice * 100) / 100,
-      };
-    })
-    .filter((li): li is InvoiceLineItem => li !== null);
+  const items: InvoiceLineItem[] = [];
+  for (const li of raw) {
+    const description: string =
+      typeof li?.description === "string" ? li.description.trim() : "";
+    const quantity = Number(li?.quantity);
+    const unitPrice = Number(li?.unit_price);
+    const vatRate = Number(li?.vat_rate);
+    const amount = Number(li?.amount);
+    if (
+      !description ||
+      quantity <= 0 ||
+      Number.isNaN(unitPrice) ||
+      Number.isNaN(vatRate) ||
+      Number.isNaN(amount)
+    ) {
+      continue;
+    }
+    items.push({
+      description,
+      quantity,
+      unit_price: unitPrice,
+      vat_rate: vatRate,
+      amount,
+      line_total_ht: Math.round(quantity * unitPrice * 100) / 100,
+    });
+  }
+  return items;
 }
 
 function computeLineItems(
