@@ -37,7 +37,8 @@ function SkipList({ title, entries }: { title: string; entries: EntityImportSkip
     missing_company: [],
   };
   for (const e of entries) {
-    byReason[e.reason].push(e);
+    const bucket = byReason[e.reason] ?? byReason.invalid;
+    bucket.push(e);
   }
   return (
     <div className="mt-4">

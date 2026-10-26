@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
-  EntityImportReportModal,
-  type EntityImportReportSummary,
-} from "@/components/EntityImportReportModal";
+  EntityImportUiModal,
+  type EntityImportUiState,
+} from "@/components/EntityImportUiModal";
+import type { EntityImportReportSummary } from "@/components/EntityImportReportModal";
 import {
   ENTITY_EXPORT_LIMIT,
   ENTITY_FORMAT_VERSION,
@@ -70,8 +71,9 @@ export function EntityTransferButtons({
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastMessage, setLastMessage] = useState<string | null>(null);
-  const [importReport, setImportReport] = useState<EntityImportReportSummary | null>(null);
+  const [importUi, setImportUi] = useState<EntityImportUiState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputId = useRef(`entity-import-${Math.random().toString(36).slice(2, 9)}`).current;
 
   const downloadExportPayload = (
     payload: unknown,
@@ -111,6 +113,7 @@ export function EntityTransferButtons({
         const res = await fetch("/api/entity-export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify({
             entity,
             ids: batchIds,
@@ -141,7 +144,7 @@ export function EntityTransferButtons({
 
       if (totalParts > 1) {
         setLastMessage(
-          `${totalParts} fichiers téléchargés — ${exportedTotal} ${labels.plural} sur ${ids.length} affiché(s) (${ENTITY_EXPORT_LIMIT} max par fichier, ordre de la liste).`
+          `${totalParts} fichiers téléchargés — ${exportedTotal} ${labels.plural} sur ${ids.length} affichée(s) (${ENTITY_EXPORT_LIMIT} max par fichier, ordre de la liste).`
         );
       } else {
         setLastMessage(`Export ${labels.plural} téléchargé (${exportedTotal}).`);
@@ -155,14 +158,18 @@ export function EntityTransferButtons({
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const fileList = event.target.files;
-    event.target.value = "";
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).sort((a, b) => a.name.localeCompare(b.name, "fr"));
+    const fileNames = files.map((f) => f.name);
+    event.target.value = "";
 
-    setBusy("import");
-    setError(null);
-    setLastMessage(null);
-    setImportReport(null);
+    flushSync(() => {
+      setBusy("import");
+      setError(null);
+      setLastMessage(null);
+      setImportUi({ phase: "progress", fileNames });
+    });
+
     try {
       let inserted = 0;
       let skipped = 0;
@@ -174,16 +181,78 @@ export function EntityTransferButtons({
       let companiesSkippedInvalid = 0;
       const companySkips: EntityImportSkipEntry[] = [];
       const accountSkips: EntityImportSkipEntry[] = [];
+      let batchIndex = 0;
+      let totalBatches = 0;
+      const parsedFiles: { name: string; items: unknown[]; companies: unknown[] }[] = [];
+
+      for (const file of files) {
+        const text = await file.text();
+        let payload: unknown;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          throw new Error(`Fichier JSON illisible : ${file.name}`);
+        }
+        if (!payload || typeof payload !== "object") {
+          throw new Error(`Fichier d'import invalide : ${file.name}`);
+        }
+        const parsed = payload as Record<string, unknown>;
+        if (parsed.kind !== ENTITY_KIND) {
+          throw new Error(`Ce fichier n'est pas un export Sociétés / Comptes : ${file.name}`);
+        }
+        if (parsed.entity !== entity) {
+          throw new Error(
+            `« ${file.name} » correspond à « ${String(parsed.entity ?? "inconnu")} », pas à ${labels.plural}. Importez-le depuis la page ${parsed.entity === "companies" ? "Sociétés" : "Comptes"}.`
+          );
+        }
+
+        const items = Array.isArray(parsed.items) ? parsed.items : [];
+        const companies = Array.isArray(parsed.companies) ? parsed.companies : [];
+        if (items.length === 0 && companies.length === 0) {
+          throw new Error(
+            `« ${file.name} » ne contient aucune société ni ${labels.singular} à importer.`
+          );
+        }
+
+        parsedFiles.push({ name: file.name, items, companies });
+
+        const companyBatchCount =
+          entity === "bank_accounts" && companies.length > 0
+            ? chunk(companies, IMPORT_BATCH_SIZE).length
+            : 0;
+        totalBatches += companyBatchCount + chunk(items, IMPORT_BATCH_SIZE).length;
+      }
 
       const postBatch = async (body: Record<string, unknown>) => {
+        batchIndex += 1;
+        setImportUi({
+          phase: "progress",
+          fileNames,
+          detail:
+            totalBatches > 0
+              ? `Lot ${batchIndex} / ${totalBatches}…`
+              : undefined,
+        });
+
         const res = await fetch("/api/entity-import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify(body),
         });
-        const data = await res.json();
+        const raw = await res.text();
+        let data: unknown = null;
+        try {
+          data = raw ? JSON.parse(raw) : null;
+        } catch {
+          throw new Error(
+            res.ok
+              ? "Réponse serveur illisible."
+              : `Échec de l'import (HTTP ${res.status}).`
+          );
+        }
         if (!res.ok) {
-          throw new Error(responseError(data, "Échec de l'import"));
+          throw new Error(responseError(data, `Échec de l'import (HTTP ${res.status}).`));
         }
         return data as ImportBatchResult;
       };
@@ -213,30 +282,7 @@ export function EntityTransferButtons({
         }
       };
 
-      for (const file of files) {
-        const text = await file.text();
-        let payload: unknown;
-        try {
-          payload = JSON.parse(text);
-        } catch {
-          throw new Error(`Fichier JSON illisible : ${file.name}`);
-        }
-        if (!payload || typeof payload !== "object") {
-          throw new Error(`Fichier d'import invalide : ${file.name}`);
-        }
-        const parsed = payload as Record<string, unknown>;
-        if (parsed.kind !== ENTITY_KIND) {
-          throw new Error(`Ce fichier n'est pas un export Sociétés / Comptes : ${file.name}`);
-        }
-        if (parsed.entity !== entity) {
-          throw new Error(
-            `« ${file.name} » correspond à « ${String(parsed.entity ?? "inconnu")} », pas à ${labels.plural}.`
-          );
-        }
-
-        const items = Array.isArray(parsed.items) ? parsed.items : [];
-        const companies = Array.isArray(parsed.companies) ? parsed.companies : [];
-
+      for (const { items, companies } of parsedFiles) {
         if (entity === "bank_accounts" && companies.length > 0) {
           for (const batch of chunk(companies, IMPORT_BATCH_SIZE)) {
             accumulate(
@@ -262,7 +308,7 @@ export function EntityTransferButtons({
         }
       }
 
-      setImportReport({
+      const report: EntityImportReportSummary = {
         entity,
         labels,
         fileCount: files.length,
@@ -276,18 +322,19 @@ export function EntityTransferButtons({
         companiesSkippedInvalid,
         companySkips,
         accountSkips,
-      });
+      };
+
+      setImportUi({ phase: "report", report });
       setLastMessage(
         `Import terminé — ${inserted} ${labels.plural} importé(s)` +
           (skippedExisting > 0 ? `, ${skippedExisting} déjà en base` : "") +
-          (entity === "bank_accounts" && companiesInserted > 0
-            ? ` · ${companiesInserted} société(s) importée(s)`
-            : "") +
-          ". Voir le rapport."
+          "."
       );
       void onImported();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur inconnue");
+      const message = e instanceof Error ? e.message : "Erreur inconnue";
+      setError(message);
+      setImportUi({ phase: "error", message, fileNames });
     } finally {
       setBusy(null);
     }
@@ -304,35 +351,42 @@ export function EntityTransferButtons({
         >
           {busy === "export" ? "Export…" : "Exporter"}
         </button>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={busy != null}
-          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+        <label
+          htmlFor={importInputId}
+          className={`cursor-pointer rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] ${
+            busy != null ? "pointer-events-none opacity-50" : ""
+          }`}
         >
           {busy === "import" ? "Import…" : "Importer"}
-        </button>
+        </label>
         <input
+          id={importInputId}
           ref={fileInputRef}
           type="file"
-          accept="application/json,.json"
+          accept=".json,application/json"
           multiple
-          className="hidden"
-          onChange={(e) => void handleFileChange(e)}
+          className="sr-only"
+          disabled={busy != null}
+          onChange={(e) => {
+            void handleFileChange(e);
+          }}
         />
       </div>
-      {error && (
+      {error && !importUi && (
         <p className="max-w-sm text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
       {lastMessage && (
         <p className="max-w-sm text-xs text-[var(--muted-foreground)]">{lastMessage}</p>
       )}
-      {importReport &&
+      {importUi &&
         typeof document !== "undefined" &&
         createPortal(
-          <EntityImportReportModal
-            report={importReport}
-            onClose={() => setImportReport(null)}
+          <EntityImportUiModal
+            state={importUi}
+            onClose={() => {
+              setImportUi(null);
+              setError(null);
+            }}
           />,
           document.body
         )}
