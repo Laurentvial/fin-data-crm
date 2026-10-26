@@ -36,7 +36,8 @@
     "migrate:050": "node scripts/run-migration-050.js",
     "migrate:052": "node scripts/run-migration-052.js",
     "migrate:053": "node scripts/run-migration-053.js",
-    "migrate:054": "node scripts/run-migration-054.js"
+    "migrate:054": "node scripts/run-migration-054.js",
+    "entity-transfer": "node scripts/entity-transfer-cli.mjs"
   },
   "dependencies": {
     "@glideapps/glide-data-grid": "^6.0.3",

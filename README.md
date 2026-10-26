@@ -38,6 +38,10 @@ L'application utilise un système d'authentification fermé :
 
 8. Ensuite, les utilisateurs supplémentaires sont créés dans **Paramètres** par un admin.
 
+### Migration comptes entre instances
+
+Pour copier des comptes (par statut), sociétés et pièces jointes d’une instance BigBoss à une autre : voir [docs/migration-comptes-par-statut.md](docs/migration-comptes-par-statut.md).
+
 ## Getting Started
 
 First, run the development server:

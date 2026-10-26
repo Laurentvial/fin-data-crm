@@ -14,6 +14,8 @@ type EntityTransferButtonsProps = {
   entity: EntityTransferEntity;
   ids: string[];
   labels: { singular: string; plural: string };
+  /** Suffixe lisible (ex. nom de statut) pour le nom de fichier d’export. */
+  exportFilenameSuffix?: string;
   onImported: () => void | Promise<void>;
 };
 
@@ -41,6 +43,7 @@ export function EntityTransferButtons({
   entity,
   ids,
   labels,
+  exportFilenameSuffix,
   onImported,
 }: EntityTransferButtonsProps) {
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
@@ -56,7 +59,13 @@ export function EntityTransferButtons({
       const res = await fetch("/api/entity-export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entity, ids }),
+        body: JSON.stringify({
+          entity,
+          ids,
+          ...(exportFilenameSuffix?.trim()
+            ? { filename_suffix: exportFilenameSuffix.trim() }
+            : {}),
+        }),
       });
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
@@ -69,7 +78,9 @@ export function EntityTransferButtons({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `bigboss-${entity}-${todayStamp()}.json`;
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      a.download = match?.[1] ?? `bigboss-${entity}-${todayStamp()}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();

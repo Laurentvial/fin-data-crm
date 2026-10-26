@@ -3,8 +3,11 @@ import { auth } from "@/lib/auth/server";
 import { canMutate } from "@/lib/auth/permissions";
 import {
   EntityTransferError,
+  buildEntityExportFilename,
   exportEntities,
   isEntityTransferEntity,
+  parseEntityExportFilters,
+  sanitizeExportFilenameSuffix,
 } from "@/lib/entity-transfer";
 
 export const maxDuration = 300;
@@ -30,9 +33,13 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const payload = await exportEntities(body.entity, body?.ids);
-    const date = payload.exported_at.slice(0, 10);
-    const filename = `bigboss-${payload.entity}-${date}.json`;
+    const filters = parseEntityExportFilters(body?.filters);
+    const filenameSuffix = sanitizeExportFilenameSuffix(body?.filename_suffix);
+    const payload = await exportEntities(body.entity, body?.ids, filters);
+    const filename = await buildEntityExportFilename(payload.entity, {
+      filters,
+      filenameSuffix,
+    });
     return NextResponse.json(payload, {
       headers: {
         "Content-Disposition": `attachment; filename="${filename}"`,

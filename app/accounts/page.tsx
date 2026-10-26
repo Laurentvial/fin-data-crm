@@ -156,6 +156,13 @@ function formatBalanceFilterEur(n: number): string {
   }).format(n);
 }
 
+function parseBalanceFilterInput(raw: string): number | null {
+  const trimmed = raw.trim().replace(/\s/g, "").replace(",", ".");
+  if (trimmed === "" || trimmed === "-" || trimmed === "+") return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
 function balanceSliderStepFromSpan(span: number): number {
   const s = Math.abs(span);
   if (!Number.isFinite(s) || s < 1e-9) return 0.01;
@@ -166,7 +173,6 @@ function balanceSliderStepFromSpan(span: number): number {
   return 0.01;
 }
 
-/** Saisie jj/mm/aaaa -> yyyy-mm-dd ; renvoie "" si vide, null si invalide. */
 function BalanceAmountRangeControls({
   extent,
   rangeMin,
@@ -182,12 +188,91 @@ function BalanceAmountRangeControls({
   onMinChange: (v: number) => void;
   onMaxChange: (v: number) => void;
 }) {
+  const [minDraft, setMinDraft] = useState(() => formatBalanceFilterEur(rangeMin));
+  const [maxDraft, setMaxDraft] = useState(() => formatBalanceFilterEur(rangeMax));
+  const minFocusedRef = useRef(false);
+  const maxFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!minFocusedRef.current) setMinDraft(formatBalanceFilterEur(rangeMin));
+  }, [rangeMin]);
+
+  useEffect(() => {
+    if (!maxFocusedRef.current) setMaxDraft(formatBalanceFilterEur(rangeMax));
+  }, [rangeMax]);
+
+  const commitMinDraft = useCallback(() => {
+    const parsed = parseBalanceFilterInput(minDraft);
+    if (parsed == null) {
+      setMinDraft(formatBalanceFilterEur(rangeMin));
+      return;
+    }
+    onMinChange(parsed);
+  }, [minDraft, onMinChange, rangeMin]);
+
+  const commitMaxDraft = useCallback(() => {
+    const parsed = parseBalanceFilterInput(maxDraft);
+    if (parsed == null) {
+      setMaxDraft(formatBalanceFilterEur(rangeMax));
+      return;
+    }
+    onMaxChange(parsed);
+  }, [maxDraft, onMaxChange, rangeMax]);
+
   if (extent.max - extent.min < 1e-9) return null;
   return (
     <div className="mt-4 w-full border-t border-[var(--border)] pt-4">
       <p className="mb-3 text-xs font-medium text-[var(--foreground)]">
         Fourchette de solde (€)
       </p>
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+          Minimum
+          <input
+            type="text"
+            inputMode="decimal"
+            value={minDraft}
+            onChange={(e) => setMinDraft(e.target.value)}
+            onFocus={() => {
+              minFocusedRef.current = true;
+            }}
+            onBlur={() => {
+              minFocusedRef.current = false;
+              commitMinDraft();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm tabular-nums text-[var(--foreground)]"
+            aria-label="Solde minimum en euros"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]">
+          Maximum
+          <input
+            type="text"
+            inputMode="decimal"
+            value={maxDraft}
+            onChange={(e) => setMaxDraft(e.target.value)}
+            onFocus={() => {
+              maxFocusedRef.current = true;
+            }}
+            onBlur={() => {
+              maxFocusedRef.current = false;
+              commitMaxDraft();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm tabular-nums text-[var(--foreground)]"
+            aria-label="Solde maximum en euros"
+          />
+        </label>
+      </div>
       <div className="space-y-4">
         <div>
           <label className="mb-1 flex justify-between gap-2 text-xs text-[var(--muted-foreground)]">
@@ -204,7 +289,7 @@ function BalanceAmountRangeControls({
             value={rangeMin}
             onChange={(e) => onMinChange(Number(e.target.value))}
             className="h-2 w-full cursor-pointer accent-[var(--primary)]"
-            aria-label="Solde minimum"
+            aria-label="Curseur solde minimum"
           />
         </div>
         <div>
@@ -222,7 +307,7 @@ function BalanceAmountRangeControls({
             value={rangeMax}
             onChange={(e) => onMaxChange(Number(e.target.value))}
             className="h-2 w-full cursor-pointer accent-[var(--primary)]"
-            aria-label="Solde maximum"
+            aria-label="Curseur solde maximum"
           />
         </div>
       </div>
@@ -1570,6 +1655,13 @@ function AccountsPageContent() {
     return list;
   }, [filteredBankAccounts, accountsSortMode, accountStatusSortOrder]);
 
+  const exportFilenameSuffix = useMemo(() => {
+    if (selectedStatusIds.length !== 1) return undefined;
+    const statusId = selectedStatusIds[0];
+    const status = accountStatuses.find((s) => s.id === statusId);
+    return status?.name?.trim() || undefined;
+  }, [selectedStatusIds, accountStatuses]);
+
   const banksWithCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const bankNames = new Map<string, string>();
@@ -2521,6 +2613,7 @@ function AccountsPageContent() {
                 entity="bank_accounts"
                 ids={sortedBankAccounts.map((ba) => ba.id)}
                 labels={{ singular: "compte", plural: "comptes" }}
+                exportFilenameSuffix={exportFilenameSuffix}
                 onImported={() => void fetchBankAccounts()}
               />
             )}

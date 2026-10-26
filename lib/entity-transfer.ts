@@ -222,11 +222,113 @@ export function normalizeExportIds(ids: unknown): string[] {
   return out;
 }
 
+export type EntityExportFilters = {
+  account_status_ids?: unknown;
+};
+
+export function parseEntityExportFilters(value: unknown): EntityExportFilters | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Record<string, unknown>;
+  const account_status_ids = row.account_status_ids;
+  if (account_status_ids === undefined) return undefined;
+  return { account_status_ids };
+}
+
+export function normalizeAccountStatusFilterIds(ids: unknown): string[] {
+  return normalizeExportIds(ids);
+}
+
+export function slugForExportFilename(value: string): string {
+  const slug = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 40);
+  return slug || "statut";
+}
+
+export function sanitizeExportFilenameSuffix(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return slugForExportFilename(trimmed);
+}
+
+async function accountStatusSlugFromIds(statusIds: string[]): Promise<string | null> {
+  if (statusIds.length !== 1) return null;
+  const id = statusIds[0];
+  const rows = asRows(
+    await sql`
+      SELECT name FROM account_statuses
+      WHERE id = ${id}::uuid
+      LIMIT 1
+    `
+  );
+  const name = optionalString(rows[0]?.name, 255);
+  if (!name) return null;
+  return slugForExportFilename(name);
+}
+
+export async function resolveBankAccountExportIds(
+  ids: unknown,
+  filters?: EntityExportFilters
+): Promise<string[]> {
+  const explicit = normalizeExportIds(ids);
+  if (explicit.length > 0) return explicit;
+  const statusIds = normalizeAccountStatusFilterIds(filters?.account_status_ids);
+  if (statusIds.length === 0) return [];
+  const rows = asRows(
+    await sql`
+      SELECT id
+      FROM bank_accounts
+      WHERE account_status_id = ANY(${statusIds}::uuid[])
+      ORDER BY created_at, id
+    `
+  );
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const id = String(r.id ?? "");
+    if (!isUuid(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+export async function buildEntityExportFilename(
+  entity: EntityTransferEntity,
+  options?: {
+    filters?: EntityExportFilters;
+    filenameSuffix?: string | null;
+  }
+): Promise<string> {
+  const date = new Date().toISOString().slice(0, 10);
+  let suffix = options?.filenameSuffix ?? null;
+  if (!suffix && entity === "bank_accounts") {
+    const statusIds = normalizeAccountStatusFilterIds(options?.filters?.account_status_ids);
+    suffix = await accountStatusSlugFromIds(statusIds);
+  }
+  if (suffix) {
+    return `bigboss-${entity}-${suffix}-${date}.json`;
+  }
+  return `bigboss-${entity}-${date}.json`;
+}
+
 export async function exportEntities(
   entity: EntityTransferEntity,
-  ids: unknown
+  ids: unknown,
+  filters?: EntityExportFilters
 ): Promise<EntityExportPayload> {
-  const requested = normalizeExportIds(ids);
+  const requested =
+    entity === "bank_accounts"
+      ? await resolveBankAccountExportIds(ids, filters)
+      : normalizeExportIds(ids);
+  if (requested.length === 0) {
+    throw new EntityTransferError("Aucun élément à exporter.", 400);
+  }
   const limited = requested.slice(0, ENTITY_EXPORT_LIMIT);
   if (entity === "companies") {
     return {
