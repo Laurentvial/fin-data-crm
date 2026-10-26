@@ -1847,8 +1847,8 @@ function AccountsPageContent() {
     setAccountsFilterPanel("hub");
   }, [balanceExtent.min, balanceExtent.max]);
 
-  const fetchBankAccounts = useCallback(async () => {
-    setLoading(true);
+  const fetchBankAccounts = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       const [resBa, resCo, resBanks, resAccountTypes, resAccountStatuses] = await Promise.all([
@@ -1875,7 +1875,7 @@ function AccountsPageContent() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 
@@ -2621,7 +2621,7 @@ function AccountsPageContent() {
                 ids={sortedBankAccounts.map((ba) => ba.id)}
                 labels={{ singular: "compte", plural: "comptes" }}
                 exportFilenameSuffix={exportFilenameSuffix}
-                onImported={() => void fetchBankAccounts()}
+                onImported={() => void fetchBankAccounts({ silent: true })}
               />
             )}
             {canEditData && companies.length > 0 && (

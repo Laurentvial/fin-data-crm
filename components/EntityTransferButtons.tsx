@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   EntityImportReportModal,
   type EntityImportReportSummary,
@@ -276,7 +277,15 @@ export function EntityTransferButtons({
         companySkips,
         accountSkips,
       });
-      await onImported();
+      setLastMessage(
+        `Import terminé — ${inserted} ${labels.plural} importé(s)` +
+          (skippedExisting > 0 ? `, ${skippedExisting} déjà en base` : "") +
+          (entity === "bank_accounts" && companiesInserted > 0
+            ? ` · ${companiesInserted} société(s) importée(s)`
+            : "") +
+          ". Voir le rapport."
+      );
+      void onImported();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -318,9 +327,15 @@ export function EntityTransferButtons({
       {lastMessage && (
         <p className="max-w-sm text-xs text-[var(--muted-foreground)]">{lastMessage}</p>
       )}
-      {importReport && (
-        <EntityImportReportModal report={importReport} onClose={() => setImportReport(null)} />
-      )}
+      {importReport &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <EntityImportReportModal
+            report={importReport}
+            onClose={() => setImportReport(null)}
+          />,
+          document.body
+        )}
     </div>
   );
 }

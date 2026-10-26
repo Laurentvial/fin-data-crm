@@ -1577,8 +1577,8 @@ function SocietesPageContent() {
     });
   };
 
-  const fetchCompanies = useCallback(async () => {
-    setLoading(true);
+  const fetchCompanies = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       const [resAccounts, resBanks, resSources, resBankAccounts] = await Promise.all([
@@ -1605,7 +1605,7 @@ function SocietesPageContent() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 
@@ -2232,7 +2232,7 @@ function SocietesPageContent() {
                   entity="companies"
                   ids={filteredCompanies.map((c) => c.id)}
                   labels={{ singular: "société", plural: "sociétés" }}
-                  onImported={() => void fetchCompanies()}
+                  onImported={() => void fetchCompanies({ silent: true })}
                 />
                 <button
                   type="button"
