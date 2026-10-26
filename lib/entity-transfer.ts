@@ -5,6 +5,8 @@ import {
   ENTITY_EXPORT_LIMIT,
   ENTITY_FORMAT_VERSION,
   ENTITY_KIND,
+  type EntityImportSkipDetails,
+  type EntityImportSkipEntry,
   type EntityTransferEntity,
 } from "@/lib/entity-transfer-constants";
 
@@ -50,12 +52,24 @@ export type EntityExportPayload = {
   companies?: unknown[];
 };
 
+export type {
+  EntityImportSkipDetails,
+  EntityImportSkipEntry,
+  EntityImportSkipReason,
+} from "@/lib/entity-transfer-constants";
+
 export type EntityImportResult = {
   entity: EntityTransferEntity;
   inserted: number;
   skipped: number;
+  /** Déjà présents en base (réimport du même export). */
+  skipped_existing?: number;
+  skipped_missing_company?: number;
   companies_inserted?: number;
   companies_skipped?: number;
+  companies_skipped_existing?: number;
+  companies_skipped_invalid?: number;
+  skip_details?: EntityImportSkipDetails;
 };
 
 type FileItem = {
@@ -566,20 +580,51 @@ export function parseEntityPayload(body: unknown): EntityExportPayload {
   };
 }
 
+function mergeSkipDetails(
+  target: EntityImportSkipDetails,
+  source: EntityImportSkipDetails | undefined
+): void {
+  if (!source) return;
+  if (source.companies?.length) {
+    target.companies = (target.companies ?? []).concat(source.companies);
+  }
+  if (source.accounts?.length) {
+    target.accounts = (target.accounts ?? []).concat(source.accounts);
+  }
+}
+
 export async function importEntities(body: unknown): Promise<EntityImportResult> {
   const payload = parseEntityPayload(body);
   if (payload.entity === "companies") {
     const result = await importCompanies(payload.items);
-    return { entity: "companies", inserted: result.inserted, skipped: result.skipped };
+    return {
+      entity: "companies",
+      inserted: result.inserted,
+      skipped: result.skipped,
+      skipped_existing: result.skipped_existing,
+      companies_skipped_invalid: result.skipped_invalid,
+      skip_details: result.skip_details,
+    };
   }
   const companiesResult = await importCompanies(payload.companies ?? []);
   const accountsResult = await importBankAccounts(payload.items);
+  const skip_details: EntityImportSkipDetails = {};
+  mergeSkipDetails(skip_details, companiesResult.skip_details);
+  mergeSkipDetails(skip_details, accountsResult.skip_details);
   return {
     entity: "bank_accounts",
     inserted: accountsResult.inserted,
     skipped: accountsResult.skipped,
+    skipped_existing: accountsResult.skipped_existing,
+    skipped_missing_company: accountsResult.skipped_missing_company,
     companies_inserted: companiesResult.inserted,
     companies_skipped: companiesResult.skipped,
+    companies_skipped_existing: companiesResult.skipped_existing,
+    companies_skipped_invalid: companiesResult.skipped_invalid,
+    skip_details:
+      (skip_details.companies?.length ?? 0) > 0 || (skip_details.accounts?.length ?? 0) > 0
+        ? skip_details
+        : undefined,
   };
 }
 
@@ -633,31 +678,65 @@ async function selectIdsFromTable(
   }
 }
 
-async function importCompanies(items: unknown[]): Promise<{ inserted: number; skipped: number }> {
+async function importCompanies(items: unknown[]): Promise<{
+  inserted: number;
+  skipped: number;
+  skipped_existing: number;
+  skipped_invalid: number;
+  skip_details: EntityImportSkipDetails;
+}> {
   const existingIds = await loadExistingIds("companies");
   const sourceIds = await loadExistingIds("sources");
   const templateIds = await loadExistingIds("invoice_templates");
 
   let inserted = 0;
   let skipped = 0;
+  let skippedExisting = 0;
+  let skippedInvalid = 0;
+  const companySkips: EntityImportSkipEntry[] = [];
 
   for (const raw of items) {
     if (!raw || typeof raw !== "object") {
       skipped += 1;
+      skippedInvalid += 1;
+      companySkips.push({
+        reason: "invalid",
+        detail: "Entrée société illisible ou vide.",
+      });
       continue;
     }
     const item = raw as Record<string, unknown>;
     if (!isUuid(item.id)) {
       skipped += 1;
+      skippedInvalid += 1;
+      companySkips.push({
+        reason: "invalid",
+        name: optionalString(item.name, 255) ?? undefined,
+        detail: "Identifiant société (UUID) manquant ou invalide.",
+      });
       continue;
     }
     const name = optionalString(item.name, 255);
     if (!name) {
       skipped += 1;
+      skippedInvalid += 1;
+      companySkips.push({
+        reason: "invalid",
+        id: item.id,
+        detail: "Nom de société manquant.",
+      });
       continue;
     }
     if (existingIds.has(item.id)) {
       skipped += 1;
+      skippedExisting += 1;
+      companySkips.push({
+        reason: "existing",
+        id: item.id,
+        name,
+        detail:
+          "Déjà présente sur cette instance — non recréée ; les comptes liés peuvent quand même être importés.",
+      });
       continue;
     }
 
@@ -666,7 +745,8 @@ async function importCompanies(items: unknown[]): Promise<{ inserted: number; sk
     const templateId = optionalUuid(item.invoice_template_id);
     const countryCode = (optionalString(item.country_code, 2) ?? "FR").toUpperCase();
 
-    await sql`
+    const insertedRows = asRows(
+      await sql`
       INSERT INTO companies (
         id, name, address, siret, directeur, website, vps, forme_juridique, capital_social,
         code_postal, ville, activite, date_immatriculation, country_code, source_id, fournisseur,
@@ -713,14 +793,37 @@ async function importCompanies(items: unknown[]): Promise<{ inserted: number; sk
         ${templateId && templateIds.has(templateId) ? templateId : null},
         ${optionalString(item.bloc_notes)}
       )
-    `;
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `
+    );
+
+    if (insertedRows.length === 0) {
+      skipped += 1;
+      skippedExisting += 1;
+      existingIds.add(item.id);
+      companySkips.push({
+        reason: "existing",
+        id: item.id,
+        name,
+        detail:
+          "Déjà présente sur cette instance — non recréée ; les comptes liés peuvent quand même être importés.",
+      });
+      continue;
+    }
 
     existingIds.add(item.id);
     await insertCompanyRelations(item.id, item);
     inserted += 1;
   }
 
-  return { inserted, skipped };
+  return {
+    inserted,
+    skipped,
+    skipped_existing: skippedExisting,
+    skipped_invalid: skippedInvalid,
+    skip_details: companySkips.length > 0 ? { companies: companySkips } : {},
+  };
 }
 
 async function insertCompanyRelations(companyId: string, item: Record<string, unknown>) {
@@ -796,7 +899,13 @@ async function defaultAccountStatusId(): Promise<string | null> {
   return null;
 }
 
-async function importBankAccounts(items: unknown[]): Promise<{ inserted: number; skipped: number }> {
+async function importBankAccounts(items: unknown[]): Promise<{
+  inserted: number;
+  skipped: number;
+  skipped_existing: number;
+  skipped_missing_company: number;
+  skip_details: EntityImportSkipDetails;
+}> {
   const existingAccountIds = await loadExistingIds("bank_accounts");
   const companyIds = await loadExistingIds("companies");
   const bankIds = await loadExistingIds("banks");
@@ -808,24 +917,59 @@ async function importBankAccounts(items: unknown[]): Promise<{ inserted: number;
 
   let inserted = 0;
   let skipped = 0;
+  let skippedExisting = 0;
+  let skippedMissingCompany = 0;
+  const accountSkips: EntityImportSkipEntry[] = [];
 
   for (const raw of items) {
     if (!raw || typeof raw !== "object") {
       skipped += 1;
+      accountSkips.push({
+        reason: "invalid",
+        detail: "Entrée compte illisible ou vide.",
+      });
       continue;
     }
     const item = raw as Record<string, unknown>;
     if (!isUuid(item.id) || !isUuid(item.company_id)) {
       skipped += 1;
+      accountSkips.push({
+        reason: "invalid",
+        name: optionalString(item.name, 255) ?? undefined,
+        detail: "Identifiant compte ou société (UUID) manquant ou invalide.",
+      });
       continue;
     }
     const name = optionalString(item.name, 255);
     if (!name) {
       skipped += 1;
+      accountSkips.push({
+        reason: "invalid",
+        id: item.id,
+        detail: "Nom de compte manquant.",
+      });
       continue;
     }
-    if (existingAccountIds.has(item.id) || !companyIds.has(item.company_id)) {
+    if (existingAccountIds.has(item.id)) {
       skipped += 1;
+      skippedExisting += 1;
+      accountSkips.push({
+        reason: "existing",
+        id: item.id,
+        name,
+        detail: "Compte déjà présent sur cette instance.",
+      });
+      continue;
+    }
+    if (!companyIds.has(item.company_id)) {
+      skipped += 1;
+      skippedMissingCompany += 1;
+      accountSkips.push({
+        reason: "missing_company",
+        id: item.id,
+        name,
+        detail: `Société ${item.company_id} absente sur la cible — importez d'abord le bloc « companies » du fichier ou une partie d'export antérieure.`,
+      });
       continue;
     }
 
@@ -857,7 +1001,8 @@ async function importBankAccounts(items: unknown[]): Promise<{ inserted: number;
       if (taken.length > 0) telegramChatId = null;
     }
 
-    await sql`
+    const insertedAccountRows = asRows(
+      await sql`
       INSERT INTO bank_accounts (
         id, company_id, name, telegram_chat_id, bank_id, account_type_id, account_status_id,
         login, password, pin_code, plafond_limit, company_email_id, company_phone_id
@@ -877,7 +1022,23 @@ async function importBankAccounts(items: unknown[]): Promise<{ inserted: number;
         ${emailId && emailIds.has(emailId) ? emailId : null},
         ${phoneId && phoneIds.has(phoneId) ? phoneId : null}
       )
-    `;
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `
+    );
+
+    if (insertedAccountRows.length === 0) {
+      skipped += 1;
+      skippedExisting += 1;
+      existingAccountIds.add(item.id);
+      accountSkips.push({
+        reason: "existing",
+        id: item.id,
+        name,
+        detail: "Compte déjà présent sur cette instance.",
+      });
+      continue;
+    }
 
     const ibans = Array.isArray(item.ibans) ? item.ibans : [];
     for (const rawIban of ibans) {
@@ -928,5 +1089,11 @@ async function importBankAccounts(items: unknown[]): Promise<{ inserted: number;
     inserted += 1;
   }
 
-  return { inserted, skipped };
+  return {
+    inserted,
+    skipped,
+    skipped_existing: skippedExisting,
+    skipped_missing_company: skippedMissingCompany,
+    skip_details: accountSkips.length > 0 ? { accounts: accountSkips } : {},
+  };
 }

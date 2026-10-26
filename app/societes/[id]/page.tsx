@@ -16,6 +16,7 @@ import {
   operateurToSelectValue,
 } from "@/lib/french-mobile-operators";
 import { getCachedSession } from "@/lib/auth/session-cache";
+import { defaultAccountStatusIdForCreate } from "@/lib/default-account-status-id";
 import { modalBackdropClose } from "@/lib/modal-backdrop-close";
 import { COUNTRY_LABELS_FR } from "@/lib/countries-fr";
 import type {
@@ -831,8 +832,7 @@ export default function SocieteDetailPage() {
     setCreateAccountName("");
     setCreateAccountBankId("");
     setCreateAccountTypeId("");
-    const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
-    setCreateAccountStatusId(sortedStatuses[3]?.id ?? "");
+    setCreateAccountStatusId(defaultAccountStatusIdForCreate(accountStatuses));
     setCreateAccountIbans([]);
     setCreateAccountLogin("");
     setCreateAccountPassword("");

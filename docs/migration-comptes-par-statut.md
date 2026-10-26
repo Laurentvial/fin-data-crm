@@ -43,7 +43,7 @@ API (admin connecté) : `GET /api/admin/catalog-export?entity=statuses|clients|b
 2. Appliquer le filtre **Statut** souhaité (seuls les comptes **affichés** après filtres sont exportés).
 3. Cliquer **Exporter** → fichier `bigboss-bank_accounts-YYYY-MM-DD.json` (suffixe statut si un seul statut est filtré).
 
-Limite : **50 comptes** par export (`ENTITY_EXPORT_LIMIT`).
+Limite : **50 comptes** par fichier JSON (`ENTITY_EXPORT_LIMIT`). Si plus de comptes sont affichés, **Exporter** télécharge **plusieurs fichiers** (`-part-1-sur-3`, etc.) dans le même ordre que la liste à l’écran (tri et filtres actuels). Le 1er lot = les 50 premiers visibles, le 2e = les 50 suivants, etc.
 
 ### API
 
@@ -80,9 +80,9 @@ Réponse : JSON `kind: "bigboss-entity-export"`, `entity: "bank_accounts"`, `ite
 ### Interface
 
 1. Ouvrir **Comptes** sur la cible.
-2. **Importer** le fichier JSON exporté.
+2. **Importer** le ou les fichiers JSON exportés (sélection multiple possible : `part-1-sur-3`, `part-2-sur-3`, etc.).
 
-L’application importe d’abord les sociétés (`companies[]`) par lots de 5, puis les comptes (`items`) par lots de 5.
+L’application importe d’abord les sociétés (`companies[]`) par lots de 5, puis les comptes (`items`) par lots de 5. Les UUID **déjà présents** sur la cible sont **ignorés** (réimport sans doublon ni erreur).
 
 ### API
 

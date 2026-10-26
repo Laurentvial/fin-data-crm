@@ -2026,6 +2026,13 @@ function SocietesPageContent() {
                 <p className="text-sm text-[var(--muted-foreground)]">
                   Gérez les sociétés. Chaque société peut avoir plusieurs comptes bancaires.
                 </p>
+                {!loading && companies.length > 0 && (
+                  <p className="mt-1 text-sm tabular-nums text-[var(--foreground)]">
+                    {filteredCompanies.length === companies.length
+                      ? `${filteredCompanies.length} société${filteredCompanies.length > 1 ? "s" : ""} affichée${filteredCompanies.length > 1 ? "s" : ""}`
+                      : `${filteredCompanies.length} société${filteredCompanies.length > 1 ? "s" : ""} affichée${filteredCompanies.length > 1 ? "s" : ""} sur ${companies.length}`}
+                  </p>
+                )}
               </div>
             </div>
             {companies.length > 0 && (

@@ -14,6 +14,7 @@ import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { CreatedDateInput, parseFrDateToIsoOrNull } from "@/components/CreatedDateInput";
 import { EntityTransferButtons } from "@/components/EntityTransferButtons";
 import { buildAutoBankAccountName } from "@/lib/bank-account-auto-name";
+import { defaultAccountStatusIdForCreate } from "@/lib/default-account-status-id";
 import {
   buildAccountDetailHref,
   buildAccountsListHref,
@@ -2038,8 +2039,7 @@ function AccountsPageContent() {
       setCreateCompanyId(cid);
       setCreateBankId("");
       setCreateAccountTypeId("");
-      const sortedStatuses = [...accountStatuses].sort((a, b) => a.sort_order - b.sort_order);
-      setCreateAccountStatusId(sortedStatuses[3]?.id ?? "");
+      setCreateAccountStatusId(defaultAccountStatusIdForCreate(accountStatuses));
       setCreateIbans([]);
       setCreateLogin("");
       setCreatePassword("");
@@ -2413,6 +2413,13 @@ function AccountsPageContent() {
               <div>
                 <h1 className="page-title text-2xl font-semibold">Comptes bancaires</h1>
                 <p className="text-sm text-[var(--muted-foreground)]">Gérez vos comptes et transactions</p>
+                {!loading && bankAccounts.length > 0 && (
+                  <p className="mt-1 text-sm tabular-nums text-[var(--foreground)]">
+                    {filteredBankAccounts.length === bankAccounts.length
+                      ? `${filteredBankAccounts.length} compte${filteredBankAccounts.length > 1 ? "s" : ""} affiché${filteredBankAccounts.length > 1 ? "s" : ""}`
+                      : `${filteredBankAccounts.length} compte${filteredBankAccounts.length > 1 ? "s" : ""} affiché${filteredBankAccounts.length > 1 ? "s" : ""} sur ${bankAccounts.length}`}
+                  </p>
+                )}
               </div>
             </div>
             {bankAccounts.length > 0 && (
